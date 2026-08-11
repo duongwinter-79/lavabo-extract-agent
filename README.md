@@ -22,13 +22,21 @@ Meta  ──poll──▶ Graph ─┘
 | [docs/05-schema-guide.md](docs/05-schema-guide.md) | How to define your columns when the requirements land |
 
 **The headline from Task 1:** Zalo PC's "Export data" is an *encrypted, restore-only backup*,
-not a data export — it can't be parsed. Zalo therefore runs as a human-drops-a-file source
+not a data export — it can't be parsed, by a script or by an AI, because the blocker is
+encryption rather than comprehension. Zalo therefore runs as a drop-a-file source
 until/unless you get an Official Account. Meta's Graph API path works as you expected, gated
-on Advanced Access. Verify the Zalo finding yourself in one command:
+on Advanced Access.
+
+Verify both Zalo findings yourself — neither probe prints message content:
 
 ```bash
-python scripts/probe_zalo_export.py "C:/Users/<you>/Desktop/backup_zalo_....zip"
+python scripts/probe_zalo_export.py  "C:/Users/<you>/Desktop/backup_zalo_....zip"   # the backup
+python scripts/probe_zalo_appdata.py                                               # the app's local storage
 ```
+
+The manual capture is nonetheless mostly automated — `scripts/zalo_capture.py` watches the
+clipboard, derives the customer name from the transcript, and writes the files, so each
+conversation costs a Ctrl+A/Ctrl+C rather than a trip through Notepad.
 
 ---
 
@@ -86,7 +94,7 @@ Three sheets:
 ```
 docs/          findings, plan, runbooks
 config/        config.yaml + schema.yaml (your columns)
-scripts/       probe_zalo_export.py
+scripts/       probe_zalo_export.py, probe_zalo_appdata.py, zalo_capture.py
 src/lavabo/    models, config, store, cli
   connectors/  meta_graph.py, zalo_export.py
   extract/     anthropic, gemini (same interface, swap in config)

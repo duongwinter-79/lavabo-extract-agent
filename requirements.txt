@@ -2,6 +2,7 @@ requests>=2.31
 PyYAML>=6.0
 openpyxl>=3.1
 python-dotenv>=1.0
+pyperclip>=1.8          # scripts/zalo_capture.py; falls back to tkinter
 
 # Extraction providers -- install whichever you configure in config.yaml.
 anthropic>=0.40

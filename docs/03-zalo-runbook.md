@@ -9,8 +9,10 @@ per conversation.
 
 ## Step 0 (once) — prove it for yourself
 
-Before accepting the manual route, run the export and probe it. If Zalo has changed and the
-archive is readable, tell me and the connector gets rewritten to parse it directly.
+Before accepting the manual route, rule out the two automated options. Both probes print
+structure and format verdicts only — never message content — so the reports are safe to share.
+
+**a) The backup archive.** Run the export, then probe it:
 
 ```
 Zalo PC → gear icon → Data / Storage (Quản lý dữ liệu) → Backup / Export data
@@ -20,26 +22,53 @@ Zalo PC → gear icon → Data / Storage (Quản lý dữ liệu) → Backup / E
 python scripts/probe_zalo_export.py "C:/Users/<you>/Desktop/backup_zalo_20260811.zip" -o probe.md
 ```
 
-The probe prints structure and format verdicts only — no message content — so `probe.md` is
-safe to share.
+**b) The app's local storage.** Zalo PC is Electron-based, so it may cache recent messages
+on disk in a readable store even though the backup is encrypted. Separate question, separate
+probe:
+
+```bash
+python scripts/probe_zalo_appdata.py -o probe-appdata.md
+```
+
+If either comes back readable, send me the report — the connector gets rewritten to read it
+directly and everything below disappears.
 
 ---
 
-## Step 1 — capture a conversation
+## Step 1 — capture conversations (fast path)
 
-1. Open the conversation in Zalo PC.
-2. Scroll to the very top of the range you want. **Zalo lazy-loads history** — if you don't
-   scroll up first, you will only copy the last screenful.
-3. Click the first message, scroll to the bottom, `Shift+Click` the last message.
-   (Or `Ctrl+A` inside the message pane, depending on version.)
-4. `Ctrl+C`.
-5. Paste into Notepad — **plain text, not Word.** Word introduces smart quotes and
-   invisible formatting that break the parser.
-6. Save as UTF-8 into `data/inbox/zalo/`.
+`scripts/zalo_capture.py` watches your clipboard and writes the files for you. No Notepad,
+no Save As, no naming. **The customer name is derived from the transcript itself** — the
+script parses sender names, discards the ones in `zalo.own_names`, and uses the most
+frequent remaining name.
 
-## Step 2 — name the file correctly
+```bash
+python scripts/zalo_capture.py
+```
 
-**The filename becomes the customer name in Excel.** Use the customer's name, nothing else:
+Then per conversation: **click it → scroll to the top → Ctrl+A → Ctrl+C.** The script
+detects the copy, names the file, skips duplicates, and prints a confirmation. Ctrl+C to
+stop. Roughly 10 seconds per conversation instead of two minutes.
+
+If it can't tell who the customer is (e.g. every sender matched `own_names`) it asks you to
+type the name rather than guessing. `--name "Tran Thi B"` forces it for one capture.
+
+Requires `pyperclip` (`pip install pyperclip`); falls back to stdlib `tkinter` if absent.
+
+### Manual fallback
+
+If the clipboard watcher misbehaves, do it by hand — the ingest step is identical:
+
+1. Open the conversation, scroll to the very top of the range you want.
+   **Zalo lazy-loads history** — without scrolling first you only copy the last screenful.
+2. Click the first message, `Shift+Click` the last (or `Ctrl+A` in the message pane), `Ctrl+C`.
+3. Paste into Notepad — **plain text, not Word.** Word adds smart quotes that break parsing.
+4. Save as UTF-8 into `data/inbox/zalo/`, named after the customer.
+
+## Step 2 — file naming (manual path only)
+
+`zalo_capture.py` handles this for you. If you saved files by hand,
+**the filename becomes the customer name in Excel** — use the customer's name, nothing else:
 
 ```
 data/inbox/zalo/Nguyen Van An.txt
@@ -101,6 +130,9 @@ you and add a test.**
 | Symptom | Cause | Fix |
 |---|---|---|
 | Every message shows as inbound | `zalo.own_names` empty or misspelt | Set it to your exact Zalo display name |
+| `zalo_capture.py` asks for every name | Same cause — it can't tell you from the customer | Same fix |
+| `zalo_capture.py` ignores your copy | Text didn't match any sender pattern | Tune `line_patterns` below, or use `--name` |
+| "No clipboard access" | Missing clipboard backend | `pip install pyperclip` |
 | Only ~20 messages captured | Didn't scroll up before selecting | Redo step 1.2 |
 | Garbled Vietnamese diacritics | Saved as ANSI | Re-save as UTF-8 |
 | Timestamps an hour off | Wrong `zalo.timezone` | Set `Asia/Ho_Chi_Minh` |
