@@ -1,0 +1,37 @@
+# Secrets
+.env
+
+# Local config (contains page IDs, names)
+config/config.yaml
+config/schema.yaml
+
+# Customer conversation content MUST NOT be committed.
+# Exclude contents, not the directories themselves, so git can still reach the
+# .gitkeep files below (it will not descend into a fully-ignored directory).
+data/*
+!data/inbox/
+data/inbox/*
+!data/inbox/zalo/
+data/inbox/zalo/*
+!data/inbox/zalo/.gitkeep
+!data/out/
+data/out/*
+!data/out/.gitkeep
+probe.md
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,8 @@
+requests>=2.31
+PyYAML>=6.0
+openpyxl>=3.1
+python-dotenv>=1.0
+
+# Extraction providers -- install whichever you configure in config.yaml.
+anthropic>=0.40
+google-genai>=0.3

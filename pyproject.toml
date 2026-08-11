@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lavabo-extract-agent"
+version = "0.1.0"
+description = "ETL agent: Zalo and Meta business chat conversations to Excel"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "PyYAML>=6.0",
+    "openpyxl>=3.1",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+gemini = ["google-genai>=0.3"]
+
+[project.scripts]
+lavabo = "lavabo.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

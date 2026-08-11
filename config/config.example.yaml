@@ -1,0 +1,37 @@
+# Copy to config/config.yaml and edit. Secrets live in .env, never here.
+
+meta:
+  page_id: "1234567890"          # Facebook Page ID
+  instagram_id: ""               # IG professional account ID; leave blank if unused
+  api_version: "v21.0"
+  platforms: ["messenger"]       # add "instagram" once instagram_manage_messages is granted
+  page_size: 50
+  message_page_size: 100
+  max_conversations: null        # cap for testing, e.g. 5
+
+zalo:
+  inbox_dir: "data/inbox/zalo"
+  timezone: "Asia/Ho_Chi_Minh"   # Zalo transcripts carry naive local time
+
+  # Names that are US, not the customer. Anything else is treated as inbound.
+  # Get these exactly right or every message will be labelled inbound.
+  own_names:
+    - "Lavabo Store"
+    - "Your Name Here"
+
+  # Optional: regex tried BEFORE the built-in patterns. Needs named groups
+  # (?P<name>...) (?P<ts>...) (?P<text>...). Tune against a real export --
+  # see docs/03-zalo-runbook.md.
+  line_patterns: []
+
+extract:
+  provider: "anthropic"          # anthropic | gemini
+  model: "claude-opus-5"         # or claude-sonnet-5 for cheaper bulk runs
+  max_tokens: 4096
+  temperature: 0.0               # deterministic: this is extraction, not writing
+  concurrency: 4
+  max_transcript_chars: 120000
+
+db_path: "data/staging.db"
+output_dir: "data/out"
+schema_path: "config/schema.yaml"

@@ -1,0 +1,64 @@
+# THE ONLY FILE YOU EDIT WHEN YOUR COLUMN REQUIREMENTS ARRIVE.
+#
+# Drives both the JSON schema handed to the LLM and the Excel header row, in this order.
+# Copy to config/schema.yaml and replace the placeholder columns below with your real ones.
+#
+# Bump schema_version on every change: it is part of the extraction cache key, so bumping
+# it correctly forces a re-extraction instead of serving stale values.
+#
+# See docs/05-schema-guide.md for how to write descriptions that actually work.
+
+schema_version: 1
+
+# Optional. Domain context that applies to every column. Keep it short.
+instructions: |
+  This is a Vietnamese sanitaryware retailer. Customers ask about basins, faucets and
+  bathroom fittings. Prices are in VND; "tr" or "củ" means million. Keep product names
+  and customer names in their original language.
+
+columns:
+  - name: customer_name
+    type: string
+    required: true
+    description: >
+      The customer's name as they gave it in the conversation. Prefer a name they typed
+      over the account display name. Null if never stated.
+
+  - name: phone_number
+    type: string
+    description: >
+      Contact phone number the customer provided, digits only, no spaces or country code.
+      Null if not provided.
+
+  - name: intent
+    type: string
+    required: true
+    enum: [price_inquiry, order, complaint, warranty, shipping_status, other]
+    description: The customer's primary reason for messaging.
+
+  - name: products_mentioned
+    type: array
+    description: >
+      Product names or model codes the customer asked about, exactly as written in the
+      conversation. Empty list if none.
+
+  - name: order_value_vnd
+    type: number
+    description: >
+      Final agreed order value in VND as a plain number (e.g. 2500000 for "2tr5").
+      Null unless a specific amount was agreed.
+
+  - name: outcome
+    type: string
+    enum: [purchased, quoted_no_decision, lost, pending_followup, unknown]
+    description: Where the conversation ended up by its last message.
+
+  - name: followup_needed
+    type: boolean
+    description: True if the last message leaves something outstanding on our side.
+
+  - name: summary
+    type: string
+    required: true
+    description: >
+      Two sentences maximum, in Vietnamese: what the customer wanted and what happened.
