@@ -313,6 +313,18 @@ class Store:
             output_tokens=row["output_tokens"],
         )
 
+    def latest_extraction_rows(self, conversation_id: str) -> list[dict]:
+        """Every stored attempt for a conversation, newest first, errors included.
+
+        cached_extraction() deliberately ignores failed rows; diagnostics need exactly
+        those, since a silent failure is what makes an output look merely incomplete.
+        """
+        rows = self.conn.execute(
+            "SELECT * FROM extractions WHERE conversation_id=? ORDER BY extracted_at DESC",
+            (conversation_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def stats(self) -> dict[str, int]:
         q = lambda sql: self.conn.execute(sql).fetchone()[0]  # noqa: E731
         return {

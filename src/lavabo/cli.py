@@ -5,6 +5,7 @@
     lavabo extract [--limit N] [--dry-run] [--provider gemini --api-key AIza...]
     lavabo load --out report.xlsx
     lavabo run --out report.xlsx       ingest + extract + load
+    lavabo inspect                     show stored extractions, including failures
     lavabo config                      show effective settings + drift from the example
     lavabo models                      list models this key can use
     lavabo verify
@@ -205,8 +206,15 @@ def cmd_load(args, cfg: Config) -> int:
 
         missing = len(conversations) - len(results)
         if missing:
-            log.warning("%d conversation(s) have no extraction for schema v%d — "
-                        "run `lavabo extract` first", missing, schema.version)
+            # Loud, because the workbook still writes: those rows carry only the
+            # fields derived from the note header, which reads as "mostly empty"
+            # rather than as a failure.
+            print(f"\n!! {missing} of {len(conversations)} order(s) have no usable "
+                  f"extraction for the current schema.")
+            print("   Their rows will contain only date, order number and customer.")
+            print("   Run `lavabo inspect` to see why, then `lavabo extract`.\n")
+            log.warning("%d conversation(s) have no extraction for schema v%d",
+                        missing, schema.version)
 
         if args.layout == "senkahomes":
             from .load.senkahomes import write_orders_workbook
@@ -278,6 +286,64 @@ def cmd_check(args, cfg: Config) -> int:
             ok = False
 
     return 0 if ok else 1
+
+
+def cmd_inspect(args, cfg: Config) -> int:
+    """Show what was actually stored for each conversation, errors and all.
+
+    An output that looks merely incomplete usually means extraction failed and the
+    writer fell back to the fields it can derive without a model. This makes the
+    difference visible.
+    """
+    from .extract.prompt import PROMPT_VERSION
+
+    schema = cfg.load_schema()
+    fingerprint = schema.fingerprint()
+
+    with Store(cfg.db_path) as store:
+        conversations = store.conversations()
+        if args.limit:
+            conversations = conversations[: args.limit]
+
+        print(f"schema v{schema.version} fingerprint {fingerprint}, "
+              f"model {cfg.extract.model}\n")
+
+        usable = failed = stale = absent = 0
+        for conv in conversations:
+            rows = store.latest_extraction_rows(conv.conversation_id)
+            current = [r for r in rows
+                       if r["schema_hash"] == fingerprint and r["model"] == cfg.extract.model
+                       and r["prompt_version"] == PROMPT_VERSION]
+
+            print(f"--- {conv.conversation_id}")
+            if not rows:
+                absent += 1
+                print("    no extraction stored at all")
+            elif not current:
+                stale += 1
+                other = rows[0]
+                print(f"    only stale rows: schema_hash={other['schema_hash'] or '(none)'} "
+                      f"model={other['model']} — re-run `lavabo extract`")
+            else:
+                row = current[0]
+                if row["error"]:
+                    failed += 1
+                    print(f"    FAILED: {row['error'][:300]}")
+                else:
+                    usable += 1
+                    values = json.loads(row["values_json"])
+                    filled = [k for k, v in values.items() if v not in (None, "", [], {})]
+                    print(f"    ok, {len(filled)}/{len(schema.names)} fields filled")
+                    if args.values:
+                        print("    " + json.dumps(values, ensure_ascii=False)[:600])
+                    elif empty := [k for k in schema.names if k not in filled]:
+                        print(f"    empty: {', '.join(empty)}")
+
+        print(f"\nusable {usable}, failed {failed}, stale {stale}, none {absent}")
+        if failed or stale or absent:
+            print("Anything not 'usable' contributes only its header-derived fields "
+                  "(date, order no, customer) to the workbook.")
+    return 0
 
 
 def cmd_config(args, cfg: Config) -> int:
@@ -479,6 +545,11 @@ def main(argv: list[str] | None = None) -> int:
                                     "does not record who sent it")
     add_llm_args(p)
 
+    p = sub.add_parser("inspect", help="show stored extractions, including failures")
+    p.add_argument("--limit", type=int)
+    p.add_argument("--values", action="store_true", help="print the extracted values too")
+    add_llm_args(p)
+
     p = sub.add_parser("config", help="show effective settings and drift from the example")
     add_llm_args(p)
 
@@ -511,7 +582,8 @@ def main(argv: list[str] | None = None) -> int:
 
     handlers = {"check": cmd_check, "ingest": cmd_ingest, "extract": cmd_extract,
                 "load": cmd_load, "verify": cmd_verify, "run": cmd_run,
-                "models": cmd_models, "config": cmd_config}
+                "models": cmd_models, "config": cmd_config,
+                "inspect": cmd_inspect}
     try:
         return handlers[args.command](args, cfg)
     except KeyboardInterrupt:
