@@ -125,16 +125,31 @@ What it does with a chunk of chat:
 
 ### Where an order ends
 
-Orders are cut at their **deposit line** — `Đã cọc 500k`, `Đã cọc 1tr, còn 19tr2`. Senders
+Orders are cut at their **money line** — the one carrying the total and/or deposit. Senders
 cannot be told apart in a Zalo copy, so without this every order picks up whatever was said
-next ("ok chị", "em nhận rồi ạ").
+next ("ok chị", "@All mai phải đi đơn nào...").
 
-- A `Note:` line straight after the deposit is **kept** — it belongs to the order.
-- An order with no deposit falls back to ending at its `Tổng` line.
-- An order with neither is **left untouched**, rather than guessing and risking the loss of
-  real order lines.
-- A later `cọc` mention in chatter cannot fool it: the *first* match wins, and the real
-  deposit is always written by the shop as part of the order.
+Matching is deliberately forgiving, because staff type fast:
+
+| Written | Recognised |
+|---|---|
+| `Đã cọc 500k` | yes |
+| `Đã cọc 1tr, còn 19tr2` | yes |
+| `Toongr 6tr, đã cọc 500k` | yes — telex for "Tổng", total and deposit on one line |
+| `Tong 5tr, coc 1tr` | yes — no diacritics |
+| `TỔNG 8TR, ĐÃ CỌC 2TR` | yes |
+
+Text is folded to plain lowercase ASCII before matching, so tone marks and telex spellings
+all collapse to the same thing, and the match is searched anywhere in the line rather than
+only at its start.
+
+- A `Note:` line straight after is **kept** — it belongs to the order.
+- With no money line at all, the first `@mention` marks the start of chatter and ends the
+  order on the line before it.
+- With none of those, the block is **left untouched**, rather than guessing and risking the
+  loss of real order lines.
+- Chatter cannot fool it. The *first* money match wins, and a match needs an amount right
+  after it — so `em cọc rồi ạ`, with no number, is correctly ignored.
 
 `--no-trim` disables it.
 

@@ -43,6 +43,7 @@ import hashlib
 import re
 import sys
 import time
+import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date
@@ -174,28 +175,60 @@ class OrderBlock:
         return f"{self.day}/{self.month} đơn {self.order_no}{who}"
 
 
-# An order ends at its deposit line -- "Đã cọc 500k", "Đã cọc 1tr, còn 19tr2".
-# Anything after that is other people talking, which we cannot separate by sender.
-DEPOSIT_LINE = re.compile(r"^\s*(?:đã\s*)?(?:cọc|coc)\b", re.IGNORECASE)
-# Fallback terminator when an order carries no deposit at all.
-TOTAL_LINE = re.compile(r"^\s*(?:tổng|tong)\b", re.IGNORECASE)
+def fold(text: str) -> str:
+    """Lowercase and strip Vietnamese diacritics, so typo-tolerant matching is possible.
+
+    Shop staff type fast and often skip tone conversion: "Tổng" arrives as "Toongr"
+    (telex, where oo->ô and r->hook). Folding both sides to plain ASCII means one
+    pattern covers "Tổng", "Tong", "Toongr" and "TỔNG" without enumerating variants.
+    """
+    decomposed = unicodedata.normalize("NFD", text)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return stripped.replace("đ", "d").replace("Đ", "D").lower()
+
+
+# Matched against the FOLDED line, and searched anywhere in it rather than anchored:
+# total and deposit are frequently on one line -- "Toongr 6tr, đã cọc 500k".
+# A number must follow within a few characters, so chatter like "em cọc rồi ạ" (no
+# amount) cannot be mistaken for the real deposit.
+DEPOSIT_ANY = re.compile(r"\b(?:da\s+)?coc\b[^\d\n]{0,12}\d")
+# "tong", "toong", "toongr", "tongr" ... o repeated, optional trailing telex tone key.
+TOTAL_ANY = re.compile(r"\bto+ng[rsfjx]?\b[^\d\n]{0,12}\d")
+# A line addressed at someone is group chatter, never part of an order.
+MENTION_LINE = re.compile(r"^\s*@")
 # Lines that still belong to the order even though they follow the terminator.
-TRAILING_KEEP = re.compile(r"^\s*(?:note|ghi\s*ch[úu])\b\s*[:\-]?", re.IGNORECASE)
+TRAILING_KEEP = re.compile(r"^\s*(?:note|ghi\s*ch[uu])\b\s*[:\-]?")
+
+
+def _terminator(lines: list[str]) -> int | None:
+    """Index of the last line belonging to the order, or None if undecidable."""
+    folded = [fold(ln) for ln in lines]
+
+    for i, ln in enumerate(folded):
+        if DEPOSIT_ANY.search(ln):
+            return i
+    for i, ln in enumerate(folded):
+        if TOTAL_ANY.search(ln):
+            return i
+    # No money line found. An @mention is still a reliable start-of-chatter marker,
+    # so end the order on the line before the first one.
+    for i, ln in enumerate(lines):
+        if MENTION_LINE.match(ln):
+            return i - 1 if i else None
+    return None
 
 
 def trim_after_deposit(lines: list[str]) -> tuple[list[str], int]:
     """Cut an order block at its deposit line. Returns (kept, dropped_count).
 
-    Uses the FIRST deposit match, not the last: the real one is written by the shop
-    as part of the order, while any later mention ("em cọc rồi ạ") is chatter.
+    Takes the FIRST money match, not the last: the real one is written by the shop as
+    part of the order, while anything later is chatter.
 
     A "Note:" line immediately following is kept -- it is part of the order and feeds
-    the note column. If no terminator is found the block is left untouched, since
-    guessing where it ends would risk discarding real order lines.
+    the note column. When nothing identifies an end the block is left untouched, since
+    guessing risks discarding real order lines.
     """
-    end = next((i for i, ln in enumerate(lines) if DEPOSIT_LINE.match(ln)), None)
-    if end is None:
-        end = next((i for i, ln in enumerate(lines) if TOTAL_LINE.match(ln)), None)
+    end = _terminator(lines)
     if end is None:
         return lines, 0
 
@@ -203,7 +236,7 @@ def trim_after_deposit(lines: list[str]) -> tuple[list[str], int]:
     for ln in lines[end + 1:]:
         if not ln.strip():
             continue
-        if TRAILING_KEEP.match(ln):
+        if TRAILING_KEEP.match(fold(ln)):
             kept.append(ln)
         else:
             break
