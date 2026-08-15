@@ -145,31 +145,46 @@ def existing_hashes(inbox: Path) -> set[str]:
 
 # --------------------------------------------------------------------------- main
 
+def ask_name() -> str:
+    try:
+        return input("    type the customer name (or Enter to skip): ").strip()
+    except EOFError:
+        return ""
+
+
 def handle(text: str, cfg, own: set[str], forced: str | None) -> Path | None:
     name, senders = derive_name(text, own)
 
     if forced:
         name = forced
     elif name is None:
-        print("  ! could not identify the customer from the transcript.")
+        print("  ! could not identify the customer from the copied text.")
         if senders:
             print(f"    senders seen: {', '.join(senders)}")
             print("    (all of them matched zalo.own_names)")
         else:
-            print("    no sender lines recognised — the transcript format may differ from")
-            print("    the built-in patterns. See docs/03-zalo-runbook.md.")
-        try:
-            name = input("    type the customer name (or Enter to skip): ").strip()
-        except EOFError:
-            name = ""
+            print("    no sender lines recognised — this client's copy format differs from")
+            print("    the built-in patterns. The text is still saved; the parser gets")
+            print("    tuned to it later. Send the file's first ~15 lines to fix parsing.")
+        name = ask_name()
         if not name:
             print("    skipped.")
             return None
 
     path = save(text, name, cfg.zalo.inbox_dir)
-    lines = sum(senders.values())
-    print(f"  saved {path.name}  ({lines} messages, {len(text):,} chars)")
+    count = sum(senders.values())
+    detail = f"{count} messages" if count else "format not yet recognised"
+    print(f"  saved {path.name}  ({detail}, {len(text):,} chars)")
     return path
+
+
+def explain_rejection(text: str) -> str:
+    """Why looks_like_transcript() said no — shown in --debug."""
+    if len(text) < MIN_TRANSCRIPT_CHARS:
+        return f"only {len(text)} chars (need {MIN_TRANSCRIPT_CHARS}+)"
+    matched = sum(parse_senders(text).values())
+    return (f"{len(text):,} chars but only {matched} line(s) matched a sender pattern "
+            f"(need {MIN_MATCHED_LINES}+)")
 
 
 def main() -> int:
@@ -178,6 +193,12 @@ def main() -> int:
     ap.add_argument("-c", "--config", type=Path, help="path to config.yaml")
     ap.add_argument("--once", action="store_true", help="exit after one capture")
     ap.add_argument("--name", help="force the customer name for the next capture")
+    ap.add_argument("--raw", action="store_true",
+                    help="save ANY copied text, even if the format is not recognised "
+                         "(asks for the name; use when the built-in patterns don't match "
+                         "your Zalo client)")
+    ap.add_argument("--debug", action="store_true",
+                    help="report every clipboard change and why it was accepted or rejected")
     args = ap.parse_args()
 
     cfg = Config.load(args.config)
@@ -195,9 +216,15 @@ def main() -> int:
 
     seen = existing_hashes(cfg.zalo.inbox_dir)
     print(f"Watching clipboard -> {cfg.zalo.inbox_dir}")
-    print(f"({len(seen)} conversation(s) already captured)\n")
-    print("In Zalo: open a conversation, scroll to the TOP of what you want,")
-    print("         then Ctrl+A, Ctrl+C. Repeat per conversation. Ctrl+C here to stop.\n")
+    print(f"({len(seen)} conversation(s) already captured)"
+          + ("  [RAW MODE: saving anything copied]" if args.raw else "")
+          + ("  [DEBUG]" if args.debug else "") + "\n")
+    print("In Zalo: open a conversation, scroll to the TOP of what you want, then")
+    print("         select all and copy (Cmd+A/Cmd+C on macOS, Ctrl+A/Ctrl+C on Windows).")
+    print("         Repeat per conversation. Ctrl+C here to stop — always Ctrl.\n")
+    if not args.raw:
+        print("Nothing happening when you copy? Re-run with --debug to see why, or")
+        print("--raw to save the text anyway and let the parser be tuned afterwards.\n")
 
     last = read_clipboard() or ""
     captured = 0
@@ -211,7 +238,15 @@ def main() -> int:
                 continue
             last = current
 
-            if not looks_like_transcript(current):
+            recognised = looks_like_transcript(current)
+
+            if args.debug:
+                preview = current.splitlines()[0][:70] if current.splitlines() else ""
+                verdict = "accepted" if recognised else f"rejected: {explain_rejection(current)}"
+                print(f"  [debug] clipboard changed — {verdict}")
+                print(f"  [debug] first line: {preview!r}")
+
+            if not recognised and not args.raw:
                 continue
 
             digest = hashlib.sha256(current.encode("utf-8")).hexdigest()
