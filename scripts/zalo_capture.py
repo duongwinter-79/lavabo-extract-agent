@@ -18,6 +18,10 @@ Overlapping copies are expected and harmless: orders are identified by day + mon
 order number, so re-covering ground costs nothing, and an order truncated by where you
 stopped selecting is replaced when a later chunk contains more of it.
 
+Each order is cut at its deposit line ("Đã cọc 500k", "Đã cọc 1tr, còn 19tr2"), since
+everything after that is other people talking and senders cannot be told apart. A
+trailing "Note:" line is kept. --no-trim disables this.
+
 Text with no order headers falls back to being saved whole, which covers ordinary
 conversations.
 
@@ -29,6 +33,7 @@ Usage:
     python scripts/zalo_capture.py --all-months       # no month filter
     python scripts/zalo_capture.py --no-split         # save each copy as one file
     python scripts/zalo_capture.py --debug            # explain what was accepted/rejected
+    python scripts/zalo_capture.py --retrim           # trim files already captured, in place
 """
 
 from __future__ import annotations
@@ -169,6 +174,46 @@ class OrderBlock:
         return f"{self.day}/{self.month} đơn {self.order_no}{who}"
 
 
+# An order ends at its deposit line -- "Đã cọc 500k", "Đã cọc 1tr, còn 19tr2".
+# Anything after that is other people talking, which we cannot separate by sender.
+DEPOSIT_LINE = re.compile(r"^\s*(?:đã\s*)?(?:cọc|coc)\b", re.IGNORECASE)
+# Fallback terminator when an order carries no deposit at all.
+TOTAL_LINE = re.compile(r"^\s*(?:tổng|tong)\b", re.IGNORECASE)
+# Lines that still belong to the order even though they follow the terminator.
+TRAILING_KEEP = re.compile(r"^\s*(?:note|ghi\s*ch[úu])\b\s*[:\-]?", re.IGNORECASE)
+
+
+def trim_after_deposit(lines: list[str]) -> tuple[list[str], int]:
+    """Cut an order block at its deposit line. Returns (kept, dropped_count).
+
+    Uses the FIRST deposit match, not the last: the real one is written by the shop
+    as part of the order, while any later mention ("em cọc rồi ạ") is chatter.
+
+    A "Note:" line immediately following is kept -- it is part of the order and feeds
+    the note column. If no terminator is found the block is left untouched, since
+    guessing where it ends would risk discarding real order lines.
+    """
+    end = next((i for i, ln in enumerate(lines) if DEPOSIT_LINE.match(ln)), None)
+    if end is None:
+        end = next((i for i, ln in enumerate(lines) if TOTAL_LINE.match(ln)), None)
+    if end is None:
+        return lines, 0
+
+    kept = lines[: end + 1]
+    for ln in lines[end + 1:]:
+        if not ln.strip():
+            continue
+        if TRAILING_KEEP.match(ln):
+            kept.append(ln)
+        else:
+            break
+
+    # Counted by difference rather than by slice position, since blank lines skipped
+    # while scanning for trailing keepers would misalign an index-based count.
+    dropped = len([ln for ln in lines if ln.strip()]) - len([ln for ln in kept if ln.strip()])
+    return kept, dropped
+
+
 def split_orders(text: str) -> list[OrderBlock]:
     """Cut a chunk of group chat into order blocks.
 
@@ -276,7 +321,8 @@ def ask_name() -> str:
         return ""
 
 
-def handle_orders(text: str, cfg, month: int, year: int, *, all_months: bool) -> tuple[int, int, int]:
+def handle_orders(text: str, cfg, month: int, year: int, *,
+                  all_months: bool, trim: bool = True) -> tuple[int, int, int]:
     """Split a chat chunk into orders and save the wanted ones.
 
     Returns (saved, duplicates, out_of_month).
@@ -289,9 +335,12 @@ def handle_orders(text: str, cfg, month: int, year: int, *, all_months: bool) ->
     skipped_month = len(blocks) - len(wanted)
 
     known = existing_orders(cfg.zalo.inbox_dir)
-    saved = duplicates = 0
+    saved = duplicates = trimmed_lines = 0
 
     for block in wanted:
+        if trim:
+            block.lines, dropped = trim_after_deposit(block.lines)
+            trimmed_lines += dropped
         body = block.text
         if block.key in known:
             path, size = known[block.key]
@@ -317,6 +366,8 @@ def handle_orders(text: str, cfg, month: int, year: int, *, all_months: bool) ->
         bits.append(f"{duplicates} already captured")
     if skipped_month:
         bits.append(f"{skipped_month} outside {month:02d}/{year}")
+    if trimmed_lines:
+        bits.append(f"{trimmed_lines} trailing line(s) trimmed")
     print("  → " + ", ".join(bits))
 
     return (saved, duplicates, skipped_month)
@@ -358,6 +409,37 @@ def explain_rejection(text: str) -> str:
             f"patterns (need {MIN_CAPTURE_LINES}+ lines, or {MIN_MATCHED_LINES}+ sender lines)")
 
 
+def retrim_existing(inbox: Path) -> int:
+    """Re-trim files already in the inbox, in place.
+
+    Needed because captures taken before trimming existed still carry trailing
+    chatter, and re-capturing will not fix them: a trimmed block is *shorter* than
+    the stored one, and the dedupe rule only replaces a file when the new capture is
+    longer. This applies the trim directly instead.
+    """
+    changed = 0
+    for path in sorted(inbox.glob("*.txt")):
+        text = path.read_text(encoding="utf-8")
+        lines = text.splitlines()
+        if not lines:
+            continue
+
+        header, body = lines[0], lines[1:]
+        if not ORDER_HEADER.match(header.strip()):
+            continue                       # not an order note; leave it alone
+
+        kept, dropped = trim_after_deposit(body)
+        if not dropped:
+            continue
+
+        path.write_text("\n".join([header, *kept]).strip(), encoding="utf-8")
+        print(f"  trimmed {path.name}  ({dropped} trailing line(s) removed)")
+        changed += 1
+
+    print(f"\n{changed} file(s) trimmed." if changed else "\nNothing to trim.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -375,6 +457,12 @@ def main() -> int:
     ap.add_argument("--year", type=int, metavar="Y", help="year for --month (default: this year)")
     ap.add_argument("--all-months", action="store_true",
                     help="keep every order found, not just the target month")
+    ap.add_argument("--retrim", action="store_true",
+                    help="trim files already in the inbox, in place, then exit "
+                         "(fixes captures taken before trimming existed)")
+    ap.add_argument("--no-trim", action="store_true",
+                    help="keep everything after the deposit line instead of cutting the "
+                         "order there (default is to trim trailing chatter)")
     ap.add_argument("--no-split", action="store_true",
                     help="save the whole copied text as one file, without splitting on order headers")
     args = ap.parse_args()
@@ -382,6 +470,10 @@ def main() -> int:
     today = date.today()
     month = args.month or today.month
     year = args.year or today.year
+
+    cfg_early = Config.load(args.config)
+    if args.retrim:
+        return retrim_existing(cfg_early.zalo.inbox_dir)
 
     cfg = Config.load(args.config)
     own = {n.strip().casefold() for n in cfg.zalo.own_names if n.strip()}
@@ -403,7 +495,8 @@ def main() -> int:
     print(f"Watching clipboard -> {cfg.zalo.inbox_dir}")
     print(f"({len(already)} order(s) already captured; keeping {scope})"
           + ("  [RAW]" if args.raw else "") + ("  [DEBUG]" if args.debug else "")
-          + ("  [NO-SPLIT]" if args.no_split else "") + "\n")
+          + ("  [NO-SPLIT]" if args.no_split else "")
+          + ("  [NO-TRIM]" if args.no_trim else "") + "\n")
     print("In Zalo: open the group chat, scroll up through the month you want, then")
     print("         select all and copy (Cmd+A/Cmd+C on macOS, Ctrl+A/Ctrl+C on Windows).")
     print("         Copy in chunks as you scroll — overlapping chunks are fine, each order")
@@ -442,7 +535,8 @@ def main() -> int:
 
             if not args.no_split and any(ORDER_HEADER.match(ln.strip()) for ln in current.splitlines()):
                 saved, _, _ = handle_orders(current, cfg, month, year,
-                                            all_months=args.all_months)
+                                            all_months=args.all_months,
+                                            trim=not args.no_trim)
                 seen.add(digest)
                 captured += saved
                 if args.once and saved:

@@ -123,6 +123,31 @@ What it does with a chunk of chat:
 | The same order seen in an overlapping chunk | saved once, not duplicated |
 | An order truncated by where you stopped selecting | replaced when a later chunk has more of it |
 
+### Where an order ends
+
+Orders are cut at their **deposit line** — `Đã cọc 500k`, `Đã cọc 1tr, còn 19tr2`. Senders
+cannot be told apart in a Zalo copy, so without this every order picks up whatever was said
+next ("ok chị", "em nhận rồi ạ").
+
+- A `Note:` line straight after the deposit is **kept** — it belongs to the order.
+- An order with no deposit falls back to ending at its `Tổng` line.
+- An order with neither is **left untouched**, rather than guessing and risking the loss of
+  real order lines.
+- A later `cọc` mention in chatter cannot fool it: the *first* match wins, and the real
+  deposit is always written by the shop as part of the order.
+
+`--no-trim` disables it.
+
+**Already captured files from before this existed** still carry their trailing chatter, and
+re-capturing will not fix them — a trimmed block is shorter than the stored one, and the
+dedupe rule only replaces a file when the new capture is longer. Repair them in place:
+
+```bash
+python scripts/zalo_capture.py --retrim
+```
+
+Safe to run repeatedly; it only touches files that actually have something to trim.
+
 **Overlapping copies are fine and expected.** Orders are identified by day + month + order
 number, not by file content, so scrolling back over ground you already covered costs nothing.
 
