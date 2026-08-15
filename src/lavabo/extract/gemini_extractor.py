@@ -49,12 +49,15 @@ def _to_gemini_schema(node: dict) -> dict:
 
 
 class GeminiExtractor(Extractor):
+    API_KEY_VARS = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
+
     def __init__(self, config, schema) -> None:
         super().__init__(config, schema)
         try:
             from google import genai
         except ImportError as exc:
             raise RuntimeError("pip install google-genai") from exc
+        self.require_api_key()
         self.genai = genai
         self.client = genai.Client()  # reads GEMINI_API_KEY / GOOGLE_API_KEY
 

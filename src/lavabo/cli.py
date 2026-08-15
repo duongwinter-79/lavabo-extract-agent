@@ -195,6 +195,19 @@ def cmd_check(args, cfg: Config) -> int:
             print(f"schema:     NOT READY — {exc}")
             ok = False
 
+        # LLM key: only needed for `extract`, so report it without failing the preflight.
+        try:
+            from .extract.base import extractor_class
+            cls = extractor_class(cfg.extract.provider)
+            if cls.has_api_key():
+                print(f"llm:        {cfg.extract.provider} / {cfg.extract.model}, key present")
+            else:
+                print(f"llm:        {cfg.extract.provider} / {cfg.extract.model} — "
+                      f"{' or '.join(cls.API_KEY_VARS)} NOT set "
+                      "(fine until you run `lavabo extract`)")
+        except Exception as exc:
+            print(f"llm:        NOT READY — {exc}")
+
         from .connectors.zalo_export import ZaloExportConnector
         for good, msg in [ZaloExportConnector(cfg.zalo).check()]:
             print(f"{'OK  ' if good else 'FAIL'} {msg}")

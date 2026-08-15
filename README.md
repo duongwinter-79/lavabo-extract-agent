@@ -15,7 +15,8 @@ Meta  ──poll──▶ Graph ─┘
 
 | Document | What's in it |
 |---|---|
-| **[docs/01-source-verification.md](docs/01-source-verification.md)** | **Task 1** — what Zalo and Meta can actually give us, with confidence levels. Read this first: it contains one finding that changes the plan. |
+| **[docs/00-quickstart.md](docs/00-quickstart.md)** | **Start here to run it** — clone to Excel with one Zalo conversation, tested step by step |
+| [docs/01-source-verification.md](docs/01-source-verification.md) | **Task 1** — what Zalo and Meta can actually give us, with confidence levels. Read this first: it contains one finding that changes the plan. |
 | [docs/02-agent-plan.md](docs/02-agent-plan.md) | **Task 2** — the architecture, stage by stage, and the build order |
 | [docs/03-zalo-runbook.md](docs/03-zalo-runbook.md) | The human SOP for getting Zalo conversations in |
 | [docs/04-meta-setup.md](docs/04-meta-setup.md) | Meta app, tokens, App Review, troubleshooting |
@@ -53,6 +54,8 @@ cp config/schema.example.yaml config/schema.yaml       # then edit the columns
 ```
 
 ## Use
+
+First run? Follow **[docs/00-quickstart.md](docs/00-quickstart.md)** instead of this list.
 
 ```bash
 lavabo check                              # preflight: credentials, paths, schema

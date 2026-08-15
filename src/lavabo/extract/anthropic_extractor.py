@@ -17,12 +17,15 @@ log = logging.getLogger(__name__)
 
 
 class AnthropicExtractor(Extractor):
+    API_KEY_VARS = ("ANTHROPIC_API_KEY",)
+
     def __init__(self, config, schema) -> None:
         super().__init__(config, schema)
         try:
             import anthropic
         except ImportError as exc:
             raise RuntimeError("pip install anthropic") from exc
+        self.require_api_key()
         self.client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
 
     def extract(self, conv: Conversation) -> ExtractionResult:

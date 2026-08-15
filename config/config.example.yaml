@@ -1,10 +1,14 @@
 # Copy to config/config.yaml and edit. Secrets live in .env, never here.
 
 meta:
-  page_id: "1234567890"          # Facebook Page ID
+  # Meta is DISABLED by default so a Zalo-only first run works out of the box.
+  # To enable: set page_id, put META_PAGE_TOKEN in .env, then set
+  #   platforms: ["messenger"]        (add "instagram" once granted)
+  platforms: []
+
+  page_id: ""                    # Facebook Page ID
   instagram_id: ""               # IG professional account ID; leave blank if unused
   api_version: "v21.0"
-  platforms: ["messenger"]       # add "instagram" once instagram_manage_messages is granted
   page_size: 50
   message_page_size: 100
   max_conversations: null        # cap for testing, e.g. 5

@@ -1,0 +1,244 @@
+# Quickstart — first run with ONE Zalo conversation
+
+Goal: get one real conversation from Zalo into an Excel file, end to end, so you know the
+pipeline works before spending 45 minutes capturing 50 of them.
+
+**No Meta setup needed.** Meta is disabled by default; this whole guide is Zalo-only.
+
+Every command below was run against a clean clone before being written down.
+
+---
+
+## 0. Prerequisites
+
+- **Python 3.11 or newer** (`python --version`). 3.10 and below will not work.
+- **git**
+- **Zalo PC or Zalo Web**, logged in
+- An **Anthropic or Gemini API key** — only needed at step 7. Steps 1–6 work without one.
+
+---
+
+## 1. Clone
+
+```bash
+git clone https://github.com/duongwinter-79/lavabo-extract-agent.git
+cd lavabo-extract-agent
+```
+
+## 2. Install
+
+**Windows (PowerShell):**
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+pip install -e .
+```
+
+**macOS / Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+```
+
+Check it worked:
+```bash
+lavabo --help
+```
+
+> `lavabo: command not found` → the venv isn't active. Re-run the activate line. On Windows
+> you'll see `(.venv)` at the start of your prompt when it is.
+
+## 3. Create your config files
+
+```bash
+cp config/config.example.yaml config/config.yaml
+cp config/schema.example.yaml config/schema.yaml
+cp .env.example .env
+```
+
+Windows PowerShell uses `copy` instead of `cp`.
+
+### Edit `config/config.yaml` — one field matters right now
+
+```yaml
+zalo:
+  own_names:
+    - "Lavabo Store"        # <- YOUR exact Zalo display name
+```
+
+**Get this exactly right.** It is how the agent tells your messages from the customer's.
+Wrong or empty means every message is labelled as coming from the customer, and nothing
+errors — it just quietly produces wrong data.
+
+Leave everything else alone for now. `schema.yaml` keeps its placeholder columns until your
+real requirements are ready.
+
+## 4. Preflight
+
+```bash
+lavabo check
+```
+
+Expected:
+
+```
+staging db: data/staging.db
+{ "conversations": 0, "messages": 0, ... }
+schema:     v1, 8 columns (customer_name, phone_number, intent, ...)
+llm:        anthropic / claude-opus-5 — ANTHROPIC_API_KEY NOT set (fine until you run `lavabo extract`)
+OK   zalo: 0 file(s) in data/inbox/zalo
+```
+
+Exit code 0. The missing API key is expected at this stage.
+
+> `zalo: ... WARNING: zalo.own_names is empty` → go back to step 3.
+
+## 5. Capture ONE conversation
+
+Leave this running in its own terminal:
+
+```bash
+python scripts/zalo_capture.py
+```
+
+Then, in Zalo — desktop or web, **pick one client and stick with it**:
+
+1. Open a conversation (start with a **short** one for this test)
+2. Scroll to the top of it — Zalo lazy-loads history, so without this you only get the last screenful
+3. `Ctrl+A`, then `Ctrl+C`
+
+The terminal should print:
+
+```
+  saved Nguyễn Văn An.txt  (47 messages, 3,201 chars)
+```
+
+Then press `Ctrl+C` in that terminal to stop.
+
+### If nothing was saved
+
+The script only accepts text it recognises as a transcript. Nothing printed means the copied
+format doesn't match the built-in patterns — **expected, and easy to fix.** Save the copy
+manually so we have a sample:
+
+- Paste into **Notepad** (not Word) and save as UTF-8 to `data/inbox/zalo/<customer name>.txt`
+
+Then send me the first 5 lines and I'll tune the pattern. Do not capture the other 49 until
+this works.
+
+## 6. Ingest
+
+```bash
+lavabo ingest --source zalo
+```
+
+Expected:
+
+```
+INFO  lavabo.connectors.zalo_export: Nguyễn Văn An.txt: pattern matched 47/47 lines (100%)
+ingested 1 conversation(s), 47 new message(s)
+```
+
+**Check the match rate.** Above 90% is good. Below 50% prints a warning and means the regex
+needs tuning — send me the sample rather than continuing.
+
+Also sanity-check the message count against what you see in Zalo. If Zalo shows 200 messages
+and this says 47, you didn't scroll far enough at step 5.
+
+## 7. Look at the prompt before spending anything
+
+```bash
+lavabo extract --limit 1 --dry-run
+```
+
+Prints the exact prompt and a token estimate. **No API call, no cost, no key needed.** Read
+the transcript in the output — the timestamps and who-said-what should look right.
+
+## 8. Add your API key and extract
+
+Put the key in `.env`:
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Then:
+
+```bash
+lavabo extract --limit 1
+```
+
+Expected:
+
+```
+  ok   zalo:Nguyễn Văn An:a1b2c3d4 (7/8 fields)
+extracted 1, cached 0, failed 0
+```
+
+`7/8` means the model filled 7 columns and returned null for one — that's normal and correct
+behaviour when something genuinely isn't stated in the conversation.
+
+## 9. Write the Excel file
+
+```bash
+lavabo load --out data/out/first.xlsx
+```
+
+Open it. Three sheets:
+
+- **Data** — your one row. **Amber cells are nulls** — the model declined to guess.
+- **Sources** — message count, date range, source filename, so you can audit any cell.
+- **Run** — model, schema version, fill rate, token spend.
+
+## 10. Verify
+
+```bash
+lavabo verify
+```
+
+Passes, or tells you exactly which required column came back null too often.
+
+---
+
+## You're done — now scale up
+
+Re-run step 5 for the other 49 conversations (the script keeps running; just keep copying),
+then:
+
+```bash
+lavabo ingest --source zalo
+lavabo extract
+lavabo load --out data/out/report.xlsx
+lavabo verify
+```
+
+Already-captured files and already-extracted conversations are skipped automatically, so
+re-running is cheap and safe.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `lavabo: command not found` | venv not active | re-run the activate line |
+| `ModuleNotFoundError: lavabo` | `pip install -e .` skipped | run it |
+| `schema: NOT READY` | `config/schema.yaml` missing | step 3 |
+| `ANTHROPIC_API_KEY is not set` | no key in `.env` | step 8 (or use `--dry-run`) |
+| Capture script prints nothing | format not recognised | save manually, send me a sample |
+| `No clipboard access` | missing backend | `pip install pyperclip` |
+| Match rate below 50% | regex mismatch | send me the first 5 lines |
+| Message count too low | didn't scroll to top | redo step 5.2 |
+| Everything labelled inbound | `own_names` wrong | step 3 |
+| Vietnamese shows as `Ã¡Â»` | saved as ANSI | re-save as UTF-8 |
+
+## What to send me if you get stuck
+
+1. The command you ran and its full output
+2. The first 5 lines of the `.txt` (scrub names if you like — I need the *shape*, not content)
+3. `lavabo check` output
+
+That's enough to fix a pattern issue in about ten minutes.
