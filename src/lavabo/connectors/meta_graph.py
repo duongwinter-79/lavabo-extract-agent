@@ -140,11 +140,11 @@ class MetaGraphConnector:
             raw=thread,
         )
 
-        for msg in self._paginate(
+        for i, msg in enumerate(self._paginate(
             f"{conv_id}/messages",
             {"fields": MESSAGE_FIELDS, "limit": self.config.message_page_size},
-        ):
-            built = self._build_message(conv_id, msg)
+        )):
+            built = self._build_message(conv_id, msg, sequence=i)
             if built:
                 conv.messages.append(built)
 
@@ -159,7 +159,7 @@ class MetaGraphConnector:
                 return p
         return {}
 
-    def _build_message(self, conv_id: str, msg: dict[str, Any]) -> Message | None:
+    def _build_message(self, conv_id: str, msg: dict[str, Any], *, sequence: int = 0) -> Message | None:
         sent_at = _parse_time(msg.get("created_time"))
         if not sent_at:
             log.warning("message %s has no created_time, skipping", msg.get("id"))
@@ -187,6 +187,7 @@ class MetaGraphConnector:
             conversation_id=conv_id,
             message_id=msg["id"],
             sent_at=sent_at,
+            sequence=sequence,
             direction=direction,
             text=msg.get("message") or "",
             sender_id=sender_id or None,

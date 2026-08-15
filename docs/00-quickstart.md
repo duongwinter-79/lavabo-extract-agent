@@ -175,8 +175,13 @@ INFO  lavabo.connectors.zalo_export: Nguyễn Văn An.txt: pattern matched 47/47
 ingested 1 conversation(s), 47 new message(s)
 ```
 
-**Check the match rate.** Above 90% is good. Below 50% prints a warning and means the regex
-needs tuning — send me the sample rather than continuing.
+**Two possible outcomes, both fine:**
+
+- `pattern matched 47/47 lines (100%)` — your client includes sender names and timestamps.
+- `no sender/timestamp structure — read 21 line(s) as messages` — your client (Zalo Web
+  does this) copies only message bodies. The connector handles it: each line becomes a
+  message and the model infers who said what at extraction time. **No timestamps are
+  available from this source** — see docs/03-zalo-runbook.md.
 
 Also sanity-check the message count against what you see in Zalo. If Zalo shows 200 messages
 and this says 47, you didn't scroll far enough at step 5.

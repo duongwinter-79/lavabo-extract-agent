@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS messages (
     source           TEXT NOT NULL,
     conversation_id  TEXT NOT NULL,
     message_id       TEXT NOT NULL,
-    sent_at          TEXT NOT NULL,
+    sent_at          TEXT,               -- NULL when the source carries no timestamps
+    sequence         INTEGER NOT NULL DEFAULT 0,
     direction        TEXT NOT NULL,
     sender_id        TEXT,
     sender_name      TEXT,
@@ -41,7 +42,7 @@ CREATE TABLE IF NOT EXISTS messages (
     raw              TEXT,
     PRIMARY KEY (source, message_id)
 );
-CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages (source, conversation_id, sent_at);
+CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages (source, conversation_id, sequence);
 
 CREATE TABLE IF NOT EXISTS extractions (
     source           TEXT NOT NULL,
@@ -125,13 +126,14 @@ class Store:
 
             c.executemany(
                 """INSERT INTO messages
-                     (source, conversation_id, message_id, sent_at, direction,
+                     (source, conversation_id, message_id, sent_at, sequence, direction,
                       sender_id, sender_name, text, attachments, raw)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)
                    ON CONFLICT(source, message_id) DO UPDATE SET
                      text = excluded.text, attachments = excluded.attachments""",
                 [
-                    (m.source.value, m.conversation_id, m.message_id, m.sent_at.isoformat(),
+                    (m.source.value, m.conversation_id, m.message_id,
+                     m.sent_at.isoformat() if m.sent_at else None, m.sequence,
                      m.direction.value, m.sender_id, m.sender_name, m.text,
                      json.dumps([asdict(a) for a in m.attachments], ensure_ascii=False),
                      json.dumps(m.raw, ensure_ascii=False, default=str))
@@ -193,14 +195,15 @@ class Store:
                 raw=json.loads(row["raw"] or "{}"),
             )
             for m in self.conn.execute(
-                "SELECT * FROM messages WHERE source=? AND conversation_id=? ORDER BY sent_at",
+                "SELECT * FROM messages WHERE source=? AND conversation_id=? ORDER BY sequence, sent_at",
                 (row["source"], row["conversation_id"]),
             ):
                 conv.messages.append(Message(
                     source=Source(m["source"]),
                     conversation_id=m["conversation_id"],
                     message_id=m["message_id"],
-                    sent_at=datetime.fromisoformat(m["sent_at"]),
+                    sent_at=datetime.fromisoformat(m["sent_at"]) if m["sent_at"] else None,
+                    sequence=m["sequence"],
                     direction=Direction(m["direction"]),
                     sender_id=m["sender_id"],
                     sender_name=m["sender_name"],

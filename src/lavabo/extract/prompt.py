@@ -11,7 +11,31 @@ from zoneinfo import ZoneInfo
 from ..config import ExtractionSchema
 from ..models import Conversation
 
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
+
+# Added when the source gave no speaker labels (e.g. a Zalo Web copy is bare
+# message bodies). Vietnamese pronoun use is a strong turn-taking signal, so the
+# model can recover roles from context far better than any regex.
+UNLABELLED_SPEAKERS = """\
+IMPORTANT: this transcript has NO speaker labels. Each line is one message, in order, but \
+the app did not record who sent it. Work out the turn-taking from context before extracting:
+
+- Vietnamese pronouns are the strongest signal. A customer typically self-refers as "em" and \
+addresses the seller as "chị"/"anh"/"shop"; the seller often uses "m"/"mình"/"bên chị" and \
+calls the customer "b"/"bạn"/"em".
+- Questions about price, stock, delivery and payment usually come from the customer; quotes, \
+availability, shipping fees and bank details usually come from the seller.
+- Speakers normally alternate, but either side may send several lines in a row.
+
+Attribute every line before you extract. If a field depends on who said something and you \
+genuinely cannot tell, return null rather than guessing."""
+
+NO_TIMESTAMPS = """\
+IMPORTANT: this transcript has NO timestamps -- the source did not provide them. Do not \
+infer, estimate or invent any date or time. Times mentioned inside the message text (like \
+"12h30" or "tầm chiều 2h") are things the participants said, not message timestamps; use \
+them only if a field explicitly asks about what was discussed. Any field asking when a \
+message was sent must be null."""
 
 SYSTEM = """\
 You extract structured data from customer-service chat conversations.
@@ -66,13 +90,21 @@ def build_user_prompt(
             + transcript[-tail:]
         )
 
-    period = "unknown"
+    period = "not recorded by the source"
     if conv.started_at and conv.last_message_at:
         period = (f"{conv.started_at.astimezone(tz):%Y-%m-%d} to "
                   f"{conv.last_message_at.astimezone(tz):%Y-%m-%d} ({display_timezone})")
 
-    instructions = f"\n<additional_instructions>\n{schema.instructions}\n</additional_instructions>\n" \
-        if schema.instructions else ""
+    notes = []
+    if not conv.speakers_known:
+        notes.append(UNLABELLED_SPEAKERS)
+    if not conv.timestamps_known:
+        notes.append(NO_TIMESTAMPS)
+    if schema.instructions:
+        notes.append(schema.instructions)
+
+    instructions = ("\n<additional_instructions>\n" + "\n\n".join(notes)
+                    + "\n</additional_instructions>\n") if notes else ""
 
     return USER_TEMPLATE.format(
         source=conv.source.value,

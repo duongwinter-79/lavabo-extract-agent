@@ -4,10 +4,15 @@ Why a file-watcher and not an API: Zalo PC's "Export data" is an encrypted, rest
 backup and there is no per-conversation export. For a personal (non-OA) account, a manual
 transcript is the only zero-risk source. See docs/01-source-verification.md.
 
-The exact line format of a Zalo copy-paste is NOT yet confirmed against a real sample, so
-this parser tries a list of candidate patterns and picks whichever matches the most lines,
-then reports the match rate. Add your real pattern to config under zalo.line_patterns and
-it is tried first. See docs/03-zalo-runbook.md.
+Two shapes are handled:
+
+1. Structured -- "Name (14:32 25/12/2025): text" -- parsed by the candidate patterns below.
+   Add your own to zalo.line_patterns and it is tried first.
+2. Plain -- bare message bodies, one per line, no sender and no timestamp. This is what a
+   Zalo Web copy produces (confirmed against a real conversation). Speaker and time are
+   left unknown rather than guessed; the extraction step infers speakers from context.
+
+See docs/03-zalo-runbook.md.
 """
 
 from __future__ import annotations
@@ -122,16 +127,54 @@ class ZaloExportConnector:
             raw={"file": str(path), "sha256_16": digest},
         )
 
+    def _parse_plain(self, path: Path, digest: str, lines: list[str]) -> Conversation:
+        """Bare message bodies, one per line, with no sender and no timestamp.
+
+        This is what a Zalo Web copy produces. Nothing is inferred here: speaker
+        and time are left unknown and the extraction step works them out from
+        conversational context, which it can do far better than a regex.
+        """
+        conv = self._conversation(path, digest)
+        conv.raw["format"] = "plain"
+
+        seq = 0
+        for line in lines:
+            body = line.strip()
+            if not body:
+                continue
+            seq += 1
+            conv.messages.append(Message(
+                source=Source.ZALO,
+                conversation_id=conv.conversation_id,
+                message_id=f"{conv.conversation_id}:{seq:05d}",
+                sent_at=None,                 # genuinely absent; never fabricated
+                direction=Direction.UNKNOWN,  # resolved during extraction
+                sequence=seq,
+                text=body,
+                attachments=_detect_attachments(body),
+                raw={"line": line},
+            ))
+
+        log.info("%s: no sender/timestamp structure — read %d line(s) as messages, "
+                 "speakers inferred at extraction time", path.name, seq)
+        return conv
+
     def _parse_transcript(self, path: Path, digest: str, text: str) -> Conversation:
         lines = [ln.rstrip() for ln in text.splitlines()]
         pattern, hits = self._best_pattern(lines)
 
         nonblank = sum(1 for ln in lines if ln.strip())
-        if pattern is None or not nonblank:
-            log.warning("%s: no pattern matched any line", path.name)
+        if not nonblank:
+            log.warning("%s: file is empty", path.name)
             return self._conversation(path, digest)
 
-        rate = hits / nonblank
+        rate = hits / nonblank if nonblank else 0.0
+
+        # Below this, the file has no per-line sender/time structure to speak of,
+        # so treating each line as a bare message beats forcing a bad regex onto it.
+        if pattern is None or rate < 0.3:
+            return self._parse_plain(path, digest, lines)
+
         log.info("%s: pattern matched %d/%d lines (%.0f%%)", path.name, hits, nonblank, rate * 100)
         if rate < 0.5:
             log.warning(
@@ -162,6 +205,7 @@ class ZaloExportConnector:
                     conversation_id=conv.conversation_id,
                     message_id=f"{conv.conversation_id}:{seq:05d}",
                     sent_at=sent_at,
+                    sequence=seq,
                     direction=(Direction.OUTBOUND if name.casefold() in self.own else Direction.INBOUND),
                     text=body,
                     sender_name=name,
@@ -202,6 +246,7 @@ class ZaloExportConnector:
                 conversation_id=conv.conversation_id,
                 message_id=f"{conv.conversation_id}:{rec.get('id', i)}",
                 sent_at=sent_at,
+                sequence=i,
                 direction=(Direction.OUTBOUND if name.casefold() in self.own else Direction.INBOUND),
                 text=body,
                 sender_name=name or None,

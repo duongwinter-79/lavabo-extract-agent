@@ -95,7 +95,55 @@ file changes its hash and it will be re-ingested as a new conversation — so fi
 
 ---
 
+## What a Zalo Web copy actually contains (confirmed)
+
+Verified against a real conversation: **selecting and copying in Zalo Web yields only the
+message bodies — one per line, with no sender names and no timestamps.**
+
+```
+Em chào chị
+Em muốn mua 1 bó hoa sáp này ạ https://...
+Loại hoa đó mình hết rồi bạn
+```
+
+There is no structure for a regex to parse, so the connector detects this and switches to
+**plain mode**: each line becomes one message, in order, with `sent_at = null` and
+`direction = unknown`. Nothing is fabricated.
+
+Speaker attribution then happens at extraction time, where the model reads the whole
+conversation and works out turn-taking from context. Vietnamese pronouns make this reliable
+— a customer says "em … chị", the seller says "m/mình/bên chị … b/bạn" — and the prompt
+tells the model exactly that.
+
+### The real cost: no timestamps, ever
+
+| | Available from a Zalo Web copy? |
+|---|---|
+| Message text | yes |
+| Order of messages | yes |
+| Who said what | inferred at extraction, not recorded |
+| **Date / time of any message** | **no — permanently unavailable** |
+| Customer name | only from the filename you choose |
+
+**Any column that needs a date or time cannot be filled from this source.** The Excel
+`first_message` / `last_message` cells stay blank rather than showing an invented date.
+Times *mentioned inside* messages ("12h30", "tầm chiều 2h") are still extractable, because
+those are things the participants said.
+
+Two consequences worth acting on:
+
+1. **Name the file after the customer** — with no names in the text, the filename is the
+   only record of who the conversation is with.
+2. **Try Zalo Desktop before capturing all 50.** If its copy includes names or timestamps,
+   it is strictly better data and the connector already handles that format. One capture
+   tells you: `pbpaste | head -20`.
+
+---
+
 ## Tuning the line pattern (one-time, ~10 minutes)
+
+Only relevant if your client *does* produce `Name (time): text` lines — Zalo Web does not,
+and falls to plain mode automatically.
 
 The parser doesn't know Zalo's exact copy-paste format yet, so it tries several candidates
 and picks whichever matches the most lines. It logs the match rate:

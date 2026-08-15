@@ -20,6 +20,7 @@ class Direction(str, Enum):
     INBOUND = "inbound"      # customer -> us
     OUTBOUND = "outbound"    # us -> customer
     SYSTEM = "system"        # joins, renames, unsupported events
+    UNKNOWN = "unknown"      # source gave no speaker labels; inferred at extraction time
 
 
 @dataclass(slots=True)
@@ -34,8 +35,12 @@ class Message:
     source: Source
     conversation_id: str
     message_id: str
-    sent_at: datetime               # MUST be tz-aware UTC
+    # None when the source carries no timestamps at all -- a Zalo Web copy, for
+    # instance, yields bare message text. Never invent one: a fabricated date is
+    # worse than an admitted gap, because it silently poisons any date column.
+    sent_at: datetime | None
     direction: Direction
+    sequence: int = 0               # position in the conversation; orders untimed messages
     text: str = ""
     sender_id: str | None = None
     sender_name: str | None = None
@@ -43,7 +48,7 @@ class Message:
     raw: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.sent_at.tzinfo is None:
+        if self.sent_at is not None and self.sent_at.tzinfo is None:
             raise ValueError(
                 f"{self.source}/{self.message_id}: sent_at must be tz-aware. "
                 "Normalize in the connector, not downstream."
@@ -61,16 +66,31 @@ class Conversation:
     raw: dict[str, Any] = field(default_factory=dict)
 
     @property
+    def timestamps_known(self) -> bool:
+        """False when the source carried no timestamps (e.g. a Zalo Web copy)."""
+        return any(m.sent_at is not None for m in self.messages)
+
+    @property
+    def speakers_known(self) -> bool:
+        """False when the source gave no sender labels, only message bodies."""
+        return any(m.direction is not Direction.UNKNOWN for m in self.messages)
+
+    @property
     def started_at(self) -> datetime | None:
-        return self.messages[0].sent_at if self.messages else None
+        stamps = [m.sent_at for m in self.messages if m.sent_at]
+        return min(stamps) if stamps else None
 
     @property
     def last_message_at(self) -> datetime | None:
-        return self.messages[-1].sent_at if self.messages else None
+        stamps = [m.sent_at for m in self.messages if m.sent_at]
+        return max(stamps) if stamps else None
 
     def sort(self) -> None:
-        """Chronological order. Connectors returning newest-first must call this."""
-        self.messages.sort(key=lambda m: (m.sent_at, m.message_id))
+        """Chronological where timestamps exist, else the order they were captured in."""
+        if self.timestamps_known:
+            self.messages.sort(key=lambda m: (m.sent_at is None, m.sent_at, m.sequence))
+        else:
+            self.messages.sort(key=lambda m: m.sequence)
 
     def transcript(self, *, include_timestamps: bool = True, tz: tzinfo | None = None) -> str:
         """Flatten to the plain text handed to the LLM.
@@ -80,21 +100,38 @@ class Conversation:
         """
         lines = []
         for m in self.messages:
-            who = m.sender_name or ("Customer" if m.direction is Direction.INBOUND else "Agent")
-            local = m.sent_at.astimezone(tz) if tz else m.sent_at
-            stamp = f"[{local:%Y-%m-%d %H:%M}] " if include_timestamps else ""
             body = m.text.strip()
             if m.attachments:
                 tags = ", ".join(a.kind for a in m.attachments)
                 body = f"{body} <attachment: {tags}>".strip()
-            if body:
+            if not body:
+                continue
+
+            stamp = ""
+            if include_timestamps and m.sent_at is not None:
+                local = m.sent_at.astimezone(tz) if tz else m.sent_at
+                stamp = f"[{local:%Y-%m-%d %H:%M}] "
+
+            if m.direction is Direction.UNKNOWN and not m.sender_name:
+                # No speaker label available. Emit the bare line rather than
+                # guessing a role -- the extraction step infers it from context.
+                lines.append(f"{stamp}{body}")
+            else:
+                who = m.sender_name or (
+                    "Customer" if m.direction is Direction.INBOUND else "Agent"
+                )
                 lines.append(f"{stamp}{who}: {body}")
         return "\n".join(lines)
 
     def content_hash(self) -> str:
         """Stable fingerprint of conversation content, for extraction caching."""
         payload = json.dumps(
-            [[m.message_id, m.sent_at.isoformat(), m.direction.value, m.text] for m in self.messages],
+            [
+                [m.message_id,
+                 m.sent_at.isoformat() if m.sent_at else None,
+                 m.sequence, m.direction.value, m.text]
+                for m in self.messages
+            ],
             ensure_ascii=False,
             sort_keys=True,
         )
