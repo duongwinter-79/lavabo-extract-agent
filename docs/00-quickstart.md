@@ -205,18 +205,22 @@ GEMINI_API_KEY=AIza...
 ```
 
 That matches the default in `config.example.yaml` (`provider: gemini`,
-`model: gemini-2.5-flash`, `concurrency: 1`). Keep concurrency at 1 — the free tier allows
+`model: gemini-3.1-flash`, `concurrency: 1`). Keep concurrency at 1 — the free tier allows
 only a few requests per minute; 429s are retried with backoff, but going slow is faster than
 being throttled.
 
 For Anthropic instead, set `ANTHROPIC_API_KEY` and switch `provider`/`model` in
 `config/config.yaml`.
 
-Confirm the key actually works before spending a capture session on it:
+Confirm the key actually works, and that the configured model exists:
 
 ```bash
 lavabo check
+lavabo models      # lists the models this key can use, flags the configured one
 ```
+
+Model names change often. `lavabo models` asks the provider, so it is the authority
+rather than whatever is written in the config example.
 
 `OK llm: … key verified with the provider` means it is genuinely valid — `check` calls the
 provider, so a wrong or truncated key is caught here rather than at the first extraction.

@@ -97,6 +97,15 @@ class Extractor(ABC):
             return False, problem
         return True, "key present (not verified against the provider)"
 
+    @classmethod
+    def list_models(cls) -> list[str]:
+        """Model ids this key can actually use.
+
+        Model line-ups move faster than any hardcoded list, so the authority is the
+        provider, not a constant in this repo or a guess from either end.
+        """
+        raise NotImplementedError(f"{cls.__name__} cannot list models")
+
     @abstractmethod
     def extract(self, conv: Conversation) -> ExtractionResult:
         """Run one conversation through the model and return validated values."""

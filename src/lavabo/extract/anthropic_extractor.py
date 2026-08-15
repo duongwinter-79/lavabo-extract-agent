@@ -40,6 +40,12 @@ class AnthropicExtractor(Extractor):
             return True, f"key set, but could not be verified ({name}) — network issue?"
         return True, "key verified with the provider"
 
+    @classmethod
+    def list_models(cls) -> list[str]:
+        import anthropic
+
+        return sorted(m.id for m in anthropic.Anthropic().models.list(limit=100))
+
     def __init__(self, config, schema) -> None:
         super().__init__(config, schema)
         try:
@@ -83,6 +89,9 @@ class AnthropicExtractor(Extractor):
         except Exception as exc:
             log.error("extraction failed for %s: %s", conv.conversation_id, exc)
             result.error = f"{type(exc).__name__}: {exc}"
+            if "not_found" in str(exc).lower() or "404" in str(exc):
+                result.error += (f"  [model {self.model!r} was not accepted — "
+                                 "run `lavabo models` to see what this key can use]")
             return result
 
         result.input_tokens = response.usage.input_tokens

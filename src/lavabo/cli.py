@@ -2,9 +2,10 @@
 
     lavabo check                       preflight credentials and paths
     lavabo ingest --source meta|zalo   pull/parse into the SQLite staging db
-    lavabo extract [--limit N] [--dry-run]
+    lavabo extract [--limit N] [--dry-run] [--provider gemini --api-key AIza...]
     lavabo load --out report.xlsx
     lavabo run --out report.xlsx       ingest + extract + load
+    lavabo models                      list models this key can use
     lavabo verify
 """
 
@@ -13,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -32,6 +34,41 @@ def _setup_logging(verbose: bool) -> None:
     )
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+
+def add_llm_args(parser: argparse.ArgumentParser) -> None:
+    """Provider/model/key overrides, shared by the commands that talk to an LLM."""
+    parser.add_argument("--provider", choices=["anthropic", "gemini"],
+                        help="override extract.provider from config.yaml")
+    parser.add_argument("--model", help="override extract.model from config.yaml")
+    parser.add_argument("--api-key", metavar="KEY",
+                        help="API key for the selected provider, instead of reading it "
+                             "from .env. Note: this lands in your shell history and is "
+                             "visible in the process list, so .env is safer for repeat use")
+
+
+def _apply_llm_overrides(args, cfg: Config) -> None:
+    """Fold --provider/--model/--api-key into the config before anything reads it."""
+    if getattr(args, "provider", None):
+        cfg.extract.provider = args.provider
+    if getattr(args, "model", None):
+        cfg.extract.model = args.model
+
+    key = getattr(args, "api_key", None)
+    if not key:
+        return
+
+    # The SDKs read their key from the environment, so the override is applied there
+    # rather than threaded through every call site. Set the primary variable for
+    # whichever provider is now selected.
+    from .extract.base import extractor_class
+
+    try:
+        variables = extractor_class(cfg.extract.provider).API_KEY_VARS
+    except ValueError:
+        return
+    if variables:
+        os.environ[variables[0]] = key.strip()
 
 
 def _load_dotenv() -> None:
@@ -226,6 +263,44 @@ def cmd_check(args, cfg: Config) -> int:
     return 0 if ok else 1
 
 
+def cmd_models(args, cfg: Config) -> int:
+    """Ask the provider which models this key can use.
+
+    Model names change faster than any list kept in this repo, so this is the only
+    trustworthy source when `extract` reports an unknown model.
+    """
+    from .extract.base import extractor_class
+
+    cls = extractor_class(cfg.extract.provider)
+    good, detail = cls.verify_api_key()
+    if not good:
+        print(f"cannot list models: {detail}")
+        return 1
+
+    try:
+        names = cls.list_models()
+    except Exception as exc:
+        print(f"could not list models: {type(exc).__name__}: {exc}\n"
+              "The key looked usable, so this is most likely a network or proxy problem "
+              "rather than a bad key.")
+        return 1
+
+    if not names:
+        print(f"{cfg.extract.provider} returned no usable models for this key.")
+        return 1
+
+    print(f"{cfg.extract.provider} models available to this key:\n")
+    for name in names:
+        mark = "  <- configured" if name == cfg.extract.model else ""
+        print(f"  {name}{mark}")
+
+    if cfg.extract.model not in names:
+        print(f"\nWARNING: configured model {cfg.extract.model!r} is NOT in this list. "
+              "Set extract.model in config.yaml to one of the above, or pass --model.")
+        return 1
+    return 0
+
+
 def cmd_verify(args, cfg: Config) -> int:
     from .extract.prompt import PROMPT_VERSION
 
@@ -297,6 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("check", help="preflight credentials, paths and schema")
     p.add_argument("--offline", action="store_true",
                    help="skip verifying the API key against the provider")
+    add_llm_args(p)
 
     p = sub.add_parser("ingest", help="pull/parse conversations into staging")
     p.add_argument("--source", choices=["meta", "zalo", "all"], default="all")
@@ -308,12 +384,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--force", action="store_true", help="ignore the extraction cache")
     p.add_argument("--dry-run", action="store_true", help="print prompts and token estimate only")
     p.add_argument("--strict", action="store_true", help="exit non-zero if any extraction failed")
+    add_llm_args(p)
 
     p = sub.add_parser("load", help="write the Excel workbook")
     p.add_argument("--out", help="output .xlsx path")
+    add_llm_args(p)
+
+    p = sub.add_parser("models", help="list the models this API key can use")
+    add_llm_args(p)
 
     p = sub.add_parser("verify", help="sanity-check the staged data and extractions")
     p.add_argument("--null-threshold", type=float, default=0.5)
+    add_llm_args(p)
 
     p = sub.add_parser("run", help="ingest + extract + load")
     p.add_argument("--source", choices=["meta", "zalo", "all"], default="all")
@@ -323,13 +405,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--limit", type=int)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--strict", action="store_true")
+    add_llm_args(p)
 
     args = ap.parse_args(argv)
     _setup_logging(args.verbose)
     cfg = Config.load(args.config)
+    _apply_llm_overrides(args, cfg)
 
     handlers = {"check": cmd_check, "ingest": cmd_ingest, "extract": cmd_extract,
-                "load": cmd_load, "verify": cmd_verify, "run": cmd_run}
+                "load": cmd_load, "verify": cmd_verify, "run": cmd_run,
+                "models": cmd_models}
     try:
         return handlers[args.command](args, cfg)
     except KeyboardInterrupt:

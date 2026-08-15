@@ -27,6 +27,12 @@ def _is_rate_limit(exc: Exception) -> bool:
                                    "rate limit", "quota"))
 
 
+def _is_unknown_model(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return ("not found" in text or "not_found" in text or "404" in text
+            or "is not supported" in text or "unknown model" in text) and "model" in text
+
+
 def _to_gemini_schema(node: dict) -> dict:
     """Translate the JSON Schema in config.py to Gemini's dialect.
 
@@ -86,6 +92,20 @@ class GeminiExtractor(Extractor):
                           f"({type(exc).__name__}) — network issue?")
         return True, "key verified with the provider"
 
+    @classmethod
+    def list_models(cls) -> list[str]:
+        from google import genai
+
+        names = []
+        for m in genai.Client().models.list():
+            actions = getattr(m, "supported_actions", None) or []
+            if actions and "generateContent" not in actions:
+                continue
+            name = (getattr(m, "name", "") or "").removeprefix("models/")
+            if name:
+                names.append(name)
+        return sorted(names)
+
     def __init__(self, config, schema) -> None:
         super().__init__(config, schema)
         try:
@@ -138,6 +158,9 @@ class GeminiExtractor(Extractor):
                     continue
                 log.error("extraction failed for %s: %s", conv.conversation_id, exc)
                 result.error = f"{type(exc).__name__}: {exc}"
+                if _is_unknown_model(exc):
+                    result.error += (f"  [model {self.model!r} was not accepted — "
+                                     "run `lavabo models` to see what this key can use]")
                 return result
 
         if response is None:
