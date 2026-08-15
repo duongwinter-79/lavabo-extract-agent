@@ -163,6 +163,7 @@ python scripts/zalo_capture.py --debug     # explain what was accepted or reject
 | [docs/04-meta-setup.md](docs/04-meta-setup.md) | Meta/Messenger connector (not used yet) |
 | [docs/05-schema-guide.md](docs/05-schema-guide.md) | changing the extracted columns |
 | [docs/06-output-mapping.md](docs/06-output-mapping.md) | column-by-column mapping and open questions |
+| [docs/07-zalo-oa-flow.md](docs/07-zalo-oa-flow.md) | the Zalo OA group flow — automatic capture, real senders |
 
 ### Shape of it
 
@@ -171,9 +172,12 @@ start.command / start.bat / start.sh   launchers
 scripts/  lavabo_app.py                the one-screen app
           zalo_capture.py              clipboard capture, order splitting
           setup.sh / setup.ps1         install
+          lavabo_web.py                browser version (phone/laptop/PC)
+          lavabo_webhook.py            Zalo OA webhook receiver
           probe_zalo_*.py              checks on Zalo's own export
 src/lavabo/
   connectors/  zalo_export.py          parses captured notes
+               zalo_oa.py              OA group webhook events -> orders
                meta_graph.py           Messenger/Instagram (built, unused)
   extract/     gemini, anthropic       same interface, swap in config
   load/        senkahomes.py           the 12-column layout

@@ -96,7 +96,7 @@ def _meta_connectors(cfg: Config, store: Store, full: bool):
 
 
 def cmd_ingest(args, cfg: Config) -> int:
-    sources = ["meta", "zalo"] if args.source == "all" else [args.source]
+    sources = ["meta", "zalo", "oa"] if args.source == "all" else [args.source]
     total_conv = total_msg = 0
 
     with Store(cfg.db_path) as store:
@@ -117,6 +117,15 @@ def cmd_ingest(args, cfg: Config) -> int:
                 total_msg += store.upsert_conversation(conv)
                 total_conv += 1
             store.set_state("zalo:files", json.dumps(sorted(done | conn.seen_hashes)))
+
+        if "oa" in sources:
+            from .connectors.zalo_oa import ZaloOAConnector
+
+            events = store.oa_events()
+            conn = ZaloOAConnector(events)
+            for conv in conn.fetch():
+                total_msg += store.upsert_conversation(conv)
+                total_conv += 1
 
         print(f"ingested {total_conv} conversation(s), {total_msg} new message(s)")
         print(json.dumps(store.stats(), indent=2))
@@ -549,7 +558,7 @@ def main(argv: list[str] | None = None) -> int:
     add_llm_args(p)
 
     p = sub.add_parser("ingest", help="pull/parse conversations into staging")
-    p.add_argument("--source", choices=["meta", "zalo", "all"], default="all")
+    p.add_argument("--source", choices=["meta", "zalo", "oa", "all"], default="all")
     p.add_argument("--full", action="store_true", help="ignore watermarks, re-ingest everything")
 
     p = sub.add_parser("extract", help="run the LLM extraction step")

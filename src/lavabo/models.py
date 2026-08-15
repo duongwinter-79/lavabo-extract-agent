@@ -11,7 +11,8 @@ from typing import Any
 
 
 class Source(str, Enum):
-    ZALO = "zalo"
+    ZALO = "zalo"                # copied out of the app by hand
+    ZALO_OA = "zalo_oa"          # pushed to us by Zalo, from an OA-owned group
     MESSENGER = "messenger"
     INSTAGRAM = "instagram"
 

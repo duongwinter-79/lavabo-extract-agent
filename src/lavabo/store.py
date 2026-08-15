@@ -64,6 +64,20 @@ CREATE TABLE IF NOT EXISTS extractions (
                  prompt_version, model)
 );
 
+-- Raw Zalo OA webhook deliveries, kept verbatim. Zalo pushes once and does not
+-- offer group history, so an event discarded here cannot be fetched again.
+CREATE TABLE IF NOT EXISTS oa_events (
+    event_id     TEXT PRIMARY KEY,
+    group_id     TEXT,
+    sender_id    TEXT,
+    sender_name  TEXT,
+    sent_at      TEXT,
+    text         TEXT,
+    payload      TEXT NOT NULL,
+    received_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_oa_events_group ON oa_events (group_id, sent_at);
+
 -- Watermarks for incremental Meta pulls; ingested-file hashes for Zalo drops.
 CREATE TABLE IF NOT EXISTS state (
     key   TEXT PRIMARY KEY,
@@ -312,6 +326,33 @@ class Store:
             input_tokens=row["input_tokens"],
             output_tokens=row["output_tokens"],
         )
+
+    def save_oa_event(self, event: dict) -> bool:
+        """Store one webhook delivery. Returns False if we had it already.
+
+        Zalo can retry a delivery, so the event id is the primary key and a repeat is
+        a no-op rather than a duplicate order.
+        """
+        with self.tx() as c:
+            cur = c.execute(
+                """INSERT OR IGNORE INTO oa_events
+                     (event_id, group_id, sender_id, sender_name, sent_at, text,
+                      payload, received_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (event["event_id"], event.get("group_id"), event.get("sender_id"),
+                 event.get("sender_name"), event.get("sent_at"), event.get("text"),
+                 json.dumps(event.get("payload", {}), ensure_ascii=False), _now()),
+            )
+        return cur.rowcount > 0
+
+    def oa_events(self, *, since: str | None = None) -> list[dict]:
+        sql = "SELECT * FROM oa_events"
+        params: tuple = ()
+        if since:
+            sql += " WHERE received_at > ?"
+            params = (since,)
+        rows = self.conn.execute(sql + " ORDER BY sent_at, event_id", params).fetchall()
+        return [dict(r) for r in rows]
 
     def latest_extraction_rows(self, conversation_id: str) -> list[dict]:
         """Every stored attempt for a conversation, newest first, errors included.

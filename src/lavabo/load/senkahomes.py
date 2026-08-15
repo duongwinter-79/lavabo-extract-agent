@@ -141,7 +141,9 @@ def write_orders_workbook(
                     total, collect, deposit,
                     default_status,
                     values.get("delivery_date_text") or None,
-                    closer or None,
+                    # A Zalo OA delivery records who posted the order, so use that in
+                    # preference to the run-wide default, which is only a guess.
+                    conv.raw.get("sender_name") or closer or None,
                 ])
                 first = False
             else:
