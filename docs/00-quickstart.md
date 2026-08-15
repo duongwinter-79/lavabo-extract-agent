@@ -85,8 +85,14 @@ Windows PowerShell uses `copy` instead of `cp`; on macOS/Linux `cp` is correct.
 
 > **`config/config.yaml` is yours and gitignored.** `git pull` updates
 > `config.example.yaml` but never your copy — so when the example changes (a new default
-> provider or model, say), you have to copy the change across yourself. `lavabo check`
-> reports mismatches such as a Gemini provider left pointing at a Claude model.
+> provider or model, say), you have to copy the change across yourself.
+>
+> ```bash
+> lavabo config     # effective settings, and what differs from the current example
+> ```
+>
+> `lavabo check` additionally catches an outright mismatch, such as a Gemini provider left
+> pointing at a Claude model.
 
 ### Edit `config/config.yaml` — one field matters right now
 

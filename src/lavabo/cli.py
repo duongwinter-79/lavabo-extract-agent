@@ -5,6 +5,7 @@
     lavabo extract [--limit N] [--dry-run] [--provider gemini --api-key AIza...]
     lavabo load --out report.xlsx
     lavabo run --out report.xlsx       ingest + extract + load
+    lavabo config                      show effective settings + drift from the example
     lavabo models                      list models this key can use
     lavabo verify
 """
@@ -279,6 +280,68 @@ def cmd_check(args, cfg: Config) -> int:
     return 0 if ok else 1
 
 
+def cmd_config(args, cfg: Config) -> int:
+    """Show the effective settings and where they drift from the shipped example.
+
+    config/config.yaml is gitignored, so `git pull` never touches it. When the example
+    gains a new default the working copy silently keeps the old one, which is how a
+    Gemini provider ends up still pointing at a Claude model.
+    """
+    import yaml
+
+    from .config import REPO_ROOT
+    from .extract.base import _provider_for_model
+
+    path = args.config or REPO_ROOT / "config" / "config.yaml"
+    example = REPO_ROOT / "config" / "config.example.yaml"
+
+    print(f"config file: {path}{'' if path.exists() else '   (MISSING — copy the example)'}")
+    print(f"schema file: {cfg.schema_path}\n")
+
+    print("effective extract settings:")
+    for key in ("provider", "model", "concurrency", "temperature", "max_tokens"):
+        print(f"  {key:16} {getattr(cfg.extract, key)}")
+
+    owner = _provider_for_model(cfg.extract.model)
+    if owner and owner != cfg.extract.provider.lower():
+        print(f"\n  MISMATCH: model {cfg.extract.model!r} is a {owner} model but provider "
+              f"is {cfg.extract.provider!r}")
+
+    if not example.exists():
+        return 0
+
+    theirs = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.exists() else {}
+    shipped = yaml.safe_load(example.read_text(encoding="utf-8")) or {}
+
+    conflicts, absent = [], []
+    for section, values in shipped.items():
+        if not isinstance(values, dict):
+            continue
+        mine = theirs.get(section) or {}
+        for key, want in values.items():
+            if key not in mine:
+                absent.append(f"{section}.{key}")
+            elif mine[key] != want:
+                conflicts.append((f"{section}.{key}", mine[key], want))
+
+    if conflicts:
+        print("\nset differently from config.example.yaml (yours -> example):")
+        for key, got, want in conflicts:
+            print(f"  {key:28} {got!r}  ->  {want!r}")
+        print("\nNot all of these are wrong — own_names, page_id and paths are meant to "
+              "differ.\nThe ones that usually matter are extract.provider and extract.model.")
+    else:
+        print("\nno conflicting keys against config.example.yaml.")
+
+    if absent:
+        print(f"\nnot present in your file, so built-in defaults apply ({len(absent)}):")
+        print("  " + ", ".join(absent))
+
+    print(f"\nEdit {path} to change any of these — it is gitignored, so `git pull` "
+          "never updates it.")
+    return 0
+
+
 def cmd_models(args, cfg: Config) -> int:
     """Ask the provider which models this key can use.
 
@@ -416,6 +479,9 @@ def main(argv: list[str] | None = None) -> int:
                                     "does not record who sent it")
     add_llm_args(p)
 
+    p = sub.add_parser("config", help="show effective settings and drift from the example")
+    add_llm_args(p)
+
     p = sub.add_parser("models", help="list the models this API key can use")
     add_llm_args(p)
 
@@ -445,7 +511,7 @@ def main(argv: list[str] | None = None) -> int:
 
     handlers = {"check": cmd_check, "ingest": cmd_ingest, "extract": cmd_extract,
                 "load": cmd_load, "verify": cmd_verify, "run": cmd_run,
-                "models": cmd_models}
+                "models": cmd_models, "config": cmd_config}
     try:
         return handlers[args.command](args, cfg)
     except KeyboardInterrupt:
