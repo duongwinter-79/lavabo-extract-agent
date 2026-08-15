@@ -95,9 +95,65 @@ file changes its hash and it will be re-ingested as a new conversation — so fi
 
 ---
 
-## Order notes (the main case)
+## Capturing orders from the group chat (the main workflow)
 
-Many captures are not conversations at all but a single message holding a whole order:
+Orders arrive as individual messages inside one busy group chat. You do not select them
+one at a time — copy whole chunks of the chat and the script picks the orders out.
+
+```bash
+python scripts/zalo_capture.py
+```
+
+Open the group chat, scroll up through the month, then select-all and copy. Repeat as you
+scroll. Per copy you get:
+
+```
+  saved   15-8 - đơn 4.txt  (3 lines)
+  saved   15-8 đơn 1 - Meloxicam.txt  (2 lines, Meloxicam)
+  → 7 order(s) in clipboard, 2 saved, 4 already captured, 1 outside 08/2026
+```
+
+What it does with a chunk of chat:
+
+| | |
+|---|---|
+| Messages starting with an order header | kept, one file per order |
+| Every other message (chatter, questions, "ok chị") | ignored |
+| Orders from other months | skipped — default is the **current month** |
+| The same order seen in an overlapping chunk | saved once, not duplicated |
+| An order truncated by where you stopped selecting | replaced when a later chunk has more of it |
+
+**Overlapping copies are fine and expected.** Orders are identified by day + month + order
+number, not by file content, so scrolling back over ground you already covered costs nothing.
+
+Chatter that follows an order's last line stays attached to that order. There is no reliable
+end-of-order marker, and a stray "ok chị" costs nothing at extraction time, whereas trimming
+harder would risk dropping real order lines.
+
+### Month selection
+
+Defaults to the month you run it in — run on 15 Aug, get August.
+
+```bash
+python scripts/zalo_capture.py --month 7           # July of this year
+python scripts/zalo_capture.py --month 12 --year 2025
+python scripts/zalo_capture.py --all-months        # no filtering
+python scripts/zalo_capture.py --no-split          # save the copy as one file, unsplit
+```
+
+Headers rarely carry a year; an absent one is read as the target year.
+
+### Storage: one file per order
+
+Each order becomes its own `.txt`, hence its own row in Excel. That keeps re-runs idempotent
+(re-capturing one order does not disturb the others) and matches how the pipeline already
+treats one file as one record.
+
+---
+
+## The order note format
+
+Each captured order is a single message holding the whole order:
 
 ```
 15/8 đơn 1 - Meloxicam

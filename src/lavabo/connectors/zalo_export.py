@@ -200,9 +200,13 @@ class ZaloExportConnector:
             conv.raw["order_year"] = year + 2000 if year < 100 else year
         conv.raw["order_date_text"] = f"{day}/{month}" + (f"/{match['year']}" if match["year"] else "")
 
-        if customer := (match["customer"] or "").strip():
-            conv.customer_name = customer
-            conv.raw["customer_from_header"] = True
+        # The header is authoritative about the customer. When it names one, use it;
+        # when it does not, leave the field empty rather than letting the filename
+        # fallback stand in -- for an order note the filename is just the header
+        # repeated, so "15-8 - don 4" would masquerade as a customer name.
+        customer = (match["customer"] or "").strip()
+        conv.customer_name = customer or None
+        conv.raw["customer_from_header"] = bool(customer)
 
         log.info("order header: date=%s order=%s customer=%s",
                  conv.raw["order_date_text"], conv.raw["order_number"],

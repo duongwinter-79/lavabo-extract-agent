@@ -1,26 +1,34 @@
 #!/usr/bin/env python3
-"""Capture Zalo conversations straight from the clipboard into data/inbox/zalo/.
+"""Pull orders out of a Zalo group chat, via the clipboard, into data/inbox/zalo/.
 
-Zalo's export is encrypted and there is no per-conversation export, so the transcript
-has to come out through the UI. This removes everything around that except the copy
-itself -- no Notepad, no Save As dialog, no thinking about filenames.
+Zalo's export is encrypted and there is no per-conversation export, so the text has to
+come out through the UI. Orders live as individual messages inside one busy group chat,
+so rather than selecting them one at a time you copy whole chunks and this splits them.
 
-    Your loop, per conversation:  click it -> scroll to top -> Ctrl+A -> Ctrl+C
-    The script does:              detect, name, deduplicate, write the .txt
+    You:  open the group chat, scroll up, select all, copy. Repeat as you scroll.
+    It:   finds the order messages, drops the chatter, filters to one month,
+          deduplicates, and writes one .txt per order.
 
-Handles both shapes this shop copies: a conversation, and a single structured note
-such as an order written as one message.
+An order is recognised by its header line, which also carries the facts worth having:
 
-The filename is derived from the content -- the most frequent sender who is not you
-when the text carries speaker labels, otherwise the first line, which for an order
-note is its header ("15/8 - don 4"). Only if neither works does it ask.
+    15/8 - đơn 4              -> date + order number
+    15/8 đơn 1 - Meloxicam    -> date + order number + customer display name
+
+Overlapping copies are expected and harmless: orders are identified by day + month +
+order number, so re-covering ground costs nothing, and an order truncated by where you
+stopped selecting is replaced when a later chunk contains more of it.
+
+Text with no order headers falls back to being saved whole, which covers ordinary
+conversations.
 
 Nothing is sent anywhere -- this only reads the clipboard and writes local files.
 
 Usage:
-    python scripts/zalo_capture.py                 # watch until Ctrl+C
-    python scripts/zalo_capture.py --once          # capture a single conversation
-    python scripts/zalo_capture.py --name "Tran B" # force the name for the next capture
+    python scripts/zalo_capture.py                    # current month, watch until Ctrl+C
+    python scripts/zalo_capture.py --month 7          # July instead
+    python scripts/zalo_capture.py --all-months       # no month filter
+    python scripts/zalo_capture.py --no-split         # save each copy as one file
+    python scripts/zalo_capture.py --debug            # explain what was accepted/rejected
 """
 
 from __future__ import annotations
@@ -31,12 +39,14 @@ import re
 import sys
 import time
 from collections import Counter
+from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from lavabo.config import Config  # noqa: E402
-from lavabo.connectors.zalo_export import DEFAULT_PATTERNS  # noqa: E402
+from lavabo.connectors.zalo_export import DEFAULT_PATTERNS, ORDER_HEADER  # noqa: E402
 
 POLL_SECONDS = 0.5
 MIN_TRANSCRIPT_CHARS = 40
@@ -133,6 +143,89 @@ def sanitize(name: str) -> str:
     return name[:MAX_NAME_LEN] or "unnamed"
 
 
+@dataclass(slots=True)
+class OrderBlock:
+    """One order lifted out of a group chat: its header line plus everything under it."""
+    header: str
+    day: int
+    month: int
+    year: int | None
+    order_no: int
+    customer: str | None
+    lines: list[str]
+
+    @property
+    def text(self) -> str:
+        return "\n".join([self.header, *self.lines]).strip()
+
+    @property
+    def key(self) -> tuple[int, int, int]:
+        """Business identity of the order: day, month, order number."""
+        return (self.day, self.month, self.order_no)
+
+    @property
+    def label(self) -> str:
+        who = f" - {self.customer}" if self.customer else ""
+        return f"{self.day}/{self.month} đơn {self.order_no}{who}"
+
+
+def split_orders(text: str) -> list[OrderBlock]:
+    """Cut a chunk of group chat into order blocks.
+
+    A line matching the order header starts a new block; everything until the next
+    header belongs to it. Anything before the first header is chatter and dropped.
+
+    Trailing chatter after an order's last real line is kept rather than guessed at:
+    there is no reliable end-of-order marker, and including a stray "ok chị" costs
+    nothing at extraction time, whereas trimming too eagerly would lose order lines.
+    """
+    blocks: list[OrderBlock] = []
+    current: OrderBlock | None = None
+
+    for line in text.splitlines():
+        if m := ORDER_HEADER.match(line.strip()):
+            year = int(m["year"]) if m["year"] else None
+            if year is not None and year < 100:
+                year += 2000
+            current = OrderBlock(
+                header=line.strip(),
+                day=int(m["day"]),
+                month=int(m["month"]),
+                year=year,
+                order_no=int(m["order"]),
+                customer=(m["customer"] or "").strip() or None,
+                lines=[],
+            )
+            blocks.append(current)
+        elif current is not None:
+            current.lines.append(line.rstrip())
+
+    return blocks
+
+
+def in_month(block: OrderBlock, month: int, year: int) -> bool:
+    """Headers usually omit the year, so an absent one is taken as the target year."""
+    return block.month == month and (block.year or year) == year
+
+
+def existing_orders(inbox: Path) -> dict[tuple[int, int, int], tuple[Path, int]]:
+    """Map already-captured order keys to their file and size.
+
+    Keyed on the order itself rather than file content, so re-copying an overlapping
+    chunk of the chat does not create duplicates.
+    """
+    found: dict[tuple[int, int, int], tuple[Path, int]] = {}
+    for path in inbox.glob("*.txt"):
+        try:
+            head = first_line(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        if m := ORDER_HEADER.match(head):
+            key = (int(m["day"]), int(m["month"]), int(m["order"]))
+            found[key] = (path, path.stat().st_size)
+    return found
+
+
 def looks_capturable(text: str) -> bool:
     """Accept transcripts AND unlabelled blocks such as order notes.
 
@@ -183,6 +276,52 @@ def ask_name() -> str:
         return ""
 
 
+def handle_orders(text: str, cfg, month: int, year: int, *, all_months: bool) -> tuple[int, int, int]:
+    """Split a chat chunk into orders and save the wanted ones.
+
+    Returns (saved, duplicates, out_of_month).
+    """
+    blocks = split_orders(text)
+    if not blocks:
+        return (0, 0, 0)
+
+    wanted = blocks if all_months else [b for b in blocks if in_month(b, month, year)]
+    skipped_month = len(blocks) - len(wanted)
+
+    known = existing_orders(cfg.zalo.inbox_dir)
+    saved = duplicates = 0
+
+    for block in wanted:
+        body = block.text
+        if block.key in known:
+            path, size = known[block.key]
+            # A chunk can end mid-order, so a later, longer capture of the same
+            # order is a more complete one and replaces the truncated version.
+            if len(body.encode("utf-8")) > size:
+                path.write_text(body, encoding="utf-8")
+                known[block.key] = (path, len(body.encode("utf-8")))
+                print(f"  updated {path.name}  (longer capture of the same order)")
+                saved += 1
+            else:
+                duplicates += 1
+            continue
+
+        path = save(body, block.header, cfg.zalo.inbox_dir)
+        known[block.key] = (path, len(body.encode("utf-8")))
+        print(f"  saved   {path.name}  ({len(block.lines)} lines"
+              + (f", {block.customer}" if block.customer else "") + ")")
+        saved += 1
+
+    bits = [f"{len(blocks)} order(s) in clipboard", f"{saved} saved"]
+    if duplicates:
+        bits.append(f"{duplicates} already captured")
+    if skipped_month:
+        bits.append(f"{skipped_month} outside {month:02d}/{year}")
+    print("  → " + ", ".join(bits))
+
+    return (saved, duplicates, skipped_month)
+
+
 def handle(text: str, cfg, own: set[str], forced: str | None) -> Path | None:
     name, senders = derive_name(text, own)
 
@@ -231,7 +370,18 @@ def main() -> int:
                          "your Zalo client)")
     ap.add_argument("--debug", action="store_true",
                     help="report every clipboard change and why it was accepted or rejected")
+    ap.add_argument("--month", type=int, metavar="M",
+                    help="capture orders from this month instead of the current one (1-12)")
+    ap.add_argument("--year", type=int, metavar="Y", help="year for --month (default: this year)")
+    ap.add_argument("--all-months", action="store_true",
+                    help="keep every order found, not just the target month")
+    ap.add_argument("--no-split", action="store_true",
+                    help="save the whole copied text as one file, without splitting on order headers")
     args = ap.parse_args()
+
+    today = date.today()
+    month = args.month or today.month
+    year = args.year or today.year
 
     cfg = Config.load(args.config)
     own = {n.strip().casefold() for n in cfg.zalo.own_names if n.strip()}
@@ -247,16 +397,20 @@ def main() -> int:
         return 2
 
     seen = existing_hashes(cfg.zalo.inbox_dir)
+    already = existing_orders(cfg.zalo.inbox_dir)
+    scope = "every month" if args.all_months else f"{month:02d}/{year} only"
+
     print(f"Watching clipboard -> {cfg.zalo.inbox_dir}")
-    print(f"({len(seen)} conversation(s) already captured)"
-          + ("  [RAW MODE: saving anything copied]" if args.raw else "")
-          + ("  [DEBUG]" if args.debug else "") + "\n")
-    print("In Zalo: open a conversation, scroll to the TOP of what you want, then")
+    print(f"({len(already)} order(s) already captured; keeping {scope})"
+          + ("  [RAW]" if args.raw else "") + ("  [DEBUG]" if args.debug else "")
+          + ("  [NO-SPLIT]" if args.no_split else "") + "\n")
+    print("In Zalo: open the group chat, scroll up through the month you want, then")
     print("         select all and copy (Cmd+A/Cmd+C on macOS, Ctrl+A/Ctrl+C on Windows).")
-    print("         Repeat per conversation. Ctrl+C here to stop — always Ctrl.\n")
-    if not args.raw:
-        print("Nothing happening when you copy? Re-run with --debug to see why, or")
-        print("--raw to save the text anyway and let the parser be tuned afterwards.\n")
+    print("         Copy in chunks as you scroll — overlapping chunks are fine, each order")
+    print("         is saved once. Ctrl+C here to stop — always Ctrl.\n")
+    print("Only messages starting with an order header are kept, e.g.")
+    print("    15/8 - đơn 4            or    15/8 đơn 1 - Meloxicam")
+    print("Everything else in the chat is ignored.\n")
 
     last = read_clipboard() or ""
     captured = 0
@@ -286,6 +440,15 @@ def main() -> int:
                 print("  (already captured — skipping duplicate)")
                 continue
 
+            if not args.no_split and any(ORDER_HEADER.match(ln.strip()) for ln in current.splitlines()):
+                saved, _, _ = handle_orders(current, cfg, month, year,
+                                            all_months=args.all_months)
+                seen.add(digest)
+                captured += saved
+                if args.once and saved:
+                    break
+                continue
+
             if handle(current, cfg, own, args.name):
                 seen.add(digest)
                 captured += 1
@@ -296,7 +459,8 @@ def main() -> int:
     except KeyboardInterrupt:
         print()
 
-    print(f"\n{captured} conversation(s) captured. Next: lavabo ingest --source zalo")
+    print(f"\n{captured} order(s)/conversation(s) captured. "
+          "Next: lavabo ingest --source zalo")
     return 0
 
 
