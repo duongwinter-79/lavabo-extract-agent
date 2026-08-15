@@ -8,10 +8,12 @@ itself -- no Notepad, no Save As dialog, no thinking about filenames.
     Your loop, per conversation:  click it -> scroll to top -> Ctrl+A -> Ctrl+C
     The script does:              detect, name, deduplicate, write the .txt
 
-The customer name is derived from the transcript itself: the script parses sender
-names with the same patterns the ingest connector uses, discards the names listed in
-`zalo.own_names`, and takes the most frequent remaining name. That is the "displayName"
-you asked about, recovered from content rather than from the app's internals.
+Handles both shapes this shop copies: a conversation, and a single structured note
+such as an order written as one message.
+
+The filename is derived from the content -- the most frequent sender who is not you
+when the text carries speaker labels, otherwise the first line, which for an order
+note is its header ("15/8 - don 4"). Only if neither works does it ask.
 
 Nothing is sent anywhere -- this only reads the clipboard and writes local files.
 
@@ -39,6 +41,7 @@ from lavabo.connectors.zalo_export import DEFAULT_PATTERNS  # noqa: E402
 POLL_SECONDS = 0.5
 MIN_TRANSCRIPT_CHARS = 40
 MIN_MATCHED_LINES = 2
+MIN_CAPTURE_LINES = 3      # unlabelled blocks (order notes) need at least this many lines
 INVALID_FILENAME = r'[<>:"/\\|?*\x00-\x1f]'
 MAX_NAME_LEN = 80
 
@@ -95,25 +98,53 @@ def parse_senders(text: str) -> Counter[str]:
     return best
 
 
+def first_line(text: str) -> str:
+    return next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+
+
 def derive_name(text: str, own: set[str]) -> tuple[str | None, Counter[str]]:
-    """Most frequent sender that is not us. None if undecidable."""
+    """Work out what to call this capture.
+
+    Preference order:
+      1. the most frequent sender who isn't us -- works for labelled transcripts
+      2. the first line -- for an order note that is the order header
+         ("15/8 - don 4"), which identifies the record better than a name would
+      3. give up and ask
+    """
     senders = parse_senders(text)
     others = Counter({n: c for n, c in senders.items() if n.casefold() not in own})
-    if not others:
-        return None, senders
-    return others.most_common(1)[0][0], senders
+    if others:
+        return others.most_common(1)[0][0], senders
+
+    if head := first_line(text):
+        return head[:MAX_NAME_LEN], senders
+
+    return None, senders
 
 
 def sanitize(name: str) -> str:
-    name = re.sub(INVALID_FILENAME, "", name).strip(" .")
-    name = re.sub(r"\s+", " ", name)
+    """Make a filename without disfiguring it.
+
+    "15/8 - don 4" has to lose the slash or it becomes a path, but it should stay
+    readable as a date: "15-8 - don 4", not "15 - 8 - don 4".
+    """
+    name = re.sub(INVALID_FILENAME, "-", name)
+    name = re.sub(r"\s+", " ", name).strip(" .-")
     return name[:MAX_NAME_LEN] or "unnamed"
 
 
-def looks_like_transcript(text: str) -> bool:
+def looks_capturable(text: str) -> bool:
+    """Accept transcripts AND unlabelled blocks such as order notes.
+
+    Requiring sender patterns rejected everything that isn't a labelled chat, which
+    is most of what this shop actually copies. A multi-line block of real text is
+    enough; single stray copies (a URL, a phone number) still fall through.
+    """
     if len(text) < MIN_TRANSCRIPT_CHARS:
         return False
-    return sum(parse_senders(text).values()) >= MIN_MATCHED_LINES
+    if sum(parse_senders(text).values()) >= MIN_MATCHED_LINES:
+        return True
+    return len([ln for ln in text.splitlines() if ln.strip()]) >= MIN_CAPTURE_LINES
 
 
 # ------------------------------------------------------------------------ writing
@@ -173,18 +204,19 @@ def handle(text: str, cfg, own: set[str], forced: str | None) -> Path | None:
 
     path = save(text, name, cfg.zalo.inbox_dir)
     count = sum(senders.values())
-    detail = f"{count} messages" if count else "format not yet recognised"
+    lines = len([ln for ln in text.splitlines() if ln.strip()])
+    detail = f"{count} messages" if count else f"{lines} lines, no speaker labels"
     print(f"  saved {path.name}  ({detail}, {len(text):,} chars)")
     return path
 
 
 def explain_rejection(text: str) -> str:
-    """Why looks_like_transcript() said no — shown in --debug."""
+    """Why looks_capturable() said no — shown in --debug."""
     if len(text) < MIN_TRANSCRIPT_CHARS:
         return f"only {len(text)} chars (need {MIN_TRANSCRIPT_CHARS}+)"
-    matched = sum(parse_senders(text).values())
-    return (f"{len(text):,} chars but only {matched} line(s) matched a sender pattern "
-            f"(need {MIN_MATCHED_LINES}+)")
+    lines = len([ln for ln in text.splitlines() if ln.strip()])
+    return (f"{len(text):,} chars but only {lines} non-empty line(s) and no sender "
+            f"patterns (need {MIN_CAPTURE_LINES}+ lines, or {MIN_MATCHED_LINES}+ sender lines)")
 
 
 def main() -> int:
@@ -238,7 +270,7 @@ def main() -> int:
                 continue
             last = current
 
-            recognised = looks_like_transcript(current)
+            recognised = looks_capturable(current)
 
             if args.debug:
                 preview = current.splitlines()[0][:70] if current.splitlines() else ""

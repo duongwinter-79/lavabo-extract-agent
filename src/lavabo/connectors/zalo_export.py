@@ -53,6 +53,20 @@ TIMESTAMP_FORMATS = [
     "%H:%M, %d/%m/%Y", "%H:%M %d-%m-%Y",
 ]
 
+# Order notes open with a header carrying three facts, e.g.
+#     "15/8 - đơn 4"                 -> date + order number
+#     "15/8 đơn 1 - Meloxicam"       -> date + order number + Zalo display name
+# These are parsed here rather than asked of the model: they are unambiguous, so a
+# regex is exactly right and costs nothing, while an LLM would merely be probably right.
+ORDER_HEADER = re.compile(
+    r"^\s*(?P<day>\d{1,2})\s*[/.\-]\s*(?P<month>\d{1,2})"
+    r"(?:\s*[/.\-]\s*(?P<year>\d{2,4}))?"
+    r"\s*[-–—,]?\s*"
+    r"(?:đơn|don|dơn)\s*(?:hàng\s*)?(?P<order>\d+)"
+    r"\s*(?:[-–—:]\s*(?P<customer>\S.*?))?\s*$",
+    re.IGNORECASE,
+)
+
 ATTACHMENT_MARKERS = {
     "image": ["[hình ảnh]", "[image]", "[photo]", "[ảnh]"],
     "file": ["[tệp]", "[file]", "[đính kèm]", "[attachment]"],
@@ -128,14 +142,17 @@ class ZaloExportConnector:
         )
 
     def _parse_plain(self, path: Path, digest: str, lines: list[str]) -> Conversation:
-        """Bare message bodies, one per line, with no sender and no timestamp.
+        """Bare lines with no sender and no timestamp.
 
-        This is what a Zalo Web copy produces. Nothing is inferred here: speaker
-        and time are left unknown and the extraction step works them out from
-        conversational context, which it can do far better than a regex.
+        Covers both shapes this shop actually copies: a Zalo Web conversation with
+        the speaker labels stripped, and a single structured note such as an order
+        written as one message. Nothing is inferred here -- speaker and time stay
+        unknown and the extraction step, which sees the whole block, decides which
+        shape it is. A regex cannot make that call; a model reading it can.
         """
         conv = self._conversation(path, digest)
         conv.raw["format"] = "plain"
+        self._read_order_header(conv, lines)
 
         seq = 0
         for line in lines:
@@ -155,9 +172,41 @@ class ZaloExportConnector:
                 raw={"line": line},
             ))
 
-        log.info("%s: no sender/timestamp structure — read %d line(s) as messages, "
-                 "speakers inferred at extraction time", path.name, seq)
+        log.info("%s: no sender/timestamp structure — read %d content line(s); whether this "
+                 "is an unlabelled conversation or a single note is resolved at extraction "
+                 "time", path.name, seq)
         return conv
+
+    def _read_order_header(self, conv: Conversation, lines: list[str]) -> None:
+        """Pull date, order number and customer display name off the first line.
+
+        Populates conversation fields directly, so these never depend on the model
+        getting them right. Absent or unrecognised headers are simply left alone --
+        the filename stays the fallback identity.
+        """
+        head = next((ln.strip() for ln in lines if ln.strip()), "")
+        match = ORDER_HEADER.match(head)
+        if not match:
+            return
+
+        day, month = int(match["day"]), int(match["month"])
+        conv.raw["order_header"] = head
+        conv.raw["order_number"] = int(match["order"])
+        conv.raw["order_day"] = day
+        conv.raw["order_month"] = month
+        # Year is usually omitted. Record what was written; do not invent one.
+        if match["year"]:
+            year = int(match["year"])
+            conv.raw["order_year"] = year + 2000 if year < 100 else year
+        conv.raw["order_date_text"] = f"{day}/{month}" + (f"/{match['year']}" if match["year"] else "")
+
+        if customer := (match["customer"] or "").strip():
+            conv.customer_name = customer
+            conv.raw["customer_from_header"] = True
+
+        log.info("order header: date=%s order=%s customer=%s",
+                 conv.raw["order_date_text"], conv.raw["order_number"],
+                 conv.customer_name or "(not in header)")
 
     def _parse_transcript(self, path: Path, digest: str, text: str) -> Conversation:
         lines = [ln.rstrip() for ln in text.splitlines()]

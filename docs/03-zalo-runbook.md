@@ -95,6 +95,39 @@ file changes its hash and it will be re-ingested as a new conversation — so fi
 
 ---
 
+## Order notes (the main case)
+
+Many captures are not conversations at all but a single message holding a whole order:
+
+```
+15/8 đơn 1 - Meloxicam
+1 tủ BC52, gương bo, mặt tinh thể - 80- 401
+2 sen cơ như hình
+<địa chỉ giao hàng>
+<số điện thoại>
+Tổng 29tr
+Đã cọc 500k
+Note: ...
+```
+
+**The header line carries three facts and is parsed, not guessed:** date, order number,
+and the customer's Zalo display name. Both shapes are recognised:
+
+| Header | Parsed as |
+|---|---|
+| `15/8 đơn 1 - Meloxicam` | 15/8, order 1, customer "Meloxicam" |
+| `15/8 - đơn 4` | 15/8, order 4, no customer |
+
+They appear in the workbook's **Sources** sheet as `customer_name`, `order_date` and
+`order_no`. Because a regex settles them exactly, these should stay **derived columns** when
+your real requirements arrive — asking the model for them would swap certainty for
+probability at no benefit. Everything needing judgement (items, quantities, totals,
+deposit, notes) is what the model is for.
+
+A year is only recorded when written. `15/8` stays `15/8` — no year is invented.
+
+---
+
 ## What a Zalo Web copy actually contains (confirmed)
 
 Verified against a real conversation: **selecting and copying in Zalo Web yields only the

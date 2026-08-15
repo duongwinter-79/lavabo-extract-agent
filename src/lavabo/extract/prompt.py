@@ -11,31 +11,40 @@ from zoneinfo import ZoneInfo
 from ..config import ExtractionSchema
 from ..models import Conversation
 
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 
 # Added when the source gave no speaker labels (e.g. a Zalo Web copy is bare
 # message bodies). Vietnamese pronoun use is a strong turn-taking signal, so the
 # model can recover roles from context far better than any regex.
 UNLABELLED_SPEAKERS = """\
-IMPORTANT: this transcript has NO speaker labels. Each line is one message, in order, but \
-the app did not record who sent it. Work out the turn-taking from context before extracting:
+IMPORTANT: this text was copied out of the chat app, which preserved the lines but NOT who \
+sent them. Before extracting, work out which of these two shapes you are looking at:
 
-- Vietnamese pronouns are the strongest signal. A customer typically self-refers as "em" and \
-addresses the seller as "chị"/"anh"/"shop"; the seller often uses "m"/"mình"/"bên chị" and \
-calls the customer "b"/"bạn"/"em".
-- Questions about price, stock, delivery and payment usually come from the customer; quotes, \
-availability, shipping fees and bank details usually come from the seller.
-- Speakers normally alternate, but either side may send several lines in a row.
+(a) A CONVERSATION between a customer and the shop, with the speaker labels stripped. \
+Recover the turn-taking from context:
+  - Vietnamese pronouns are the strongest signal. A customer typically self-refers as "em" \
+and addresses the seller as "chị"/"anh"/"shop"; the seller often uses "m"/"mình"/"bên chị" \
+and calls the customer "b"/"bạn"/"em".
+  - Questions about price, stock, delivery and payment usually come from the customer; \
+quotes, availability, shipping fees and bank details usually come from the seller.
+  - Speakers normally alternate, but either side may send several lines in a row.
 
-Attribute every line before you extract. If a field depends on who said something and you \
-genuinely cannot tell, return null rather than guessing."""
+(b) A SINGLE STRUCTURED NOTE, such as an order written as one message: a header line with a \
+date and order number, then item lines (quantity first), then a delivery address, a phone \
+number, a total, a deposit, and any trailing note. Here there is no turn-taking at all — do \
+not invent a dialogue. Read it as one record and map the lines to the fields you need.
+
+Decide which it is, then extract. If a field depends on who said something and you genuinely \
+cannot tell, return null rather than guessing."""
 
 NO_TIMESTAMPS = """\
-IMPORTANT: this transcript has NO timestamps -- the source did not provide them. Do not \
-infer, estimate or invent any date or time. Times mentioned inside the message text (like \
-"12h30" or "tầm chiều 2h") are things the participants said, not message timestamps; use \
-them only if a field explicitly asks about what was discussed. Any field asking when a \
-message was sent must be null."""
+IMPORTANT: the source recorded NO message timestamps. Do not infer, estimate or invent when \
+a message was sent -- any field asking for that must be null.
+
+Dates and times written INSIDE the text are different: a header like "15/8" or a line like \
+"12h30" is content the sender typed, and those ARE extractable when a field asks for them. \
+A date given as day/month with no year means the current or most recent such date; do not \
+guess a year that was not written."""
 
 SYSTEM = """\
 You extract structured data from customer-service chat conversations.

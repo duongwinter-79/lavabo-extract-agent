@@ -75,8 +75,11 @@ def _sheet_data(ws, schema: ExtractionSchema, conversations, results) -> None:
 
 
 def _sheet_sources(ws, conversations, results, tz) -> None:
-    headers = ["source", "conversation_id", "customer_name", "customer_handle",
-               "messages", "first_message", "last_message", "origin", "extraction_error"]
+    # order_date / order_no come from the note's header line and are parsed, not
+    # inferred, so they are shown here as facts rather than model output.
+    headers = ["source", "conversation_id", "customer_name", "order_date", "order_no",
+               "customer_handle", "lines", "first_message", "last_message",
+               "origin", "extraction_error"]
     # Times shown in local business time, matching the Data sheet and the app UI.
     ws.append(headers)
 
@@ -86,6 +89,8 @@ def _sheet_sources(ws, conversations, results, tz) -> None:
             conv.source.value,
             conv.conversation_id,
             conv.customer_name,
+            conv.raw.get("order_date_text"),
+            conv.raw.get("order_number"),
             conv.customer_handle,
             len(conv.messages),
             _stamp(conv.started_at, tz),
