@@ -1,112 +1,168 @@
-# lavabo-extract-agent
+<title>Lavabo — Zalo orders to Excel</title>
 
-Local ETL agent: customer conversations from **Zalo** and **Meta business chat** →
-structured **Excel**, with an LLM doing the extraction step.
+# Lavabo
 
-```
-Zalo  ──drop──▶ parse ─┐
-                       ├─▶ canonical ─▶ SQLite ─▶ LLM extract ─▶ Excel
-Meta  ──poll──▶ Graph ─┘
-```
+Turns order messages from a Zalo group chat into the monthly Excel order sheet.
+
+You copy the chat. It finds the orders, reads them, and writes the workbook.
 
 ---
 
-## Start here
+## For whoever is running it
 
-| Document | What's in it |
-|---|---|
-| **[docs/00-quickstart.md](docs/00-quickstart.md)** | **Start here to run it** — clone to Excel with one Zalo conversation, tested step by step |
-| [docs/01-source-verification.md](docs/01-source-verification.md) | **Task 1** — what Zalo and Meta can actually give us, with confidence levels. Read this first: it contains one finding that changes the plan. |
-| [docs/02-agent-plan.md](docs/02-agent-plan.md) | **Task 2** — the architecture, stage by stage, and the build order |
-| [docs/03-zalo-runbook.md](docs/03-zalo-runbook.md) | The human SOP for getting Zalo conversations in |
-| [docs/04-meta-setup.md](docs/04-meta-setup.md) | Meta app, tokens, App Review, troubleshooting |
-| [docs/05-schema-guide.md](docs/05-schema-guide.md) | How to define your columns when the requirements land |
+### 1. Install (once)
 
-**The headline from Task 1:** Zalo PC's "Export data" is an *encrypted, restore-only backup*,
-not a data export — it can't be parsed, by a script or by an AI, because the blocker is
-encryption rather than comprehension. Zalo therefore runs as a drop-a-file source
-until/unless you get an Official Account. Meta's Graph API path works as you expected, gated
-on Advanced Access.
-
-Verify both Zalo findings yourself — neither probe prints message content:
-
-```bash
-python scripts/probe_zalo_export.py  "C:/Users/<you>/Desktop/backup_zalo_....zip"   # the backup
-python scripts/probe_zalo_appdata.py                                               # the app's local storage
-```
-
-The manual capture is nonetheless mostly automated — `scripts/zalo_capture.py` watches the
-clipboard, derives the customer name from the transcript, and writes the files, so each
-conversation costs a Ctrl+A/Ctrl+C rather than a trip through Notepad.
-
----
-
-## Install
-
-```bash
-python -m venv .venv && source .venv/bin/activate     # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-pip install -e .
-
-cp .env.example .env                                   # add your API keys
-cp config/config.example.yaml config/config.yaml
-cp config/schema.example.yaml config/schema.yaml       # then edit the columns
-```
-
-## Use
-
-First run? Follow **[docs/00-quickstart.md](docs/00-quickstart.md)** instead of this list.
-
-```bash
-lavabo check                              # preflight: credentials, paths, schema
-lavabo ingest --source meta               # pull from Graph API (incremental)
-lavabo ingest --source zalo               # parse files in data/inbox/zalo/
-lavabo extract --limit 5 --dry-run        # see the prompt + token estimate, spend nothing
-lavabo extract                            # run the LLM step (cached)
-lavabo load --out data/out/report.xlsx    # write the workbook
-lavabo verify                             # sanity checks, non-zero exit on failure
-
-lavabo run --out data/out/report.xlsx     # all of the above
-```
-
-Every stage is independently re-runnable. Extraction results are cached on
-`content + schema_version + prompt_version + model`, so re-running costs nothing unless
-something actually changed.
-
-## Output
-
-Three sheets:
-
-- **Data** — one row per conversation, columns exactly as `config/schema.yaml` orders them.
-  Amber cells are values the model declined to guess.
-- **Sources** — IDs, message counts, date ranges, and a link back to the original thread, so
-  any disputed cell is checkable in 30 seconds.
-- **Run** — model, schema version, counts, fill rate, token spend.
-
-## Current status
+Download the repo, then:
 
 | | |
 |---|---|
-| Findings + plan + probe | delivered |
-| Meta connector, staging, extraction, Excel | written, **not yet run against live credentials** |
-| Zalo transcript parser | written; the line regex needs tuning against one real sample |
-| Your column requirements | **pending** — everything else is ready for them |
+| **macOS** | double-click **`start.command`** |
+| **Windows** | double-click **`start.bat`** |
+| Terminal | `bash start.sh` |
 
-## Layout
+First launch installs everything and asks two questions:
+
+- **Gemini API key** — free, no card. Get one at <https://aistudio.google.com/apikey>
+- **Người chốt đơn** — the name to put in that column
+
+Both are saved. You are never asked again.
+
+> Needs **Python 3.11+**. macOS ships 3.9, so if it complains:
+> `brew install python@3.12`, then double-click again.
+
+### 2. Copy orders from Zalo
+
+Leave the app open. In Zalo, open the group chat, scroll up through the month, then
+**select all and copy** (`Cmd+A`/`Cmd+C`, or `Ctrl+A`/`Ctrl+C` on Windows).
+
+The counter on screen goes up. Copy in chunks as you scroll — overlapping is fine, each
+order is saved once.
+
+Only messages starting with an order header are kept:
 
 ```
-docs/          findings, plan, runbooks
-config/        config.yaml + schema.yaml (your columns)
-scripts/       probe_zalo_export.py, probe_zalo_appdata.py, zalo_capture.py
-src/lavabo/    models, config, store, cli
-  connectors/  meta_graph.py, zalo_export.py
-  extract/     anthropic, gemini (same interface, swap in config)
-  load/        excel.py
-data/          inbox/, staging.db, out/     [gitignored — never commit chat content]
+15/8 đơn 1 - Meloxicam
+1 tủ BC52, gương bo, mặt tinh thể - 80- 401
+2 sen cơ như hình
+Xóm 3 thôn vạn đồn, xã hồng dũng, thái thuỵ, TB
+0367002126
+Tổng 29tr
+Đã cọc 500k
 ```
 
-## Notes
+Everything else in the chat is ignored, and only the current month is captured.
 
-- **Customer conversation content must never be committed.** `data/` is gitignored.
-- Conversation text is sent to whichever LLM provider you configure, and nowhere else.
-- Secrets live in `.env` only.
+### 3. Press `1`
+
+```
+  [1]  Xuất file Excel
+```
+
+It reads the orders, extracts them with AI, and writes
+`data/out/donhang-YYYYMM.xlsx` — same 12 columns as the existing sheet, one row per line
+item, ready to paste in.
+
+That is the whole job.
+
+---
+
+## What it fills in
+
+| Column | Where it comes from |
+|---|---|
+| STT | counted |
+| NGÀY CHỐT | the `15/8` in the header |
+| Tên KH | the name in the header |
+| Địa chỉ | read from the message (phone appended) |
+| Tên sản phẩm / Số lượng | read from the message, one row each |
+| Tổng Tiền hóa đơn | read, then converted (`5.800` → 5,800,000) |
+| Xe thu hộ | **calculated**: Tổng − Cọc |
+| Cọc | read, then converted |
+| Trạng thái | `New` |
+| Ngày hẹn giao | left blank |
+| Người chốt đơn | the name you gave at setup |
+
+Only the address, the items and the two money figures involve AI. Everything else is read
+from the header, calculated, or fixed — so the parts most easily got wrong are the parts
+never guessed at.
+
+Amber cells mean the AI found nothing there, rather than zero.
+
+---
+
+## If something looks off
+
+| | |
+|---|---|
+| Counter not moving when you copy | the messages have no `ngày/tháng đơn N` header, or they are from another month |
+| A total looks wrong | tell us the exact text — it is a conversion rule, fixed without re-running the AI |
+| Rows nearly empty | extraction failed; run `lavabo inspect` (below) to see why |
+| "rate limited, retrying" | normal on the free tier, it waits and continues |
+
+---
+
+## For developers
+
+The app is a front end over a CLI that does the same work in steps:
+
+```bash
+source .venv/bin/activate
+
+lavabo config      # effective settings, and drift from config.example.yaml
+lavabo check       # API key valid? paths? schema?
+lavabo models      # which models this key can use
+lavabo inspect     # what is stored per order, including failures
+
+lavabo ingest --source zalo
+lavabo extract
+lavabo load --layout senkahomes --out data/out/report.xlsx --year 2026 --closer "Trà My"
+lavabo verify
+```
+
+Capture can also be run on its own, with more control:
+
+```bash
+python scripts/zalo_capture.py             # current month
+python scripts/zalo_capture.py --month 7   # a different month
+python scripts/zalo_capture.py --retrim    # re-trim files captured earlier
+python scripts/zalo_capture.py --debug     # explain what was accepted or rejected
+```
+
+### Documentation
+
+| | |
+|---|---|
+| [docs/00-quickstart.md](docs/00-quickstart.md) | manual first run, step by step |
+| [docs/01-source-verification.md](docs/01-source-verification.md) | why Zalo is copy-paste and Meta is an API |
+| [docs/02-agent-plan.md](docs/02-agent-plan.md) | architecture |
+| [docs/03-zalo-runbook.md](docs/03-zalo-runbook.md) | capture, trimming, order-header formats |
+| [docs/04-meta-setup.md](docs/04-meta-setup.md) | Meta/Messenger connector (not used yet) |
+| [docs/05-schema-guide.md](docs/05-schema-guide.md) | changing the extracted columns |
+| [docs/06-output-mapping.md](docs/06-output-mapping.md) | column-by-column mapping and open questions |
+
+### Shape of it
+
+```
+start.command / start.bat / start.sh   launchers
+scripts/  lavabo_app.py                the one-screen app
+          zalo_capture.py              clipboard capture, order splitting
+          setup.sh / setup.ps1         install
+          probe_zalo_*.py              checks on Zalo's own export
+src/lavabo/
+  connectors/  zalo_export.py          parses captured notes
+               meta_graph.py           Messenger/Instagram (built, unused)
+  extract/     gemini, anthropic       same interface, swap in config
+  load/        senkahomes.py           the 12-column layout
+               excel.py                generic layout
+  money.py     Vietnamese amounts -> VND
+  store.py     SQLite staging + extraction cache
+data/          inbox/ staging.db out/  gitignored — never commit chat content
+```
+
+### Notes
+
+- Conversation text goes to the configured LLM provider and nowhere else.
+- API keys live in `.env` only; `config/config.yaml` holds no secrets.
+- `data/` is gitignored. Customer messages must not be committed.
+- Extractions are cached on content + schema + prompt + model, so re-running is cheap and
+  a schema change correctly forces a re-run.
