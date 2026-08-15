@@ -15,6 +15,22 @@ PLACEHOLDER_WORDS = re.compile(
     re.IGNORECASE,
 )
 
+# Prefixes that unambiguously identify a provider. Used only to catch a model
+# configured for the wrong one; unknown prefixes are left alone.
+MODEL_OWNERS = {
+    "anthropic": ("claude",),
+    "gemini": ("gemini", "gemma", "models/gemini"),
+}
+
+
+def _provider_for_model(model: str) -> str | None:
+    name = (model or "").strip().lower()
+    for provider, prefixes in MODEL_OWNERS.items():
+        if any(name.startswith(p) for p in prefixes):
+            return provider
+    return None
+
+
 TOOL_NAME = "record_extraction"
 TOOL_DESCRIPTION = (
     "Record the structured data extracted from this conversation. "
@@ -26,11 +42,35 @@ class Extractor(ABC):
     model: str
     # Env var(s) that can supply this provider's key; any one is enough.
     API_KEY_VARS: tuple[str, ...] = ()
+    # Model-name prefixes that belong to this provider.
+    MODEL_PREFIXES: tuple[str, ...] = ()
 
     def __init__(self, config: ExtractConfig, schema: ExtractionSchema) -> None:
         self.config = config
         self.schema = schema
         self.model = config.model
+        self.check_model_matches_provider(config.provider, config.model)
+
+    @staticmethod
+    def check_model_matches_provider(provider: str, model: str) -> None:
+        """Reject a model that plainly belongs to a different provider.
+
+        provider and model are separate settings, so switching one leaves the other
+        behind -- a Gemini provider still pointing at "claude-opus-5" only fails at
+        the API, as a 404 that reads like a missing model rather than a mismatch.
+
+        Deliberately only fires on a KNOWN other-provider prefix: unfamiliar names
+        must still work, since model line-ups change faster than this code.
+        """
+        owner = _provider_for_model(model)
+        if owner and owner != provider.lower():
+            raise RuntimeError(
+                f"extract.provider is {provider!r} but extract.model is {model!r}, "
+                f"which is a {owner} model. Set extract.model in config/config.yaml to a "
+                f"{provider} model (run `lavabo models` to list them), or pass "
+                f"--model. Note config/config.yaml is yours and is never "
+                f"updated by git pull -- config.example.yaml changing does not change it."
+            )
 
     @classmethod
     def api_key(cls) -> str:

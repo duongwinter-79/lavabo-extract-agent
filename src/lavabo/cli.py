@@ -236,6 +236,11 @@ def cmd_check(args, cfg: Config) -> int:
         try:
             from .extract.base import extractor_class
             cls = extractor_class(cfg.extract.provider)
+            try:
+                cls.check_model_matches_provider(cfg.extract.provider, cfg.extract.model)
+            except RuntimeError as exc:
+                print(f"FAIL llm: {exc}")
+                return 1
             good, detail = cls.verify_api_key() if not args.offline else (
                 cls.key_problem() is None,
                 cls.key_problem() or "key present (not verified, --offline)",
