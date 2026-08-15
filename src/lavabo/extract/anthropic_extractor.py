@@ -62,6 +62,7 @@ class AnthropicExtractor(Extractor):
             values=self._empty_values(),
             model=self.model,
             schema_version=self.schema.version,
+            schema_hash=self.schema.fingerprint(),
             prompt_version=PROMPT_VERSION,
         )
 

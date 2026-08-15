@@ -157,7 +157,7 @@ def cmd_extract(args, cfg: Config) -> int:
 
         for conv in conversations:
             hit = store.cached_extraction(
-                conv, schema_version=schema.version,
+                conv, schema_version=schema.version, schema_hash=schema.fingerprint(),
                 prompt_version=PROMPT_VERSION, model=cfg.extract.model,
             )
             if hit and not args.force:
@@ -196,7 +196,7 @@ def cmd_load(args, cfg: Config) -> int:
         results = {}
         for conv in conversations:
             hit = store.cached_extraction(
-                conv, schema_version=schema.version,
+                conv, schema_version=schema.version, schema_hash=schema.fingerprint(),
                 prompt_version=PROMPT_VERSION, model=cfg.extract.model,
             )
             if hit:
@@ -336,7 +336,7 @@ def cmd_verify(args, cfg: Config) -> int:
             if not conv.messages:
                 problems.append(f"{conv.conversation_id}: ingested with zero messages")
             hit = store.cached_extraction(
-                conv, schema_version=schema.version,
+                conv, schema_version=schema.version, schema_hash=schema.fingerprint(),
                 prompt_version=PROMPT_VERSION, model=cfg.extract.model,
             )
             if not hit:

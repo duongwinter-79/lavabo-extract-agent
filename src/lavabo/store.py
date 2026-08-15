@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS extractions (
     conversation_id  TEXT NOT NULL,
     content_hash     TEXT NOT NULL,
     schema_version   INTEGER NOT NULL,
+    schema_hash      TEXT NOT NULL DEFAULT '',
     prompt_version   INTEGER NOT NULL,
     model            TEXT NOT NULL,
     values_json      TEXT NOT NULL,
@@ -59,7 +60,8 @@ CREATE TABLE IF NOT EXISTS extractions (
     output_tokens    INTEGER DEFAULT 0,
     error            TEXT,
     extracted_at     TEXT NOT NULL,
-    PRIMARY KEY (source, conversation_id, content_hash, schema_version, prompt_version, model)
+    PRIMARY KEY (source, conversation_id, content_hash, schema_version, schema_hash,
+                 prompt_version, model)
 );
 
 -- Watermarks for incremental Meta pulls; ingested-file hashes for Zalo drops.
@@ -98,6 +100,16 @@ class Store:
         `sequence` column, so they reject untimed messages. SQLite cannot relax a NOT NULL
         constraint in place, so the table is rebuilt and its rows copied across.
         """
+        # extractions: a schema fingerprint joined the cache key. Older rows lack it,
+        # so they can never match a current lookup -- which is the correct outcome,
+        # since they were produced under a schema we can no longer identify.
+        ext = {r[1] for r in self.conn.execute("PRAGMA table_info(extractions)")}
+        if ext and "schema_hash" not in ext:
+            log.warning("adding extractions.schema_hash; existing cached extractions "
+                        "will be re-run once, as their schema cannot be identified")
+            with self.tx() as c:
+                c.execute("ALTER TABLE extractions ADD COLUMN schema_hash TEXT NOT NULL DEFAULT ''")
+
         cols = {r[1]: r for r in self.conn.execute("PRAGMA table_info(messages)")}
         if not cols:
             return                                  # fresh database, nothing to migrate
@@ -212,12 +224,12 @@ class Store:
         with self.tx() as c:
             c.execute(
                 """INSERT OR REPLACE INTO extractions
-                     (source, conversation_id, content_hash, schema_version, prompt_version,
-                      model, values_json, confidence_json, input_tokens, output_tokens,
-                      error, extracted_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     (source, conversation_id, content_hash, schema_version, schema_hash,
+                      prompt_version, model, values_json, confidence_json, input_tokens,
+                      output_tokens, error, extracted_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (res.source.value, res.conversation_id, content_hash, res.schema_version,
-                 res.prompt_version, res.model,
+                 res.schema_hash, res.prompt_version, res.model,
                  json.dumps(res.values, ensure_ascii=False, default=str),
                  json.dumps(res.confidence, ensure_ascii=False),
                  res.input_tokens, res.output_tokens, res.error, _now()),
@@ -275,14 +287,16 @@ class Store:
         return out
 
     def cached_extraction(
-        self, conv: Conversation, *, schema_version: int, prompt_version: int, model: str
+        self, conv: Conversation, *, schema_version: int, schema_hash: str,
+        prompt_version: int, model: str
     ) -> ExtractionResult | None:
         row = self.conn.execute(
             """SELECT * FROM extractions
                WHERE source=? AND conversation_id=? AND content_hash=?
-                 AND schema_version=? AND prompt_version=? AND model=? AND error IS NULL""",
+                 AND schema_version=? AND schema_hash=? AND prompt_version=? AND model=?
+                 AND error IS NULL""",
             (conv.source.value, conv.conversation_id, conv.content_hash(),
-             schema_version, prompt_version, model),
+             schema_version, schema_hash, prompt_version, model),
         ).fetchone()
         if not row:
             return None
@@ -293,6 +307,7 @@ class Store:
             confidence=json.loads(row["confidence_json"] or "{}"),
             model=row["model"],
             schema_version=row["schema_version"],
+            schema_hash=row["schema_hash"],
             prompt_version=row["prompt_version"],
             input_tokens=row["input_tokens"],
             output_tokens=row["output_tokens"],

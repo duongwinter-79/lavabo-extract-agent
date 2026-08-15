@@ -6,6 +6,8 @@ JSON schema sent to the LLM and the Excel header row. Adding a column is a YAML 
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -108,6 +110,21 @@ class ExtractionSchema:
             "required": [c.name for c in self.columns],  # present-but-null, never missing
             "additionalProperties": False,
         }
+
+    def fingerprint(self) -> str:
+        """Hash of what the model is actually asked for.
+
+        schema_version alone is not a safe cache key: it is a number a human maintains,
+        and two entirely different schema files can both sit at version 1. Swapping
+        schema.yaml then silently served results extracted for the previous columns.
+        Hashing the real definitions -- names, types, descriptions, instructions --
+        means any change that could alter an answer invalidates the cache by itself.
+        """
+        payload = json.dumps(
+            {"schema": self.json_schema(), "instructions": self.instructions},
+            ensure_ascii=False, sort_keys=True,
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
     @property
     def names(self) -> list[str]:

@@ -68,7 +68,13 @@ lavabo load --out data/out/sample.xlsx
 lavabo extract && lavabo load --out data/out/report.xlsx && lavabo verify
 ```
 
-Bumping `schema_version` invalidates the extraction cache — that's intended. The model sees
+The cache keys on a **hash of the schema's actual content**, not just `schema_version`, so
+any edit to a column name, type, description or the instructions block invalidates it by
+itself. `schema_version` is still worth bumping as a human-readable marker, but you cannot
+get stale results by forgetting to. Swapping `schema.yaml` for a different file that happens
+to declare the same version is likewise safe.
+
+Re-extraction after a schema change is intended. The model sees
 all columns at once and they influence each other, so a partial re-extraction would mix
 results from two different schemas in one row.
 

@@ -146,6 +146,7 @@ class ExtractionResult:
     confidence: dict[str, float] = field(default_factory=dict)
     model: str = ""
     schema_version: int = 0
+    schema_hash: str = ""
     prompt_version: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
