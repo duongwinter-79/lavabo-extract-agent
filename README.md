@@ -64,6 +64,30 @@ item, ready to paste in.
 
 That is the whole job.
 
+### Browser version — works on phone, laptop and PC
+
+Same pipeline, reached through a browser instead of the terminal.
+
+| | |
+|---|---|
+| macOS | double-click **`web.command`** |
+| Windows | double-click **`web.bat`** |
+| Terminal | `bash web.sh --lan` |
+
+Without `--lan` it listens on this machine only. With `--lan` it prints a second URL to
+open on a phone connected to the same wifi:
+
+```
+  máy này:      http://127.0.0.1:8765
+  điện thoại:   http://192.168.1.24:8765
+```
+
+On the phone: copy the chat in Zalo, paste it into the box, tap **Lưu đơn**, then
+**Xuất file Excel** and download.
+
+> The page has no password. Anyone on the same network can open it while it runs, so use
+> it on your own wifi rather than a public one, and close it when you are done.
+
 ---
 
 ## What it fills in

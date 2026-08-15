@@ -154,7 +154,6 @@ def cmd_extract(args, cfg: Config) -> int:
                   "No API calls made.")
             return 0
 
-        extractor = build_extractor(cfg.extract, schema)
         pending, cached = [], 0
 
         for conv in conversations:
@@ -169,6 +168,14 @@ def cmd_extract(args, cfg: Config) -> int:
 
         log.info("%d cached, %d to extract", cached, len(pending))
 
+        if not pending:
+            # Nothing to ask the model, so nothing should require an API key or the
+            # provider SDK. Building the extractor up front made a fully-cached run
+            # fail on a machine that only ever needs to re-write the workbook.
+            print(f"\nextracted 0, cached {cached}, failed 0")
+            return 0
+
+        extractor = build_extractor(cfg.extract, schema)
         failures = 0
         with ThreadPoolExecutor(max_workers=cfg.extract.concurrency) as pool:
             for conv, res in zip(pending, pool.map(extractor.extract, pending)):
