@@ -101,10 +101,13 @@ Verified against a real conversation: **selecting and copying in Zalo Web yields
 message bodies — one per line, with no sender names and no timestamps.**
 
 ```
-Em chào chị
-Em muốn mua 1 bó hoa sáp này ạ https://...
-Loại hoa đó mình hết rồi bạn
+Em chào shop ạ
+Em muốn đặt mẫu này còn hàng không ạ
+Mẫu đó bên m hết rồi bạn nhé
+Vậy còn mẫu kia không chị
 ```
+
+*(illustrative example, not a real conversation)*
 
 There is no structure for a regex to parse, so the connector detects this and switches to
 **plain mode**: each line becomes one message, in order, with `sent_at = null` and
