@@ -199,12 +199,13 @@ def cmd_check(args, cfg: Config) -> int:
         try:
             from .extract.base import extractor_class
             cls = extractor_class(cfg.extract.provider)
-            if cls.has_api_key():
-                print(f"llm:        {cfg.extract.provider} / {cfg.extract.model}, key present")
-            else:
-                print(f"llm:        {cfg.extract.provider} / {cfg.extract.model} — "
-                      f"{' or '.join(cls.API_KEY_VARS)} NOT set "
-                      "(fine until you run `lavabo extract`)")
+            good, detail = cls.verify_api_key() if not args.offline else (
+                cls.key_problem() is None,
+                cls.key_problem() or "key present (not verified, --offline)",
+            )
+            mark = "OK  " if good else "FAIL"
+            print(f"{mark} llm: {cfg.extract.provider} / {cfg.extract.model} — {detail}")
+            ok &= good
         except Exception as exc:
             print(f"llm:        NOT READY — {exc}")
 
@@ -293,7 +294,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-v", "--verbose", action="store_true")
     sub = ap.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("check", help="preflight credentials, paths and schema")
+    p = sub.add_parser("check", help="preflight credentials, paths and schema")
+    p.add_argument("--offline", action="store_true",
+                   help="skip verifying the API key against the provider")
 
     p = sub.add_parser("ingest", help="pull/parse conversations into staging")
     p.add_argument("--source", choices=["meta", "zalo", "all"], default="all")

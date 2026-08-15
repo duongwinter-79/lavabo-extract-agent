@@ -197,11 +197,29 @@ the transcript in the output — the timestamps and who-said-what should look ri
 
 ## 8. Add your API key and extract
 
-Put the key in `.env`:
+**Gemini's free tier is enough for this and needs no card.** Get a key at
+<https://aistudio.google.com/apikey> and put it in `.env`:
 
 ```
-ANTHROPIC_API_KEY=sk-ant-...
+GEMINI_API_KEY=AIza...
 ```
+
+That matches the default in `config.example.yaml` (`provider: gemini`,
+`model: gemini-2.5-flash`, `concurrency: 1`). Keep concurrency at 1 — the free tier allows
+only a few requests per minute; 429s are retried with backoff, but going slow is faster than
+being throttled.
+
+For Anthropic instead, set `ANTHROPIC_API_KEY` and switch `provider`/`model` in
+`config/config.yaml`.
+
+Confirm the key actually works before spending a capture session on it:
+
+```bash
+lavabo check
+```
+
+`OK llm: … key verified with the provider` means it is genuinely valid — `check` calls the
+provider, so a wrong or truncated key is caught here rather than at the first extraction.
 
 Then:
 

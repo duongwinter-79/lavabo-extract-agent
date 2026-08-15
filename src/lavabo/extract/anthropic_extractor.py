@@ -19,6 +19,27 @@ log = logging.getLogger(__name__)
 class AnthropicExtractor(Extractor):
     API_KEY_VARS = ("ANTHROPIC_API_KEY",)
 
+    @classmethod
+    def verify_api_key(cls) -> tuple[bool, str]:
+        """Confirm the key works, using models.list() -- no tokens, no charge."""
+        if problem := cls.key_problem():
+            return False, problem
+        try:
+            import anthropic
+        except ImportError:
+            return False, "anthropic package not installed (pip install anthropic)"
+
+        try:
+            anthropic.Anthropic(timeout=15.0).models.list(limit=1)
+        except Exception as exc:
+            name = type(exc).__name__
+            if "Authentication" in name or "401" in str(exc):
+                return False, ("the provider rejected this key (401). It is set but not "
+                               "valid — check for a stray space, a truncated paste, or a "
+                               "key from a different account")
+            return True, f"key set, but could not be verified ({name}) — network issue?"
+        return True, "key verified with the provider"
+
     def __init__(self, config, schema) -> None:
         super().__init__(config, schema)
         try:

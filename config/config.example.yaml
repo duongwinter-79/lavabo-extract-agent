@@ -29,11 +29,19 @@ zalo:
   line_patterns: []
 
 extract:
-  provider: "anthropic"          # anthropic | gemini
-  model: "claude-opus-5"         # or claude-sonnet-5 for cheaper bulk runs
+  # --- Gemini free tier (no card needed; key from https://aistudio.google.com/apikey) ---
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  concurrency: 1                 # free tier is a few requests/minute; keep this at 1
+                                 # (429s are retried with backoff, but going slow is faster)
+
+  # --- Anthropic (paid) ---
+  # provider: "anthropic"
+  # model: "claude-sonnet-5"     # or claude-opus-5 for the hardest extractions
+  # concurrency: 4
+
   max_tokens: 4096
   temperature: 0.0               # deterministic: this is extraction, not writing
-  concurrency: 4
   max_transcript_chars: 120000
 
 db_path: "data/staging.db"
