@@ -207,9 +207,20 @@ def cmd_load(args, cfg: Config) -> int:
             log.warning("%d conversation(s) have no extraction for schema v%d — "
                         "run `lavabo extract` first", missing, schema.version)
 
-        write_workbook(out, schema, conversations, results,
-                       run_meta={"provider": cfg.extract.provider},
-                       display_timezone=cfg.extract.display_timezone)
+        if args.layout == "senkahomes":
+            from .load.senkahomes import write_orders_workbook
+
+            write_orders_workbook(
+                out, conversations, results,
+                sheet_name=args.sheet,
+                default_year=args.year,
+                default_status=args.status,
+                closer=args.closer,
+            )
+        else:
+            write_workbook(out, schema, conversations, results,
+                           run_meta={"provider": cfg.extract.provider},
+                           display_timezone=cfg.extract.display_timezone)
 
     print(f"wrote {out}")
     return 0
@@ -393,6 +404,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("load", help="write the Excel workbook")
     p.add_argument("--out", help="output .xlsx path")
+    p.add_argument("--layout", choices=["generic", "senkahomes"], default="generic",
+                   help="'senkahomes' writes the QUẢN LÝ ĐƠN columns, one row per line "
+                        "item; 'generic' writes one row per record from schema.yaml")
+    p.add_argument("--sheet", help="sheet name (senkahomes layout; default MMYYYY)")
+    p.add_argument("--year", type=int,
+                   help="year for NGÀY CHỐT, since headers carry only day/month "
+                        "(default: this year)")
+    p.add_argument("--status", default="New", help="value for Trạng thái (default: New)")
+    p.add_argument("--closer", help="value for Người chốt đơn, e.g. \"Trà My\" — the note "
+                                    "does not record who sent it")
     add_llm_args(p)
 
     p = sub.add_parser("models", help="list the models this API key can use")
@@ -410,6 +431,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--limit", type=int)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--strict", action="store_true")
+    p.add_argument("--layout", choices=["generic", "senkahomes"], default="generic")
+    p.add_argument("--sheet")
+    p.add_argument("--year", type=int)
+    p.add_argument("--status", default="New")
+    p.add_argument("--closer")
     add_llm_args(p)
 
     args = ap.parse_args(argv)

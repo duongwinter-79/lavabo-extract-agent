@@ -20,6 +20,14 @@ JSON_TYPES = {"string": "string", "number": "number", "integer": "integer",
 
 
 @dataclass(slots=True)
+class ItemProperty:
+    """One field inside an object_array entry, e.g. a line item's name or quantity."""
+    name: str
+    type: str = "string"
+    description: str = ""
+
+
+@dataclass(slots=True)
 class Column:
     name: str
     type: str = "string"
@@ -27,8 +35,36 @@ class Column:
     required: bool = False
     enum: list[str] | None = None
     examples: list[str] = field(default_factory=list)
+    # Only for type: object_array -- the shape of each entry.
+    item_properties: list[ItemProperty] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.item_properties = [
+            p if isinstance(p, ItemProperty) else ItemProperty(**p)
+            for p in self.item_properties
+        ]
 
     def json_property(self) -> dict[str, Any]:
+        # object_array carries structure a flat array cannot: line items pair a name
+        # with a quantity, and two parallel string arrays would let them drift apart.
+        if self.type == "object_array":
+            if not self.item_properties:
+                raise ValueError(f"column {self.name!r}: object_array needs item_properties")
+            return {
+                "type": ["array", "null"],
+                "description": self.description,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        p.name: {"type": [JSON_TYPES.get(p.type, "string"), "null"],
+                                 "description": p.description}
+                        for p in self.item_properties
+                    },
+                    "required": [p.name for p in self.item_properties],
+                    "additionalProperties": False,
+                },
+            }
+
         if self.type not in JSON_TYPES:
             raise ValueError(f"column {self.name!r}: unknown type {self.type!r}")
         prop: dict[str, Any] = {"description": self.description}

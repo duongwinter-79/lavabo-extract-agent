@@ -126,11 +126,27 @@ one-minute check.
 |---|---|
 | Capture, split, month filter | done |
 | Header parsing → date, order no, customer | done |
-| `config/schema.yaml` for these columns | drafted, `config/schema.senkahomes.yaml` |
-| Array-of-objects column type (line items) | **needed** — the schema layer currently only does arrays of strings |
-| VND text → number parser | **needed** |
-| Excel writer: expand items to multiple rows, merged order fields | **needed** |
-| Write into your existing workbook's monthly sheet vs a new file | **your call** |
+| `config/schema.senkahomes.yaml` | done |
+| Array-of-objects column type (line items) | done — `type: object_array` |
+| VND text → number parser | done — `money.py`, 21 cases |
+| Excel writer: one row per line item | done — `lavabo load --layout senkahomes` |
+| Write into your existing workbook's monthly sheet vs a new file | writes a NEW file with the same layout |
+
+### Producing the workbook
+
+```bash
+cp config/schema.senkahomes.yaml config/schema.yaml   # once
+lavabo extract                                        # re-extract under these columns
+lavabo load --layout senkahomes --out data/out/senka.xlsx \
+            --year 2026 --closer "Trà My"
+```
+
+The sheet is named after the month it contains (`082026`), matching your workbook, and the
+headers are byte-identical to it. Paste the rows into your real file, or keep the generated
+one.
+
+`--status` sets Trạng thái (default `New`) and `--closer` fills Người chốt đơn, which the
+notes do not record.
 
 ---
 
