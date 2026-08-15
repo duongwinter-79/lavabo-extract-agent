@@ -11,10 +11,29 @@ Every command below was run against a clean clone before being written down.
 
 ## 0. Prerequisites
 
-- **Python 3.11 or newer** (`python --version`). 3.10 and below will not work.
+- **Python 3.11 or newer**. 3.10 and below will not work.
 - **git**
-- **Zalo PC or Zalo Web**, logged in
-- An **Anthropic or Gemini API key** — only needed at step 7. Steps 1–6 work without one.
+- **Zalo desktop or Zalo Web**, logged in
+- An **Anthropic or Gemini API key** — only needed at step 8. Steps 1–7 work without one.
+
+### macOS: check your Python first
+
+macOS ships Python **3.9**, which is too old, and `python` (without the 3) usually doesn't
+exist at all. Check:
+
+```bash
+python3 --version
+```
+
+If it says 3.9 or 3.10, install a newer one:
+
+```bash
+brew install python@3.12
+python3.12 --version
+```
+
+Then use `python3.12` wherever this guide says `python3`. This is the single most common
+macOS stumbling block — `pip install -e .` fails with a `requires-python` error otherwise.
 
 ---
 
@@ -37,11 +56,14 @@ pip install -e .
 
 **macOS / Linux:**
 ```bash
-python3 -m venv .venv
+python3 -m venv .venv          # or python3.12 -m venv .venv, see step 0
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install -e .
 ```
+
+On macOS the clipboard works out of the box — `pyperclip` uses the built-in `pbpaste`, and
+reading the clipboard needs no Accessibility or Privacy permission.
 
 Check it worked:
 ```bash
@@ -59,7 +81,7 @@ cp config/schema.example.yaml config/schema.yaml
 cp .env.example .env
 ```
 
-Windows PowerShell uses `copy` instead of `cp`.
+Windows PowerShell uses `copy` instead of `cp`; on macOS/Linux `cp` is correct.
 
 ### Edit `config/config.yaml` — one field matters right now
 
@@ -108,7 +130,9 @@ Then, in Zalo — desktop or web, **pick one client and stick with it**:
 
 1. Open a conversation (start with a **short** one for this test)
 2. Scroll to the top of it — Zalo lazy-loads history, so without this you only get the last screenful
-3. `Ctrl+A`, then `Ctrl+C`
+3. Select all and copy:
+   - **macOS:** `Cmd+A`, then `Cmd+C`
+   - **Windows:** `Ctrl+A`, then `Ctrl+C`
 
 The terminal should print:
 
@@ -116,15 +140,24 @@ The terminal should print:
   saved Nguyễn Văn An.txt  (47 messages, 3,201 chars)
 ```
 
-Then press `Ctrl+C` in that terminal to stop.
+Then stop the script with **`Ctrl+C` in the terminal** — that's `Ctrl`, not `Cmd`, even on
+macOS. Terminal interrupt is always `Ctrl+C`; only the *copy* in Zalo uses `Cmd`.
 
 ### If nothing was saved
 
 The script only accepts text it recognises as a transcript. Nothing printed means the copied
 format doesn't match the built-in patterns — **expected, and easy to fix.** Save the copy
-manually so we have a sample:
+manually so we have a sample, as **UTF-8 plain text** at
+`data/inbox/zalo/<customer name>.txt`:
 
-- Paste into **Notepad** (not Word) and save as UTF-8 to `data/inbox/zalo/<customer name>.txt`
+- **macOS — TextEdit defaults to RTF, which breaks parsing.** Open TextEdit, paste, then
+  **Format → Make Plain Text** (`Shift+Cmd+T`) before saving. Or skip the GUI entirely:
+  ```bash
+  pbpaste > "data/inbox/zalo/Nguyễn Văn An.txt"
+  ```
+  That one-liner is the most reliable option on a Mac — it writes exactly what's on the
+  clipboard, UTF-8, no formatting.
+- **Windows:** paste into **Notepad** (not Word) and save as UTF-8.
 
 Then send me the first 5 lines and I'll tune the pattern. Do not capture the other 49 until
 this works.
@@ -225,6 +258,9 @@ re-running is cheap and safe.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `lavabo: command not found` | venv not active | re-run the activate line |
+| `python: command not found` (macOS) | macOS has no bare `python` | use `python3` |
+| `requires-python` error on install | Python 3.10 or older | `brew install python@3.12`, see step 0 |
+| `pip install` hits a system-python permission error | venv not active | activate first, never `sudo pip` |
 | `ModuleNotFoundError: lavabo` | `pip install -e .` skipped | run it |
 | `schema: NOT READY` | `config/schema.yaml` missing | step 3 |
 | `ANTHROPIC_API_KEY is not set` | no key in `.env` | step 8 (or use `--dry-run`) |
@@ -233,7 +269,8 @@ re-running is cheap and safe.
 | Match rate below 50% | regex mismatch | send me the first 5 lines |
 | Message count too low | didn't scroll to top | redo step 5.2 |
 | Everything labelled inbound | `own_names` wrong | step 3 |
-| Vietnamese shows as `Ã¡Â»` | saved as ANSI | re-save as UTF-8 |
+| Vietnamese shows as `Ã¡Â»` | saved as ANSI/RTF | re-save UTF-8; on macOS use `pbpaste > file.txt` |
+| macOS: file full of `{\rtf1...}` | TextEdit saved RTF | Format -> Make Plain Text, or use `pbpaste` |
 
 ## What to send me if you get stuck
 

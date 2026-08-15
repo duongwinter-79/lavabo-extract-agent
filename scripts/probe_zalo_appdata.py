@@ -61,8 +61,24 @@ def candidate_roots(extra: Path | None) -> list[Path]:
             home / "Documents" / "Zalo Received Files",
         ]
     elif sys.platform == "darwin":
-        support = home / "Library" / "Application Support"
-        roots += [support / "Zalo", support / "ZaloPC", home / "Documents" / "Zalo Received Files"]
+        library = home / "Library"
+        support = library / "Application Support"
+        roots += [support / "Zalo", support / "ZaloPC",
+                  home / "Documents" / "Zalo Received Files"]
+
+        # Zalo for Mac ships through the App Store, so it is sandboxed and its real
+        # data lives under Containers/<bundle-id>/Data/... rather than in the paths
+        # above. Without this the probe reports "not installed" on a Mac that has it.
+        for container_base in (library / "Containers", library / "Group Containers"):
+            if not container_base.exists():
+                continue
+            for bundle in container_base.iterdir():
+                if not bundle.is_dir() or "zalo" not in bundle.name.casefold():
+                    continue
+                roots.append(bundle)
+                inner = bundle / "Data" / "Library" / "Application Support"
+                if inner.exists():
+                    roots.append(inner)
     else:
         roots += [home / ".config" / "Zalo", home / ".config" / "ZaloPC",
                   home / ".zalo", home / "Documents" / "Zalo Received Files"]

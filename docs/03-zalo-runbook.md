@@ -30,6 +30,9 @@ probe:
 python scripts/probe_zalo_appdata.py -o probe-appdata.md
 ```
 
+On macOS this also searches `~/Library/Containers/` — Zalo for Mac ships through the App
+Store, so it is sandboxed and its data does not sit in the usual Application Support path.
+
 If either comes back readable, send me the report — the connector gets rewritten to read it
 directly and everything below disappears.
 
@@ -46,9 +49,10 @@ frequent remaining name.
 python scripts/zalo_capture.py
 ```
 
-Then per conversation: **click it → scroll to the top → Ctrl+A → Ctrl+C.** The script
-detects the copy, names the file, skips duplicates, and prints a confirmation. Ctrl+C to
-stop. Roughly 10 seconds per conversation instead of two minutes.
+Then per conversation: **click it → scroll to the top → select all → copy**
+(`Cmd+A`/`Cmd+C` on macOS, `Ctrl+A`/`Ctrl+C` on Windows). The script detects the copy, names
+the file, skips duplicates, and prints a confirmation. Stop it with `Ctrl+C` in the terminal
+— always `Ctrl`, even on macOS. Roughly 10 seconds per conversation instead of two minutes.
 
 If it can't tell who the customer is (e.g. every sender matched `own_names`) it asks you to
 type the name rather than guessing. `--name "Tran Thi B"` forces it for one capture.
@@ -62,8 +66,10 @@ If the clipboard watcher misbehaves, do it by hand — the ingest step is identi
 1. Open the conversation, scroll to the very top of the range you want.
    **Zalo lazy-loads history** — without scrolling first you only copy the last screenful.
 2. Click the first message, `Shift+Click` the last (or `Ctrl+A` in the message pane), `Ctrl+C`.
-3. Paste into Notepad — **plain text, not Word.** Word adds smart quotes that break parsing.
-4. Save as UTF-8 into `data/inbox/zalo/`, named after the customer.
+3. Save as **UTF-8 plain text** into `data/inbox/zalo/`, named after the customer.
+   - macOS: `pbpaste > "data/inbox/zalo/<name>.txt"` is the most reliable route. TextEdit
+     saves RTF by default — if you use it, Format -> Make Plain Text first.
+   - Windows: paste into Notepad, not Word (Word adds smart quotes that break parsing).
 
 ## Step 2 — file naming (manual path only)
 
