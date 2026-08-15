@@ -7,6 +7,7 @@ content that has not changed. All writes are idempotent upserts.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -15,6 +16,8 @@ from pathlib import Path
 from typing import Iterator
 
 from .models import Attachment, Conversation, Direction, ExtractionResult, Message, Source
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS conversations (
@@ -42,7 +45,6 @@ CREATE TABLE IF NOT EXISTS messages (
     raw              TEXT,
     PRIMARY KEY (source, message_id)
 );
-CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages (source, conversation_id, sequence);
 
 CREATE TABLE IF NOT EXISTS extractions (
     source           TEXT NOT NULL,
@@ -67,6 +69,11 @@ CREATE TABLE IF NOT EXISTS state (
 );
 """
 
+# Indexes are created after migrations, since a legacy table may lack the columns.
+INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages (source, conversation_id, sequence);
+"""
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -80,7 +87,60 @@ class Store:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
+        self._migrate()
+        self.conn.executescript(INDEXES)
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Bring a database created by an earlier version up to the current schema.
+
+        Databases predating plain-format support have `messages.sent_at NOT NULL` and no
+        `sequence` column, so they reject untimed messages. SQLite cannot relax a NOT NULL
+        constraint in place, so the table is rebuilt and its rows copied across.
+        """
+        cols = {r[1]: r for r in self.conn.execute("PRAGMA table_info(messages)")}
+        if not cols:
+            return                                  # fresh database, nothing to migrate
+
+        sent_at_not_null = bool(cols["sent_at"][3]) if "sent_at" in cols else False
+        if "sequence" in cols and not sent_at_not_null:
+            return                                  # already current
+
+        log.warning("migrating staging db to the current schema (messages table rebuild)")
+
+        carried = [c for c in ("source", "conversation_id", "message_id", "sent_at",
+                               "direction", "sender_id", "sender_name", "text",
+                               "attachments", "raw") if c in cols]
+        seq = "sequence" if "sequence" in cols else "0"
+
+        with self.tx() as c:
+            c.executescript("""
+                CREATE TABLE messages_migrated (
+                    source           TEXT NOT NULL,
+                    conversation_id  TEXT NOT NULL,
+                    message_id       TEXT NOT NULL,
+                    sent_at          TEXT,
+                    sequence         INTEGER NOT NULL DEFAULT 0,
+                    direction        TEXT NOT NULL,
+                    sender_id        TEXT,
+                    sender_name      TEXT,
+                    text             TEXT,
+                    attachments      TEXT,
+                    raw              TEXT,
+                    PRIMARY KEY (source, message_id)
+                );
+            """)
+            c.execute(
+                f"INSERT INTO messages_migrated ({', '.join(carried)}, sequence) "
+                f"SELECT {', '.join(carried)}, {seq} FROM messages"
+            )
+            c.executescript(
+                "DROP TABLE messages;"
+                "ALTER TABLE messages_migrated RENAME TO messages;"
+            )
+
+        moved = self.conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+        log.warning("migration complete, %d message(s) preserved", moved)
 
     def close(self) -> None:
         self.conn.close()
