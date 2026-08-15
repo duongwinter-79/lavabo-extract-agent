@@ -78,10 +78,21 @@ Vietnamese shorthand is compact and easy to misread:
 | `1tr2` | 1,200,000 |
 | `500k` | 500,000 |
 | `29tr500` | 29,500,000 |
+| **`5.800`** | **5,800,000** — bare numbers on the total line are in millions |
+| **`11.500`** | **11,500,000** |
+| `6.000.000` | 6,000,000 — full đồng notation, left as written |
 
-The model returns the **verbatim string** it found (`"29tr"`), and a Python function converts
-it. A money column is the worst place to accept "probably right", and this way the raw text
-stays in the workbook's audit trail so any conversion is checkable.
+A bare number and a full amount look the same (digits and separators), so the two are
+told apart by which reading lands in a plausible range for an order: below 100,000 đồng
+the number is read as millions, and a millions reading above 500,000,000 is rejected as
+absurd. `5.800` becomes 5,800,000; `6.000.000` stays 6,000,000.
+
+The model returns the **verbatim string** it found (`"5.800"`), and a Python function
+converts it. A money column is the worst place to accept "probably right".
+
+This split has a practical payoff: when a conversion rule turns out to be wrong, the stored
+text is still correct, so only `lavabo load` needs re-running. No re-extraction, no API
+calls. Had the model been asked for a number, every such fix would cost a full re-run.
 
 ### Địa chỉ absorbs the phone
 

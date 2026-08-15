@@ -53,11 +53,51 @@ def parse_vnd(text: str | None) -> int | None:
         return int(m["whole"]) * THOUSAND
 
     if m := _PLAIN.search(s):
-        digits = re.sub(r"[.,\s]", "", m.group())
-        if digits.isdigit():
-            return int(digits)
+        return _plain_amount(m.group())
 
     return None
+
+
+# An order total is never a few thousand đồng, and never half a billion. These bracket
+# the two readings of a bare number so the implausible one can be discarded.
+PLAUSIBLE_MIN = 100_000
+PLAUSIBLE_MAX = 500_000_000
+
+
+def _as_millions(raw: str) -> float | None:
+    """Read a bare number as a count of millions: "5.800" -> 5.8, "11.500" -> 11.5."""
+    cleaned = raw.replace(",", ".").replace(" ", "").strip(".")
+    parts = [p for p in cleaned.split(".") if p]
+    if not parts or not all(p.isdigit() for p in parts):
+        return None
+    if len(parts) == 1:
+        return float(parts[0])
+    return float(parts[0] + "." + "".join(parts[1:]))
+
+
+def _plain_amount(raw: str) -> int | None:
+    """Interpret a number written without a tr/k suffix.
+
+    The shop writes totals in millions with a decimal separator -- "Tổng 5.800" is
+    5,800,000, not 5,800 -- while a full amount is sometimes written out as
+    "6.000.000". Both are digits and separators, so the two readings are told apart
+    by which one lands in a plausible range for an order rather than by the notation.
+    """
+    digits = re.sub(r"[.,\s]", "", raw)
+    if not digits.isdigit():
+        return None
+    literal = int(digits)
+
+    # Already a believable amount in đồng: "6.000.000", "17500000".
+    if literal >= PLAUSIBLE_MIN:
+        return literal
+
+    millions = _as_millions(raw)
+    if millions is None:
+        return literal
+    scaled = int(round(millions * MILLION))
+    # If treating it as millions produces something absurd, the literal was right.
+    return scaled if scaled <= PLAUSIBLE_MAX else literal
 
 
 def format_vnd(value: int | None) -> str:
