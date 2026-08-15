@@ -309,6 +309,7 @@ def cmd_inspect(args, cfg: Config) -> int:
               f"model {cfg.extract.model}\n")
 
         usable = failed = stale = absent = 0
+        reusable_models: set[str] = set()
         for conv in conversations:
             rows = store.latest_extraction_rows(conv.conversation_id)
             current = [r for r in rows
@@ -322,8 +323,17 @@ def cmd_inspect(args, cfg: Config) -> int:
             elif not current:
                 stale += 1
                 other = rows[0]
-                print(f"    only stale rows: schema_hash={other['schema_hash'] or '(none)'} "
-                      f"model={other['model']} — re-run `lavabo extract`")
+                # Distinguish "extracted under a different model" from "extracted for a
+                # different schema". The first is reusable by pointing the config at that
+                # model; the second genuinely has to be redone.
+                if (other["schema_hash"] == fingerprint
+                        and other["prompt_version"] == PROMPT_VERSION):
+                    reusable_models.add(other["model"])
+                    print(f"    same schema, different model ({other['model']})"
+                          " — reusable, see the note below")
+                else:
+                    print(f"    stale: schema_hash={other['schema_hash'] or '(none)'} "
+                          f"model={other['model']} — re-run `lavabo extract`")
             else:
                 row = current[0]
                 if row["error"]:
@@ -343,6 +353,18 @@ def cmd_inspect(args, cfg: Config) -> int:
         if failed or stale or absent:
             print("Anything not 'usable' contributes only its header-derived fields "
                   "(date, order no, customer) to the workbook.")
+
+        if reusable_models:
+            names = ", ".join(sorted(reusable_models))
+            print(f"\nNOTHING NEEDS RE-EXTRACTING. Those rows were produced under model "
+                  f"{names} for this exact schema.\nThe model is part of the cache key "
+                  "because different models give different answers, so pointing the config "
+                  "back\nat the one that produced them makes them usable again:\n"
+                  f"\n    extract.model: \"{sorted(reusable_models)[0]}\"   "
+                  "in config/config.yaml\n"
+                  f"\nor pass --model {sorted(reusable_models)[0]} to load. "
+                  f"Re-extracting under {cfg.extract.model} instead is also valid, just "
+                  "not free.")
     return 0
 
 
