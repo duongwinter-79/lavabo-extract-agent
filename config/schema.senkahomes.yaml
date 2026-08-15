@@ -1,0 +1,96 @@
+# Columns for QUẢN LÝ ĐƠN SENKAHOMES. Copy to config/schema.yaml to use.
+#
+# Only what genuinely needs reading and judgement is asked of the model. Everything
+# else is parsed from the header, computed, or defaulted at write time:
+#
+#   STT               running counter          (writer)
+#   NGÀY CHỐT         header "15/8" + year     (parsed)
+#   Tên KH            header customer name     (parsed)
+#   Xe thu hộ         Tổng - Cọc               (computed; verified on 89/90 real orders)
+#   Trạng thái        default "New"            (writer)
+#   Ngày hẹn giao     always blank             (writer)
+#   Người chốt đơn    message sender           (NOT AVAILABLE -- see docs/06-output-mapping.md)
+#
+# See docs/06-output-mapping.md for the full mapping and the open questions.
+
+schema_version: 1
+
+instructions: |
+  These are order notes from a Vietnamese bathroom-fittings retailer (SENKAHOMES).
+  Each note is ONE order written as a single chat message. It is not a conversation --
+  do not look for turn-taking.
+
+  Typical shape, in this order:
+    - a header line: date, order number, and sometimes the customer's name
+    - one line per product, ALWAYS beginning with the quantity
+    - a delivery address (often prefixed "Đc:" or "Địa chỉ:")
+    - a phone number on its own line, or inside the address line
+    - a total, usually "Tổng ..."
+    - a deposit, usually "Đã cọc ..." or "Cọc ..."
+    - an optional trailing "Note: ..."
+
+  Some lines are ordinary chat that happened to follow the order ("ok chị", "vâng ạ").
+  Ignore those.
+
+  Money: return the text EXACTLY as written ("29tr", "2tr5", "500k"). Do not convert it
+  to a number -- a separate step does that, deterministically.
+
+  Product names: strip the leading quantity, keep everything else verbatim including
+  model codes, sizes and colours ("tủ BC52, gương bo, mặt tinh thể - 80- 401").
+
+columns:
+  - name: items
+    type: object_array
+    required: true
+    description: >
+      One entry per product line, in the order written. Skip lines that are not products
+      (address, phone, total, deposit, note, chit-chat).
+    item_properties:
+      - name: name
+        type: string
+        description: >
+          Product name with the leading quantity removed, otherwise verbatim. Keep model
+          codes, sizes and colours exactly as written.
+      - name: quantity
+        type: number
+        description: >
+          The number at the start of the line. If the line has no leading number, use 1.
+
+  - name: address
+    type: string
+    required: true
+    description: >
+      The delivery address as written, without any "Đc:"/"Địa chỉ:" prefix and without the
+      phone number. Keep it on one line. Null if the note contains no address.
+
+  - name: phone
+    type: string
+    description: >
+      Customer phone number, digits only, no spaces or separators. It may sit on its own
+      line or inside the address line. Null if absent.
+
+  - name: total_text
+    type: string
+    required: true
+    description: >
+      The invoice total EXACTLY as written, e.g. "29tr", "12tr300", "6.000.000".
+      Usually follows "Tổng". Do not convert to a number. Null if no total is stated.
+
+  - name: deposit_text
+    type: string
+    description: >
+      The deposit EXACTLY as written, e.g. "500k", "1tr". Usually follows "Đã cọc" or
+      "Cọc". Do not convert to a number. Null if no deposit is mentioned — null means
+      no deposit, which the writer treats as 0.
+
+  - name: note
+    type: string
+    description: >
+      Any trailing instruction or remark, typically after "Note:". Verbatim, in
+      Vietnamese. Null if there is none.
+
+  - name: delivery_date_text
+    type: string
+    description: >
+      A promised delivery date, ONLY if one is explicitly stated in the note (e.g.
+      "giao sáng mai", "hẹn 20/8"). Verbatim. Null otherwise — this is normally null.
