@@ -211,6 +211,24 @@ def cmd_load(args, cfg: Config) -> int:
 
     with Store(cfg.db_path) as store:
         conversations = store.conversations()
+
+        # Orders from several months can sit in the store at once -- a backfill of
+        # Oct 2025 alongside the current month. Without this filter they would all
+        # land in one workbook, under a sheet named after whichever came first.
+        if args.month:
+            wanted_year = args.year
+            kept = []
+            for conv in conversations:
+                if conv.raw.get("order_month") != args.month:
+                    continue
+                if wanted_year and (conv.raw.get("order_year") or wanted_year) != wanted_year:
+                    continue
+                kept.append(conv)
+            dropped = len(conversations) - len(kept)
+            conversations = kept
+            if dropped:
+                print(f"({dropped} order(s) from other months excluded)")
+
         results = {}
         for conv in conversations:
             hit = store.cached_extraction(
@@ -575,9 +593,12 @@ def main(argv: list[str] | None = None) -> int:
                    help="'senkahomes' writes the QUẢN LÝ ĐƠN columns, one row per line "
                         "item; 'generic' writes one row per record from schema.yaml")
     p.add_argument("--sheet", help="sheet name (senkahomes layout; default MMYYYY)")
+    p.add_argument("--month", type=int, metavar="M",
+                   help="only include orders from this month (1-12). Without it, every "
+                        "stored order is written, which mixes months after a backfill")
     p.add_argument("--year", type=int,
                    help="year for NGÀY CHỐT, since headers carry only day/month "
-                        "(default: this year)")
+                        "(default: this year); also narrows --month")
     p.add_argument("--status", default="New", help="value for Trạng thái (default: New)")
     p.add_argument("--closer", help="value for Người chốt đơn, e.g. \"Trà My\" — the note "
                                     "does not record who sent it")
