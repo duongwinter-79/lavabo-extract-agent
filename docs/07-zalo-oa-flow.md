@@ -1,5 +1,17 @@
 # Zalo OA flow — orders from an OA-owned group
 
+> ## Not available on the shop's account
+>
+> SENKAHOMES has a **Zalo Business** account — a normal personal account, paid to unlock
+> a business profile, catalog and higher limits. That is a different product from a
+> **Zalo Official Account**, and it has **no API, no webhooks and no developer app**.
+> Everything below needs an OA.
+>
+> This document, `scripts/lavabo_webhook.py` and `src/lavabo/connectors/zalo_oa.py` are
+> kept because they work and cost nothing to keep — if the shop registers an OA later,
+> the connector slots in behind the same interface. Until then the copy-paste route in
+> `docs/03-zalo-runbook.md` is not a stopgap, it is **the** route.
+
 Replaces copy-and-paste with messages Zalo pushes to us. Orders arrive as they are
 posted, nobody copies anything, and **`Người chốt đơn` becomes a fact** — the payload
 carries the sender.

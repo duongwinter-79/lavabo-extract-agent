@@ -64,9 +64,15 @@ Option 1 is unglamorous but it is the only one that is zero-risk, works for a **
 designed so that when/if you obtain an OA, option 2 slots in behind the same interface with
 no change to the rest of the agent.
 
-**Decision needed from you:** is getting a Zalo OA (Official Account) on the table? It flips
-Zalo from "human does the export" to "fully automated", and it's the single biggest lever on
-this project.
+**Answered: option 1, and it is not temporary.** The shop has a **Zalo Business** account —
+an upgraded personal account, not an Official Account. Zalo Business unlocks a business
+profile, catalog and higher limits inside the ordinary app; it grants **no API, no webhook
+and no developer app**. Option 2 needs an OA, which is a separate registration requiring
+business documents.
+
+So copy-paste is the route, and the automation is worth building around it rather than
+treating it as a placeholder. If an OA is registered later, option 2 still slots in behind
+the same interface — the connector is already written.
 
 ---
 
@@ -153,7 +159,8 @@ rewrite. See `docs/02-agent-plan.md`.
 
 ## 4. Open questions for you
 
-1. Zalo OA — obtainable, or are we permanently on manual export?
+1. ~~Zalo OA — obtainable, or are we permanently on manual export?~~ **Answered:** the
+   account is Zalo Business (no API). Manual capture is the route.
 2. Is WhatsApp in scope, or Messenger + Instagram only?
 3. Do you already have a Meta app with Advanced Access, or do we start App Review from zero?
 4. Roughly how many conversations per run, and how far back for the first backfill?

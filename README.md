@@ -164,7 +164,7 @@ python scripts/zalo_capture.py --debug     # explain what was accepted or reject
 | [docs/04-meta-setup.md](docs/04-meta-setup.md) | Meta/Messenger connector (not used yet) |
 | [docs/05-schema-guide.md](docs/05-schema-guide.md) | changing the extracted columns |
 | [docs/06-output-mapping.md](docs/06-output-mapping.md) | column-by-column mapping and open questions |
-| [docs/07-zalo-oa-flow.md](docs/07-zalo-oa-flow.md) | the Zalo OA group flow — automatic capture, real senders |
+| [docs/07-zalo-oa-flow.md](docs/07-zalo-oa-flow.md) | the Zalo OA group flow — built, but **needs an Official Account**, which a Zalo Business account is not |
 
 ### Shape of it
 

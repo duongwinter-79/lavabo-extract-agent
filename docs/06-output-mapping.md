@@ -115,19 +115,27 @@ Lines with no leading number default to qty `1`.
 This column records **which staff member closed the order** — `Trà My` (82) or `Hường` (5)
 in your file. It is not written in the order note; it is *who sent the message*.
 
-**A Zalo Web copy strips sender names**, so this cannot currently be recovered. Three ways
-forward, best first:
+**A Zalo Web copy strips sender names**, so it is not in what we capture. And it is not
+coming from an API either: the shop has a **Zalo Business** account (an upgraded personal
+account), which has no API — see `docs/07`. So this column has to be got right in the app,
+permanently. There is no automated source waiting behind it.
 
-1. **Check whether Zalo Desktop's copy includes sender names.** If it does, switch to
-   capturing there and this resolves itself — the connector already handles labelled
-   transcripts. One copy tells you: `pbpaste | head -20`.
-2. **Set a default per capture session.** `--closer "Trà My"` on the capture command stamps
-   every order in that session. Accurate whenever one person captures their own orders, and
-   it matches the 82:5 split.
-3. **Leave blank and fill by hand.** 90 orders a month makes this the least attractive.
+What that leaves, best first:
 
-I have not implemented any of these yet — it depends on your answer to (1), which is a
-one-minute check.
+1. **Ask in the app, per capture, defaulting to last time.** The operator picks who closed
+   these orders before saving them. One tap for the common case where one person captures
+   their own orders — which matches the 82:5 split — and it is stored per order rather
+   than per run, so a mixed paste can still be corrected.
+2. **Check whether Zalo Desktop's copy includes sender names.** If it does, the connector
+   already handles labelled transcripts and (1) becomes a fallback rather than the source.
+   One copy answers it: `pbpaste | head -20`.
+3. **Set one name for the whole run.** `--closer "Trà My"` today. Fine for a single-person
+   session, wrong the moment two people's orders are in the same paste — and wrong here
+   means revenue moved between staff.
+4. **Leave blank and fill by hand.** 90 orders a month makes this the least attractive.
+
+Today the code does (3). (1) is the one worth building, and it is now the *only* fix —
+before, it was a stopgap until an OA arrived.
 
 ---
 
@@ -165,8 +173,8 @@ Three consequences:
    used row put them at row 76 — beneath their own totals.
 3. **`Người chốt đơn` drives revenue reporting.** Those SUMIFs split the month's takings
    by name. A wrong value there does not merely look wrong; it moves money between
-   people's totals. That is the strongest argument for the Zalo OA route, where the
-   sender is recorded rather than defaulted.
+   people's totals — so it has to be got right in the app, since no Zalo route will
+   supply it. See §4.
 
 ### Producing the workbook
 
