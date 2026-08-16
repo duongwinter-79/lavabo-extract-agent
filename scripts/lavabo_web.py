@@ -32,7 +32,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from lavabo.config import Config  # noqa: E402
 
-PAGE = """<!doctype html>
+# Raw, so backslash escapes belong to the JS and CSS rather than to Python. A plain
+# string silently turns "\n" in a JS literal into a real newline, which breaks the
+# whole <script> at parse time while every endpoint still answers perfectly.
+PAGE = r"""<!doctype html>
 <html lang="vi"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -129,9 +132,13 @@ function drawClosers(names, current) {
   closers = names;
   const sel = $('closer');
   sel.innerHTML = '';
-  if (!names.length && !current) {
+  // With nothing remembered on this device, select nothing: the most recently used
+  // name is not this person's name, and a silent default is how one operator's orders
+  // get counted as another's. Lưu đơn refuses an empty pick.
+  if (!current) {
     const o = document.createElement('option');
-    o.value = ''; o.textContent = '— chưa có tên, chọn "Tên khác…" —';
+    o.value = '';
+    o.textContent = names.length ? '— chọn tên —' : '— chưa có tên, chọn "Tên khác…" —';
     sel.appendChild(o);
   }
   for (const n of names) {
@@ -141,7 +148,7 @@ function drawClosers(names, current) {
   const other = document.createElement('option');
   other.value = NEW_NAME; other.textContent = 'Tên khác…';
   sel.appendChild(other);
-  if (current && names.includes(current)) sel.value = current;
+  sel.value = (current && names.includes(current)) ? current : '';
 }
 
 $('closer').onchange = () => {
