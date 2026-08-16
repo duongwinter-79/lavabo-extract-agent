@@ -252,7 +252,10 @@ def cmd_load(args, cfg: Config) -> int:
                         missing, schema.version)
 
         if args.layout == "senkahomes":
-            from .load.senkahomes import write_orders_workbook
+            from .load.senkahomes import missing_schema_fields, write_orders_workbook
+
+            if _schema_mismatch(schema, missing_schema_fields(schema)):
+                return 1
 
             write_orders_workbook(
                 out, conversations, results,
@@ -272,6 +275,19 @@ def cmd_load(args, cfg: Config) -> int:
 
 # ---------------------------------------------------------------------- other
 
+def _schema_mismatch(schema, missing: list[str]) -> bool:
+    """True (and explains) when the active schema cannot feed the senkahomes layout."""
+    if not missing:
+        return False
+    print(f"\nconfig/schema.yaml (v{schema.version}) does not define: {', '.join(missing)}")
+    print(f"  It has: {', '.join(schema.names)}")
+    print("  Those look like the placeholder columns from schema.example.yaml. The")
+    print("  senkahomes layout cannot fill Địa chỉ, Tên sản phẩm, Tổng or Cọc from them,")
+    print("  so the workbook would come out with only dates and names.")
+    print("\n  Fix: cp config/schema.senkahomes.yaml config/schema.yaml && lavabo extract")
+    return True
+
+
 def cmd_check(args, cfg: Config) -> int:
     ok = True
 
@@ -283,6 +299,14 @@ def cmd_check(args, cfg: Config) -> int:
             schema = cfg.load_schema()
             print(f"schema:     v{schema.version}, {len(schema.names)} columns "
                   f"({', '.join(schema.names[:6])}{'...' if len(schema.names) > 6 else ''})")
+            from .load.senkahomes import REQUIRED_FIELDS, missing_schema_fields
+
+            # Not a failure -- the generic layout is a legitimate use. But an install
+            # left on the placeholder schema fails much later, at load, so say it now.
+            if len(missing_schema_fields(schema)) == len(REQUIRED_FIELDS):
+                print("            note: none of the senkahomes fields are defined. If you "
+                      "want that layout,\n                  copy config/schema.senkahomes.yaml "
+                      "to config/schema.yaml.")
         except Exception as exc:
             print(f"schema:     NOT READY — {exc}")
             ok = False
@@ -327,8 +351,11 @@ def cmd_append(args, cfg: Config) -> int:
     """Insert orders into the shop's own workbook, after a backup."""
     from .extract.prompt import PROMPT_VERSION
     from .load.append import append_orders
+    from .load.senkahomes import missing_schema_fields
 
     schema = cfg.load_schema()
+    if _schema_mismatch(schema, missing_schema_fields(schema)):
+        return 1
     target = Path(args.into)
 
     with Store(cfg.db_path) as store:

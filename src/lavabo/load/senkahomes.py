@@ -45,6 +45,17 @@ MISSING_FILL = PatternFill("solid", fgColor="FFF2CC")
 THIN = Side(style="thin", color="BFBFBF")
 
 
+# Fields this layout reads out of an extraction. A schema without them yields a workbook
+# where only the header-derived columns are filled, which reads as a failed extraction
+# rather than the wrong schema being active -- so name the real cause instead.
+REQUIRED_FIELDS = ("items", "address", "total_text", "deposit_text")
+
+
+def missing_schema_fields(schema) -> list[str]:
+    have = set(schema.names)
+    return [name for name in REQUIRED_FIELDS if name not in have]
+
+
 def _order_sort_key(conv: Conversation) -> tuple:
     raw = conv.raw or {}
     return (raw.get("order_month") or 0, raw.get("order_day") or 0,

@@ -83,7 +83,8 @@ function Seed($src, $dst) {
 }
 
 Seed "config\config.example.yaml" "config\config.yaml"
-Seed "config\schema.example.yaml" "config\schema.yaml"
+# The SENKAHOMES schema, not the generic placeholder one -- see setup.sh.
+Seed "config\schema.senkahomes.yaml" "config\schema.yaml"
 Seed ".env.example" ".env"
 
 New-Item -ItemType Directory -Force -Path "data\inbox\zalo", "data\out" | Out-Null

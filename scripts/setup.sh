@@ -85,7 +85,10 @@ seed() {
 }
 
 seed config/config.example.yaml config/config.yaml
-seed config/schema.example.yaml config/schema.yaml
+# The SENKAHOMES schema, not the generic placeholder one: the senkahomes layout reads
+# items/address/total_text/deposit_text, and seeding the example leaves an install that
+# extracts the wrong fields and writes a nearly empty workbook.
+seed config/schema.senkahomes.yaml config/schema.yaml
 seed .env.example .env
 
 mkdir -p data/inbox/zalo data/out
