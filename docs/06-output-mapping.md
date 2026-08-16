@@ -141,7 +141,32 @@ one-minute check.
 | Array-of-objects column type (line items) | done — `type: object_array` |
 | VND text → number parser | done — `money.py`, 21 cases |
 | Excel writer: one row per line item | done — `lavabo load --layout senkahomes` |
-| Write into your existing workbook's monthly sheet vs a new file | writes a NEW file with the same layout |
+| Write into your existing workbook's monthly sheet vs a new file | both — `load` writes a separate file, `append` inserts into yours after a backup |
+
+### The sheet is a template, not an empty grid
+
+Reading the real file closely changed how export has to work. Sheet `082026` looked
+empty but is not:
+
+| What | Where |
+|---|---|
+| `=G{n}-I{n}` in **Xe thu hộ** | rows 2–67, pre-filled |
+| `Tổng doanh thu cửa hàng` = `=sum(G1:G120)` | row 72 |
+| `Doanh thu Trà My` = `=SUMIF($L:$L,"Trà My",$G:$G)` | row 73 |
+| `Doanh thu Hường` = `=SUMIF($L:$L,"Hường",$G:$G)` | row 74 |
+| `Doanh thu chị Hảo` = `=F72-F73-F74` | row 75 |
+
+Three consequences:
+
+1. **Xe thu hộ is the sheet's own formula.** `lavabo append` writes nothing into
+   column H where a formula already sits, so the sheet keeps computing it and keeps
+   tracking any later edit to Tổng or Cọc.
+2. **Orders must start at row 2**, above the summary block. Appending after the last
+   used row put them at row 76 — beneath their own totals.
+3. **`Người chốt đơn` drives revenue reporting.** Those SUMIFs split the month's takings
+   by name. A wrong value there does not merely look wrong; it moves money between
+   people's totals. That is the strongest argument for the Zalo OA route, where the
+   sender is recorded rather than defaulted.
 
 ### Producing the workbook
 

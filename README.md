@@ -139,7 +139,8 @@ lavabo inspect     # what is stored per order, including failures
 
 lavabo ingest --source zalo
 lavabo extract
-lavabo load --layout senkahomes --out data/out/report.xlsx --year 2026 --closer "Trà My"
+lavabo load --layout senkahomes --out data/out/report.xlsx --month 8 --year 2026
+lavabo append --into "QUẢN LÝ ĐƠN SENKAHOMES.xlsx" --month 8 --year 2026 --dry-run
 lavabo verify
 ```
 

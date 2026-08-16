@@ -3,7 +3,8 @@
     lavabo check                       preflight credentials and paths
     lavabo ingest --source meta|zalo   pull/parse into the SQLite staging db
     lavabo extract [--limit N] [--dry-run] [--provider gemini --api-key AIza...]
-    lavabo load --out report.xlsx
+    lavabo load --out report.xlsx      write a separate workbook
+    lavabo append --into yours.xlsx   add into the shop's own workbook
     lavabo run --out report.xlsx       ingest + extract + load
     lavabo inspect                     show stored extractions, including failures
     lavabo config                      show effective settings + drift from the example
@@ -322,6 +323,72 @@ def cmd_check(args, cfg: Config) -> int:
     return 0 if ok else 1
 
 
+def cmd_append(args, cfg: Config) -> int:
+    """Insert orders into the shop's own workbook, after a backup."""
+    from .extract.prompt import PROMPT_VERSION
+    from .load.append import append_orders
+
+    schema = cfg.load_schema()
+    target = Path(args.into)
+
+    with Store(cfg.db_path) as store:
+        conversations = [c for c in store.conversations()
+                         if c.raw.get("order_month") == args.month
+                         and (not args.year
+                              or (c.raw.get("order_year") or args.year) == args.year)]
+        if not conversations:
+            print(f"No orders stored for {args.month:02d}/{args.year}. Nothing to add.")
+            return 1
+
+        results = {}
+        for conv in conversations:
+            hit = store.cached_extraction(
+                conv, schema_version=schema.version, schema_hash=schema.fingerprint(),
+                prompt_version=PROMPT_VERSION, model=cfg.extract.model,
+            )
+            if hit:
+                results[conv.conversation_id] = hit
+
+    unextracted = len(conversations) - len(results)
+    if unextracted:
+        print(f"!! {unextracted} of {len(conversations)} order(s) have no usable "
+              "extraction; their rows would carry only date and customer.")
+        if not args.force:
+            print("   Run `lavabo extract` first, or pass --force to add them anyway.")
+            return 1
+
+    summary = append_orders(
+        target, conversations, results,
+        month=args.month, year=args.year, sheet=args.sheet,
+        status=args.status, closer=args.closer,
+        dry_run=args.dry_run, mark_new=not args.no_highlight,
+    )
+
+    if summary["collision"]:
+        rows = ", ".join(str(r) for r in summary["collision"])
+        print(f"\nsheet {summary['sheet']}: refusing to write.")
+        print(f"  Rows {rows} already contain something, and the {summary['added']} new "
+              "order(s) would land on top of them.")
+        print("  That is usually a summary or totals block below the data. Move it down, "
+              "or pass --sheet to write elsewhere.")
+        return 1
+
+    verb = "would add" if args.dry_run else "added"
+    print(f"\nsheet {summary['sheet']}"
+          + ("  (created)" if summary["created_sheet"] else ""))
+    print(f"  {verb} {summary['added']} order(s), {summary['rows_written']} row(s)"
+          + (f", starting at row {summary['start_row']}" if summary["start_row"] else ""))
+    if summary["already_present"]:
+        names = ", ".join(n or "?" for n in summary["already_names"][:6])
+        print(f"  skipped {summary['already_present']} already in the sheet: {names}"
+              + ("…" if summary["already_present"] > 6 else ""))
+    if summary["backup"]:
+        print(f"  backup: {Path(summary['backup']).name}")
+    if args.dry_run:
+        print("\n  (dry run — nothing was written)")
+    return 0
+
+
 def cmd_inspect(args, cfg: Config) -> int:
     """Show what was actually stored for each conversation, errors and all.
 
@@ -604,6 +671,22 @@ def main(argv: list[str] | None = None) -> int:
                                     "does not record who sent it")
     add_llm_args(p)
 
+    p = sub.add_parser("append", help="add orders into an existing workbook, after a backup")
+    p.add_argument("--into", required=True, metavar="FILE.xlsx",
+                   help="the workbook to add to, e.g. 'QUẢN LÝ ĐƠN SENKAHOMES.xlsx'")
+    p.add_argument("--month", type=int, required=True, metavar="M")
+    p.add_argument("--year", type=int, required=True, metavar="Y")
+    p.add_argument("--sheet", help="sheet name (default: MMYYYY)")
+    p.add_argument("--status", default="New")
+    p.add_argument("--closer")
+    p.add_argument("--dry-run", action="store_true",
+                   help="report what would be added, write nothing")
+    p.add_argument("--force", action="store_true",
+                   help="add orders even if they have no usable extraction")
+    p.add_argument("--no-highlight", action="store_true",
+                   help="do not tint the rows this run added")
+    add_llm_args(p)
+
     p = sub.add_parser("inspect", help="show stored extractions, including failures")
     p.add_argument("--limit", type=int)
     p.add_argument("--values", action="store_true", help="print the extracted values too")
@@ -642,7 +725,7 @@ def main(argv: list[str] | None = None) -> int:
     handlers = {"check": cmd_check, "ingest": cmd_ingest, "extract": cmd_extract,
                 "load": cmd_load, "verify": cmd_verify, "run": cmd_run,
                 "models": cmd_models, "config": cmd_config,
-                "inspect": cmd_inspect}
+                "inspect": cmd_inspect, "append": cmd_append}
     try:
         return handlers[args.command](args, cfg)
     except KeyboardInterrupt:
