@@ -24,7 +24,7 @@ from contextlib import redirect_stdout
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -74,6 +74,10 @@ PAGE = """<!doctype html>
          text-decoration:none; }
   code { background:var(--bg); padding:1px 5px; border-radius:5px; font-size:13px; }
   .hint { color:var(--muted); font-size:13.5px; margin-top:10px; }
+  .lbl { display:block; font-size:13.5px; font-weight:600; color:var(--muted);
+         margin-bottom:7px; }
+  select { width:100%; padding:13px 12px; font-size:16px; border-radius:10px;
+           border:1px solid var(--line); background:var(--bg); color:var(--ink); }
 </style></head><body><div class="wrap">
 
 <h1>Trích xuất đơn hàng Zalo</h1>
@@ -82,6 +86,12 @@ PAGE = """<!doctype html>
 <div class="card">
   <div class="row"><span class="count" id="count">–</span>
     <span style="color:var(--muted)">đơn đã lưu — tháng <span id="period"></span></span></div>
+</div>
+
+<div class="card">
+  <label class="lbl" for="closer">Người chốt đơn</label>
+  <select id="closer"></select>
+  <div class="hint">Áp dụng cho các đơn dán bên dưới. Dán lại cùng đơn với tên khác thì tên mới thay tên cũ.</div>
 </div>
 
 <div class="card">
@@ -104,19 +114,62 @@ const show = (el, kind, text) => { el.innerHTML = ''; if(!text) return;
   const d = document.createElement('div'); d.className = 'msg ' + kind; d.textContent = text;
   el.appendChild(d); };
 
+const NEW_NAME = '__them_ten_moi__';
+let closers = [];
+
+// The picked name is remembered on the device, so the phone and the laptop can be two
+// different people capturing their own orders without resetting each other.
+const remembered = () => localStorage.getItem('lavabo.closer') || '';
+
+function drawClosers(names, current) {
+  closers = names;
+  const sel = $('closer');
+  sel.innerHTML = '';
+  if (!names.length && !current) {
+    const o = document.createElement('option');
+    o.value = ''; o.textContent = '— chưa có tên, chọn "Tên khác…" —';
+    sel.appendChild(o);
+  }
+  for (const n of names) {
+    const o = document.createElement('option'); o.value = n; o.textContent = n;
+    sel.appendChild(o);
+  }
+  const other = document.createElement('option');
+  other.value = NEW_NAME; other.textContent = 'Tên khác…';
+  sel.appendChild(other);
+  if (current && names.includes(current)) sel.value = current;
+}
+
+$('closer').onchange = () => {
+  const sel = $('closer');
+  if (sel.value !== NEW_NAME) { localStorage.setItem('lavabo.closer', sel.value); return; }
+  const typed = (prompt('Tên người chốt đơn') || '').trim();
+  if (!typed) { sel.value = remembered(); return; }
+  if (!closers.includes(typed)) closers.unshift(typed);
+  localStorage.setItem('lavabo.closer', typed);
+  drawClosers(closers, typed);
+};
+
 async function refresh() {
   try {
     const r = await fetch('/api/status'); const s = await r.json();
     $('count').textContent = s.orders; $('period').textContent = s.period;
+    const keep = $('closer').value === NEW_NAME ? remembered() : ($('closer').value || remembered());
+    const names = s.closers || [];
+    if (keep && !names.includes(keep)) names.unshift(keep);
+    drawClosers(names, keep);
   } catch (e) { /* server restarting */ }
 }
 
 $('save').onclick = async () => {
   const text = $('paste').value;
   if (!text.trim()) { show($('m1'),'warn','Chưa có nội dung nào.'); return; }
+  const closer = $('closer').value === NEW_NAME ? remembered() : $('closer').value;
+  if (!closer) { show($('m1'),'warn','Chọn người chốt đơn trước đã.'); return; }
   $('save').disabled = true; show($('m1'),'ok','Đang lưu…');
   try {
-    const r = await fetch('/api/capture', {method:'POST', body:text});
+    const r = await fetch('/api/capture?closer=' + encodeURIComponent(closer),
+                          {method:'POST', body:text});
     const s = await r.json();
     if (s.error) show($('m1'),'err',s.error);
     else if (!s.found) show($('m1'),'warn',
@@ -255,8 +308,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
         elif path == "/api/status":
+            from lavabo import closers
+
+            names = closers.known_names(self.cfg.zalo.inbox_dir)
+            if self.closer and self.closer not in names:
+                names.append(self.closer)          # the config default, as a fallback
             self._json({"orders": self._orders_on_disk(),
-                        "period": f"{self.month:02d}/{self.year}"})
+                        "period": f"{self.month:02d}/{self.year}",
+                        "closers": names})
         elif path == "/api/export/status":
             with JOB_LOCK:
                 self._json(dict(JOB))
@@ -279,6 +338,8 @@ class Handler(BaseHTTPRequestHandler):
 
         length = int(self.headers.get("Content-Length") or 0)
         text = self.rfile.read(length).decode("utf-8", errors="replace")
+        query = parse_qs(urlparse(self.path).query)
+        closer = (query.get("closer", [""])[0] or self.closer or "").strip()
 
         blocks = zc.split_orders(text)
         if not blocks:
@@ -287,7 +348,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with io.StringIO() as sink, redirect_stdout(sink):
                 saved, duplicates, other = zc.handle_orders(
-                    text, self.cfg, self.month, self.year, all_months=False, trim=True)
+                    text, self.cfg, self.month, self.year, all_months=False, trim=True,
+                    closer=closer)
         except Exception as exc:
             self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
             return

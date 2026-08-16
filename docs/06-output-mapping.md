@@ -134,8 +134,17 @@ What that leaves, best first:
    means revenue moved between staff.
 4. **Leave blank and fill by hand.** 90 orders a month makes this the least attractive.
 
-Today the code does (3). (1) is the one worth building, and it is now the *only* fix —
-before, it was a stopgap until an OA arrived.
+**(1) is what the code does now.** The app asks before each capture, offering the names
+used before as a numbered list — typing it each time is how `Trà My` becomes `Tra My` and
+silently stops matching the SUMIF. The answer is stored in `data/inbox/zalo/_closers.json`,
+keyed by the order's file, and the connector puts it on the Conversation as `sender_name`.
+Both writers already prefer that over the run-wide `--closer`, which survives as the
+fallback for orders captured before this existed.
+
+It is kept **out of the .txt on purpose**: that text is hashed for the extraction cache and
+sent to the model, so a name inside it would mean correcting a typo re-runs the AI on every
+affected order. Stored beside it, a correction is free — re-paste the order under the right
+name and only the sidecar changes.
 
 ---
 

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Iterator
 from zoneinfo import ZoneInfo
 
+from .. import closers
 from ..config import ZaloConfig
 from ..models import Attachment, Conversation, Direction, Message, Source
 
@@ -86,6 +87,8 @@ class ZaloExportConnector:
         self.own = {n.strip().casefold() for n in config.own_names if n.strip()}
         self.processed = processed or set()
         self.seen_hashes: set[str] = set()
+        # Read once per run: fetch() touches every file, and this is one small map.
+        self._closers = closers.load(config.inbox_dir)
 
     def check(self) -> tuple[bool, str]:
         if not self.config.inbox_dir.exists():
@@ -98,7 +101,8 @@ class ZaloExportConnector:
     def _files(self) -> list[Path]:
         allowed = TEXT_SUFFIXES | JSON_SUFFIXES | HTML_SUFFIXES
         return sorted(p for p in self.config.inbox_dir.rglob("*")
-                      if p.is_file() and p.suffix.lower() in allowed)
+                      if p.is_file() and p.suffix.lower() in allowed
+                      and p.name != closers.SIDECAR)     # bookkeeping, not a transcript
 
     def fetch(self) -> Iterator[Conversation]:
         for path in self._files():
@@ -133,13 +137,19 @@ class ZaloExportConnector:
 
     def _conversation(self, path: Path, digest: str) -> Conversation:
         # Filename is the conversation identity: "Nguyen Van A.txt" -> customer name.
-        return Conversation(
+        conv = Conversation(
             source=Source.ZALO,
             conversation_id=f"zalo:{path.stem}:{digest}",
             customer_name=path.stem.strip(),
             origin=str(path.name),
             raw={"file": str(path), "sha256_16": digest},
         )
+        # Who chốt this order, chosen by the operator at capture time. The writers read
+        # sender_name first and fall back to the run-wide --closer, so an order captured
+        # before this existed still gets the old behaviour.
+        if name := closers.closer_for(self._closers, path.name):
+            conv.raw["sender_name"] = name
+        return conv
 
     def _parse_plain(self, path: Path, digest: str, lines: list[str]) -> Conversation:
         """Bare lines with no sender and no timestamp.

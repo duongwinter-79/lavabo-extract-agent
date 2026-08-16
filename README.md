@@ -52,11 +52,22 @@ Tổng 29tr
 
 Everything else in the chat is ignored, and only the current month is captured.
 
-### 3. Press `1`
+### 3. Pick who closed them, press `1`
 
 ```
+  Người chốt đơn: Trà My
+
   [1]  Xuất file Excel
+  [2]  Đổi người chốt đơn
 ```
+
+That name is recorded **per order**, not per session, so if two people's orders are in one
+paste you can switch with `[2]` and paste the rest. Re-pasting an order with a different
+name corrects it, and costs nothing — the name is stored beside the order, so changing it
+never re-runs the AI.
+
+It matters more than it looks: your sheet totals revenue with
+`=SUMIF($L:$L,"Trà My",$G:$G)`, so a wrong name here moves money between staff.
 
 It reads the orders, extracts them with AI, and writes
 `data/out/donhang-YYYYMM.xlsx` — same 12 columns as the existing sheet, one row per line
@@ -82,8 +93,9 @@ open on a phone connected to the same wifi:
   điện thoại:   http://192.168.1.24:8765
 ```
 
-On the phone: copy the chat in Zalo, paste it into the box, tap **Lưu đơn**, then
-**Xuất file Excel** and download.
+On the phone: copy the chat in Zalo, pick **Người chốt đơn**, paste into the box, tap
+**Lưu đơn**, then **Xuất file Excel** and download. The picked name is remembered on that
+device, so the phone and the laptop can be two different people capturing their own orders.
 
 > The page has no password. Anyone on the same network can open it while it runs, so use
 > it on your own wifi rather than a public one, and close it when you are done.
@@ -104,7 +116,7 @@ On the phone: copy the chat in Zalo, paste it into the box, tap **Lưu đơn**, 
 | Cọc | read, then converted |
 | Trạng thái | `New` |
 | Ngày hẹn giao | left blank |
-| Người chốt đơn | the name you gave at setup |
+| Người chốt đơn | **who you picked before pasting** — stored per order |
 
 Only the address, the items and the two money figures involve AI. Everything else is read
 from the header, calculated, or fixed — so the parts most easily got wrong are the parts
@@ -183,6 +195,7 @@ src/lavabo/
   extract/     gemini, anthropic       same interface, swap in config
   load/        senkahomes.py           the 12-column layout
                excel.py                generic layout
+  closers.py   who chốt each order, stored beside them
   money.py     Vietnamese amounts -> VND
   store.py     SQLite staging + extraction cache
 data/          inbox/ staging.db out/  gitignored — never commit chat content

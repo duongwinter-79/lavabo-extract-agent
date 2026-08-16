@@ -161,12 +161,15 @@ class Capturer(threading.Thread):
 
     daemon = True
 
-    def __init__(self, cfg: Config, month: int, year: int) -> None:
+    def __init__(self, cfg: Config, month: int, year: int, closer: str) -> None:
         super().__init__()
         self.cfg, self.month, self.year = cfg, month, year
         self.saved = 0
         self.error: str | None = None
         self._lines: list[str] = []
+        # Read at each capture, not at start: the operator can change who is chốt
+        # partway through a session and the next paste must follow the new answer.
+        self.closer = closer
 
     def run(self) -> None:
         import zalo_capture as zc
@@ -192,7 +195,8 @@ class Capturer(threading.Thread):
                 continue
             try:
                 saved, _, _ = zc.handle_orders(current, self.cfg, self.month, self.year,
-                                               all_months=False, trim=True)
+                                               all_months=False, trim=True,
+                                               closer=self.closer)
             except Exception as exc:                      # keep the app alive
                 self._lines.append(f"{RED}lỗi khi lưu: {exc}{OFF}")
                 continue
@@ -202,6 +206,37 @@ class Capturer(threading.Thread):
     def drain(self) -> list[str]:
         lines, self._lines = self._lines, []
         return lines
+
+
+# ------------------------------------------------------------- who chốt these orders
+
+def choose_closer(cfg: Config, current: str) -> str:
+    """Pick the name recorded in Người chốt đơn for orders captured from now on.
+
+    Offered as a numbered list of names already used, because that column feeds the
+    sheet's =SUMIF($L:$L,"Trà My",$G:$G). Re-typing it is how "Trà My" becomes "Tra My"
+    and quietly stops matching, moving that revenue out of the total.
+    """
+    from lavabo import closers
+
+    names = closers.known_names(cfg.zalo.inbox_dir)
+    for name in ([current] if current else []):
+        if name not in names:
+            names.insert(0, name)
+
+    print(f"\n{BOLD}Ai là người chốt các đơn sắp copy?{OFF}")
+    for i, name in enumerate(names, start=1):
+        mark = f"  {GREEN}← đang dùng{OFF}" if name == current else ""
+        print(f"  {BOLD}[{i}]{OFF}  {name}{mark}")
+    print(f"  {BOLD}[+]{OFF}  Tên khác…")
+
+    choice = ask("\nChọn", default="")
+    if choice == "+":
+        typed = ask("Tên người chốt đơn", default="")
+        return typed or current
+    if choice.isdigit() and 1 <= int(choice) <= len(names):
+        return names[int(choice) - 1]
+    return current
 
 
 # ------------------------------------------------------------------ the one action
@@ -260,7 +295,7 @@ def main() -> int:
     today = date.today()
     month, year = today.month, today.year
 
-    capturer = Capturer(cfg, month, year)
+    capturer = Capturer(cfg, month, year, closer)
     capturer.start()
     time.sleep(0.6)                                       # let it report a clipboard error
 
@@ -281,11 +316,15 @@ def main() -> int:
 
         print(f"\n  Đã lưu: {BOLD}{on_disk}{OFF} đơn"
               + (f"   {GREEN}(+{capturer.saved} phiên này){OFF}" if capturer.saved else ""))
+        print("  Người chốt đơn: "
+              + (f"{BOLD}{capturer.closer}{OFF}" if capturer.closer
+                 else f"{YELLOW}chưa chọn{OFF}"))
 
         for line in capturer.drain():
             print("  " + line)
 
         print(f"\n{BOLD}  [1]{OFF}  Xuất file Excel")
+        print(f"{BOLD}  [2]{OFF}  Đổi người chốt đơn")
         print(f"{DIM}  [r]  Làm mới    [q]  Thoát{OFF}\n")
 
         try:
@@ -298,12 +337,15 @@ def main() -> int:
             return 0
         if choice in ("", "r"):
             continue
+        if choice == "2":
+            capturer.closer = choose_closer(cfg, capturer.closer)
+            continue
         if choice == "1":
             if not on_disk:
                 print(f"\n{YELLOW}Chưa có đơn nào. Copy đoạn chat từ Zalo trước đã.{OFF}")
             else:
                 try:
-                    export(cfg, month, year, closer)
+                    export(cfg, month, year, capturer.closer)
                 except Exception as exc:
                     print(f"\n{RED}Lỗi: {type(exc).__name__}: {exc}{OFF}")
             input(f"\n{DIM}Nhấn Enter để quay lại…{OFF}")

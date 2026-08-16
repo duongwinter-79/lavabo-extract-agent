@@ -51,6 +51,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from lavabo import closers  # noqa: E402
 from lavabo.config import Config  # noqa: E402
 from lavabo.connectors.zalo_export import DEFAULT_PATTERNS, ORDER_HEADER  # noqa: E402
 
@@ -355,8 +356,13 @@ def ask_name() -> str:
 
 
 def handle_orders(text: str, cfg, month: int, year: int, *,
-                  all_months: bool, trim: bool = True) -> tuple[int, int, int]:
+                  all_months: bool, trim: bool = True,
+                  closer: str | None = None) -> tuple[int, int, int]:
     """Split a chat chunk into orders and save the wanted ones.
+
+    `closer` is who chốt these orders. Recorded per order in a sidecar rather than in
+    the note itself, and applied to duplicates too, so re-pasting with the right name
+    corrects orders captured earlier under the wrong one.
 
     Returns (saved, duplicates, out_of_month).
     """
@@ -386,9 +392,11 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
                 saved += 1
             else:
                 duplicates += 1
+            closers.record(cfg.zalo.inbox_dir, path.name, closer)
             continue
 
         path = save(body, block.header, cfg.zalo.inbox_dir)
+        closers.record(cfg.zalo.inbox_dir, path.name, closer)
         known[block.key] = (path, len(body.encode("utf-8")))
         print(f"  saved   {path.name}  ({len(block.lines)} lines"
               + (f", {block.customer}" if block.customer else "") + ")")
@@ -479,6 +487,9 @@ def main() -> int:
     ap.add_argument("-c", "--config", type=Path, help="path to config.yaml")
     ap.add_argument("--once", action="store_true", help="exit after one capture")
     ap.add_argument("--name", help="force the customer name for the next capture")
+    ap.add_argument("--closer", metavar="NAME",
+                    help="who chốt the orders in this capture; recorded per order "
+                         "and used for Người chốt đơn")
     ap.add_argument("--raw", action="store_true",
                     help="save ANY copied text, even if the format is not recognised "
                          "(asks for the name; use when the built-in patterns don't match "
@@ -569,7 +580,8 @@ def main() -> int:
             if not args.no_split and any(ORDER_HEADER.match(ln.strip()) for ln in current.splitlines()):
                 saved, _, _ = handle_orders(current, cfg, month, year,
                                             all_months=args.all_months,
-                                            trim=not args.no_trim)
+                                            trim=not args.no_trim,
+                                            closer=args.closer)
                 seen.add(digest)
                 captured += saved
                 if args.once and saved:
