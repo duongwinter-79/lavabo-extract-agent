@@ -32,226 +32,13 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from lavabo.config import Config  # noqa: E402
 
-# Raw, so backslash escapes belong to the JS and CSS rather than to Python. A plain
-# string silently turns "\n" in a JS literal into a real newline, which breaks the
-# whole <script> at parse time while every endpoint still answers perfectly.
-PAGE = r"""<!doctype html>
-<html lang="vi"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Lavabo — Đơn hàng Zalo</title>
-<style>
-  :root { --bg:#f6f7f9; --card:#fff; --ink:#16181d; --muted:#6b7280;
-          --line:#e5e7eb; --brand:#1f3864; --ok:#15803d; --warn:#b45309; --err:#b91c1c; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#0f1115; --card:#171a21; --ink:#e8eaed; --muted:#9aa1ac;
-            --line:#272b33; --brand:#7aa2e3; --ok:#4ade80; --warn:#fbbf24; --err:#f87171; }
-  }
-  * { box-sizing:border-box; -webkit-text-size-adjust:100%; }
-  body { margin:0; background:var(--bg); color:var(--ink);
-         font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
-  .wrap { max-width:680px; margin:0 auto; padding:16px 16px 48px; }
-  h1 { font-size:19px; margin:12px 0 4px; }
-  .sub { color:var(--muted); font-size:14px; margin:0 0 18px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
-          padding:16px; margin-bottom:14px; }
-  textarea { width:100%; min-height:190px; padding:12px; font-size:16px;
-             font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-             border:1px solid var(--line); border-radius:10px;
-             background:var(--bg); color:var(--ink); resize:vertical; }
-  button { width:100%; padding:15px; font-size:17px; font-weight:600; border:0;
-           border-radius:11px; background:var(--brand); color:#fff; cursor:pointer;
-           margin-top:10px; }
-  button.ghost { background:transparent; color:var(--brand);
-                 border:1.5px solid var(--brand); }
-  button:disabled { opacity:.5; cursor:default; }
-  .count { font-size:34px; font-weight:700; line-height:1.1; }
-  .row { display:flex; align-items:baseline; gap:10px; }
-  .msg { margin-top:12px; padding:11px 13px; border-radius:9px; font-size:14.5px;
-         white-space:pre-wrap; }
-  .msg.ok { background:color-mix(in srgb,var(--ok) 14%,transparent); color:var(--ok); }
-  .msg.warn { background:color-mix(in srgb,var(--warn) 16%,transparent); color:var(--warn); }
-  .msg.err { background:color-mix(in srgb,var(--err) 14%,transparent); color:var(--err); }
-  a.dl { display:block; text-align:center; padding:15px; margin-top:10px;
-         border-radius:11px; background:var(--ok); color:#fff; font-weight:600;
-         text-decoration:none; }
-  code { background:var(--bg); padding:1px 5px; border-radius:5px; font-size:13px; }
-  .hint { color:var(--muted); font-size:13.5px; margin-top:10px; }
-  .lbl { display:block; font-size:13.5px; font-weight:600; color:var(--muted);
-         margin-bottom:7px; }
-  select { width:100%; padding:13px 12px; font-size:16px; border-radius:10px;
-           border:1px solid var(--line); background:var(--bg); color:var(--ink); }
-</style></head><body><div class="wrap">
-
-<h1>Trích xuất đơn hàng Zalo</h1>
-<p class="sub">Dán đoạn chat vào ô dưới, bấm Lưu. Xong hết thì bấm Xuất Excel.</p>
-
-<div class="card">
-  <div class="row"><span class="count" id="count">–</span>
-    <span style="color:var(--muted)">đơn đã lưu</span></div>
-  <label class="lbl" style="margin-top:14px" for="period">Tháng đang nhập</label>
-  <select id="period"></select>
-</div>
-
-<div class="card">
-  <label class="lbl" for="closer">Người chốt đơn</label>
-  <select id="closer"></select>
-  <div class="hint">Áp dụng cho các đơn dán bên dưới. Dán lại cùng đơn với tên khác thì tên mới thay tên cũ.</div>
-</div>
-
-<div class="card">
-  <textarea id="paste" placeholder="Mở Zalo, bôi đen đoạn chat, Copy rồi dán vào đây…"></textarea>
-  <button id="save">Lưu đơn</button>
-  <div class="hint">Chỉ nhận tin nhắn bắt đầu bằng <code>15/8 đơn 1 - Tên KH</code>.
-    Dán trùng nhau không sao, mỗi đơn chỉ lưu một lần.</div>
-  <div id="m1"></div>
-</div>
-
-<div class="card">
-  <button id="export" class="ghost">Xuất file Excel mới</button>
-  <button id="append" class="ghost">Thêm vào file quản lý</button>
-  <div class="hint" id="wbhint"></div>
-  <div id="m2"></div>
-  <div id="dl"></div>
-</div>
-
-<script>
-const $ = i => document.getElementById(i);
-const show = (el, kind, text) => { el.innerHTML = ''; if(!text) return;
-  const d = document.createElement('div'); d.className = 'msg ' + kind; d.textContent = text;
-  el.appendChild(d); };
-
-const NEW_NAME = '__them_ten_moi__';
-let closers = [];
-
-// The picked name is remembered on the device, so the phone and the laptop can be two
-// different people capturing their own orders without resetting each other.
-const remembered = () => localStorage.getItem('lavabo.closer') || '';
-
-function drawClosers(names, current) {
-  closers = names;
-  const sel = $('closer');
-  sel.innerHTML = '';
-  // With nothing remembered on this device, select nothing: the most recently used
-  // name is not this person's name, and a silent default is how one operator's orders
-  // get counted as another's. Lưu đơn refuses an empty pick.
-  if (!current) {
-    const o = document.createElement('option');
-    o.value = '';
-    o.textContent = names.length ? '— chọn tên —' : '— chưa có tên, chọn "Tên khác…" —';
-    sel.appendChild(o);
-  }
-  for (const n of names) {
-    const o = document.createElement('option'); o.value = n; o.textContent = n;
-    sel.appendChild(o);
-  }
-  const other = document.createElement('option');
-  other.value = NEW_NAME; other.textContent = 'Tên khác…';
-  sel.appendChild(other);
-  sel.value = (current && names.includes(current)) ? current : '';
-}
-
-$('closer').onchange = () => {
-  const sel = $('closer');
-  if (sel.value !== NEW_NAME) { localStorage.setItem('lavabo.closer', sel.value); return; }
-  const typed = (prompt('Tên người chốt đơn') || '').trim();
-  if (!typed) { sel.value = remembered(); return; }
-  if (!closers.includes(typed)) closers.unshift(typed);
-  localStorage.setItem('lavabo.closer', typed);
-  drawClosers(closers, typed);
-};
-
-function drawPeriods(periods, current) {
-  const sel = $('period');
-  if (sel.dataset.touched === '1' && sel.value === current) return;
-  sel.innerHTML = '';
-  for (const p of periods) {
-    const o = document.createElement('option'); o.value = p; o.textContent = 'tháng ' + p;
-    sel.appendChild(o);
-  }
-  sel.value = current;
-}
-
-$('period').onchange = async () => {
-  const sel = $('period'); sel.dataset.touched = '1';
-  await fetch('/api/period?value=' + encodeURIComponent(sel.value), {method:'POST'});
-  refresh();
-};
-
-async function refresh() {
-  try {
-    const r = await fetch('/api/status'); const s = await r.json();
-    $('count').textContent = s.orders;
-    drawPeriods(s.periods || [s.period], s.period);
-    $('append').disabled = !s.workbook;
-    $('wbhint').textContent = s.workbook
-      ? 'File quản lý: ' + s.workbook + ' — luôn sao lưu trước khi ghi.'
-      : 'Chưa đặt file quản lý. Mở config/config.yaml và thêm app.workbook: đường dẫn tới file .xlsx.';
-    const keep = $('closer').value === NEW_NAME ? remembered() : ($('closer').value || remembered());
-    const names = s.closers || [];
-    if (keep && !names.includes(keep)) names.unshift(keep);
-    drawClosers(names, keep);
-  } catch (e) { /* server restarting */ }
-}
-
-$('save').onclick = async () => {
-  const text = $('paste').value;
-  if (!text.trim()) { show($('m1'),'warn','Chưa có nội dung nào.'); return; }
-  const closer = $('closer').value === NEW_NAME ? remembered() : $('closer').value;
-  if (!closer) { show($('m1'),'warn','Chọn người chốt đơn trước đã.'); return; }
-  $('save').disabled = true; show($('m1'),'ok','Đang lưu…');
-  try {
-    const r = await fetch('/api/capture?closer=' + encodeURIComponent(closer),
-                          {method:'POST', body:text});
-    const s = await r.json();
-    if (s.error) show($('m1'),'err',s.error);
-    else if (!s.found) show($('m1'),'warn',
-      'Không tìm thấy đơn nào. Tin nhắn phải bắt đầu bằng ngày và số đơn, ví dụ "15/8 đơn 1 - Tên KH".');
-    else {
-      let t = `Tìm thấy ${s.found} đơn — lưu mới ${s.saved}`;
-      if (s.duplicates) t += `, đã có ${s.duplicates}`;
-      if (s.other_month) t += `, ${s.other_month} khác tháng`;
-      show($('m1'), s.saved ? 'ok' : 'warn', t);
-      if (s.saved) $('paste').value = '';
-    }
-  } catch (e) { show($('m1'),'err','Lỗi kết nối: ' + e); }
-  $('save').disabled = false; refresh();
-};
-
-async function runJob(mode) {
-  $('export').disabled = $('append').disabled = true; $('dl').innerHTML = '';
-  show($('m2'),'ok','Đang xử lý… bản Gemini miễn phí chạy chậm, vui lòng đợi.');
-  try {
-    await fetch('/api/export?mode=' + mode, {method:'POST'});
-    const poll = setInterval(async () => {
-      const r = await fetch('/api/export/status'); const s = await r.json();
-      if (s.state === 'running') { show($('m2'),'ok', s.step || 'Đang xử lý…'); return; }
-      clearInterval(poll); $('export').disabled = false; refresh();
-      if (s.state === 'error') { show($('m2'),'err', s.message); return; }
-      show($('m2'), s.warning ? 'warn' : 'ok', s.message);
-      // Appending writes into the shop's own workbook in place; there is nothing to
-      // download, and offering a copy would invite editing the wrong file.
-      if (s.file) $('dl').innerHTML =
-        `<a class="dl" href="/download/${encodeURIComponent(s.file)}">Tải file Excel</a>`;
-    }, 1500);
-  } catch (e) {
-    show($('m2'),'err','Lỗi: ' + e); $('export').disabled = false; refresh();
-  }
-}
-
-$('export').onclick = () => runJob('new');
-$('append').onclick = () => {
-  if (!confirm('Thêm các đơn của tháng này vào file quản lý?\n\nFile sẽ được sao lưu trước khi ghi.')) return;
-  runJob('append');
-};
-
-refresh(); setInterval(refresh, 5000);
-</script>
-</div></body></html>
-"""
+PAGE_PATH = ROOT / "scripts" / "web" / "index.html"
 
 JOB: dict = {"state": "idle", "step": "", "message": "", "file": "", "warning": False}
 JOB_LOCK = threading.Lock()
+# One writer at a time for config.yaml and .env: two tabs saving at once would
+# otherwise interleave a read-modify-write and lose one of them.
+SETTINGS_LOCK = threading.Lock()
 
 
 def recent_periods(month: int, year: int, count: int = 6) -> list[str]:
@@ -364,7 +151,18 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
 
         if path == "/":
-            self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
+            # Read per request rather than cached at startup: editing the page and
+            # refreshing is then enough, with no server restart in the loop.
+            try:
+                body = PAGE_PATH.read_bytes()
+            except OSError as exc:
+                self._json({"error": f"không đọc được {PAGE_PATH.name}: {exc}"}, 500)
+                return
+            self._send(200, body, "text/html; charset=utf-8")
+        elif path == "/api/settings":
+            from lavabo import settings
+
+            self._json(settings.read_settings())
         elif path == "/api/status":
             from lavabo import closers
 
@@ -392,8 +190,85 @@ class Handler(BaseHTTPRequestHandler):
             self._start_export()
         elif path == "/api/period":
             self._set_period()
+        elif path == "/api/settings":
+            self._save_settings()
+        elif path == "/api/settings/verify":
+            self._verify_key()
+        elif path == "/api/settings/models":
+            self._list_models()
         else:
             self._json({"error": "not found"}, 404)
+
+    # ---------------------------------------------------------------- settings
+
+    def _body_json(self) -> dict:
+        length = int(self.headers.get("Content-Length") or 0)
+        if not length:
+            return {}
+        try:
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _save_settings(self) -> None:
+        from lavabo import settings
+
+        body = self._body_json()
+        try:
+            with SETTINGS_LOCK:
+                warnings = settings.write_settings(
+                    provider=str(body.get("provider") or ""),
+                    model=str(body.get("model") or ""),
+                    api_key=str(body.get("api_key") or ""),
+                    workbook=str(body.get("workbook") or ""),
+                    closer=str(body.get("closer") or ""),
+                )
+                self._reload()
+        except Exception as exc:
+            self._json({"error": str(exc) or type(exc).__name__}, 400)
+            return
+        self._json({"warnings": warnings, "keys": settings.all_key_status()})
+
+    def _reload(self) -> None:
+        """Apply the saved settings to the running server.
+
+        A full process restart would drop the connection answering this request and, on
+        a phone, look like the app crashing. Everything the screen can change is read
+        from Handler.cfg or the environment at use time, so re-reading both is enough.
+        """
+        from lavabo import settings
+
+        settings.load_env_into_process()
+        Handler.cfg = Config.load()
+        app = settings.read_settings()
+        Handler.closer = app["closer"]
+        target = Path(app["workbook"]).expanduser() if app["workbook"] else None
+        Handler.workbook = target if (target and target.exists()) else None
+
+    def _verify_key(self) -> None:
+        from lavabo import settings
+
+        body = self._body_json()
+        try:
+            ok, message = settings.verify_key(str(body.get("provider") or ""),
+                                              str(body.get("api_key") or ""))
+        except Exception as exc:
+            self._json({"error": str(exc) or type(exc).__name__}, 400)
+            return
+        self._json({"ok": ok, "message": message})
+
+    def _list_models(self) -> None:
+        from lavabo import settings
+
+        body = self._body_json()
+        try:
+            models = settings.list_models(str(body.get("provider") or ""),
+                                          str(body.get("api_key") or ""))
+        except Exception as exc:
+            self._json({"error": str(exc) or type(exc).__name__}, 400)
+            return
+        self._json({"models": models})
 
     def _set_period(self) -> None:
         """Change which month new pastes are filtered to.
@@ -495,13 +370,10 @@ def main() -> int:
         return 1
     today = date.today()
 
-    import yaml
-    config_path = ROOT / "config" / "config.yaml"
-    closer, workbook = "", ""
-    if config_path.exists():
-        app = (yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}).get("app") or {}
-        closer = str(app.get("closer") or "").strip()
-        workbook = str(app.get("workbook") or "").strip()
+    from lavabo import settings
+
+    app = settings.read_settings()
+    closer, workbook = app["closer"], app["workbook"]
 
     target = Path(workbook).expanduser() if workbook else None
     if target and not target.exists():

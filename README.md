@@ -106,6 +106,12 @@ it from a terminal when you want the phone to reach it.
 For a phone that is **not** on the shop wifi — on 4G, at a customer's house — see
 [docs/08-tailscale.md](docs/08-tailscale.md).
 
+The gear icon opens **Cài đặt**: AI provider, API key (with a *Kiểm tra key* button that
+asks the provider before you commit to it), model, the workbook path and the default
+closer. Saving writes `config/config.yaml` and `.env` and reloads them in place — no
+restart. The key is written but never sent back to the browser; the screen shows only
+whether one is stored and a masked hint.
+
 ```
   máy này:      http://127.0.0.1:8765
   điện thoại:   http://192.168.1.24:8765
@@ -208,6 +214,7 @@ scripts/  lavabo_app.py                the one-screen app
           zalo_capture.py              clipboard capture, order splitting
           setup.sh / setup.ps1         install
           lavabo_web.py                browser version (phone/laptop/PC)
+          web/index.html               its page — HTML/CSS/JS, edit and refresh
           lavabo_webhook.py            Zalo OA webhook receiver
           probe_zalo_*.py              checks on Zalo's own export
 src/lavabo/
@@ -219,6 +226,7 @@ src/lavabo/
                excel.py                generic layout
   closers.py   who chốt each order, stored beside them
   pipeline.py  the steps behind the buttons, shared by both front ends
+  settings.py  reads/writes config.yaml and .env for the settings screen
   money.py     Vietnamese amounts -> VND
   store.py     SQLite staging + extraction cache
 data/          inbox/ staging.db out/  gitignored — never commit chat content

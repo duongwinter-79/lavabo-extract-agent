@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="vi"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lavabo — Đơn hàng Zalo</title>
+<style>
+  /* ---------------------------------------------------------------- tokens */
+  :root {
+    --bg:#f4f5f7; --card:#fff; --ink:#16181d; --muted:#6b7280; --line:#e3e6ea;
+    --brand:#1f3864; --brand-ink:#fff; --brand-soft:#eaf0fb;
+    --ok:#15803d; --warn:#b45309; --err:#b91c1c;
+    --r-sm:8px; --r:11px; --r-lg:15px;
+    --shadow:0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+    --focus:0 0 0 3px color-mix(in srgb, var(--brand) 35%, transparent);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:#0e1015; --card:#161920; --ink:#e8eaed; --muted:#98a0ab; --line:#272b33;
+      --brand:#7aa2e3; --brand-ink:#0e1015; --brand-soft:#1b2434;
+      --ok:#4ade80; --warn:#fbbf24; --err:#f87171;
+      --shadow:0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing:border-box; -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:680px; margin:0 auto; padding:14px 16px 56px; }
+
+  /* ---------------------------------------------------------------- header */
+  .top { display:flex; align-items:center; gap:12px; padding:8px 0 14px; }
+  .top h1 { font-size:18px; margin:0; flex:1; letter-spacing:-.01em; }
+  .icon-btn { width:40px; height:40px; flex:0 0 auto; display:grid; place-items:center;
+              border:1px solid var(--line); border-radius:var(--r); background:var(--card);
+              color:var(--ink); cursor:pointer; padding:0; }
+  .icon-btn:hover { border-color:var(--brand); color:var(--brand); }
+  .icon-btn:focus-visible { outline:none; box-shadow:var(--focus); }
+  .icon-btn svg { width:20px; height:20px; }
+
+  /* ----------------------------------------------------------------- cards */
+  .card { background:var(--card); border:1px solid var(--line); border-radius:var(--r-lg);
+          padding:16px; margin-bottom:13px; box-shadow:var(--shadow); }
+  .card h2 { font-size:14px; margin:0 0 4px; letter-spacing:.01em; }
+  .card > h2 + .sub { margin:0 0 14px; }
+  .sub { color:var(--muted); font-size:13.5px; margin:0 0 12px; }
+  .count { font-size:32px; font-weight:700; line-height:1.1; }
+  .row { display:flex; align-items:baseline; gap:10px; }
+
+  /* ---------------------------------------------------------------- fields */
+  .lbl { display:block; font-size:13px; font-weight:600; color:var(--muted);
+         margin:0 0 7px; }
+  .field + .field { margin-top:15px; }
+  input[type=text], input[type=password], select, textarea {
+    width:100%; padding:12px; font-size:16px; color:var(--ink);
+    background:var(--bg); border:1px solid var(--line); border-radius:var(--r);
+    font-family:inherit; }
+  input:focus, select:focus, textarea:focus { outline:none; border-color:var(--brand);
+    box-shadow:var(--focus); }
+  textarea { min-height:180px; resize:vertical;
+             font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:15px; }
+  .with-btn { display:flex; gap:8px; }
+  .with-btn input { flex:1; min-width:0; }
+  .with-btn button { width:auto; flex:0 0 auto; margin:0; padding:0 14px; font-size:14px; }
+  .hint { color:var(--muted); font-size:13px; margin-top:9px; }
+  .hint code { background:var(--bg); padding:1px 5px; border-radius:5px; font-size:12.5px; }
+
+  /* --------------------------------------------------------------- buttons */
+  button { width:100%; padding:14px; font-size:16.5px; font-weight:600; font-family:inherit;
+           border:0; border-radius:var(--r); background:var(--brand); color:var(--brand-ink);
+           cursor:pointer; margin-top:10px; }
+  button.ghost { background:transparent; color:var(--brand);
+                 border:1.5px solid var(--brand); }
+  button.small { padding:9px 12px; font-size:14px; margin-top:0; width:auto; }
+  button:disabled { opacity:.45; cursor:default; }
+  button:focus-visible { outline:none; box-shadow:var(--focus); }
+  .btn-row { display:flex; gap:9px; }
+  .btn-row button { margin-top:10px; }
+
+  /* ----------------------------------------------------------------- chips */
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { width:auto; margin:0; padding:9px 15px; font-size:15px; font-weight:600;
+          border-radius:999px; background:var(--card); color:var(--ink);
+          border:1.5px solid var(--line); cursor:pointer; }
+  .chip:hover { border-color:var(--brand); }
+  .chip[aria-pressed="true"] { background:var(--brand); color:var(--brand-ink);
+                               border-color:var(--brand); }
+  .chip.add { border-style:dashed; color:var(--muted); font-weight:500; }
+  .chip.add:hover { color:var(--brand); }
+
+  /* ------------------------------------------------------------- segmented */
+  .seg { display:flex; gap:0; border:1.5px solid var(--line); border-radius:var(--r);
+         overflow:hidden; }
+  .seg button { margin:0; width:100%; border-radius:0; background:var(--card);
+                color:var(--ink); font-size:15px; padding:11px; font-weight:600; }
+  .seg button + button { border-left:1.5px solid var(--line); }
+  .seg button[aria-pressed="true"] { background:var(--brand); color:var(--brand-ink); }
+
+  /* -------------------------------------------------------------- messages */
+  .msg { margin-top:12px; padding:11px 13px; border-radius:var(--r-sm); font-size:14.5px;
+         white-space:pre-wrap; }
+  .msg.ok   { background:color-mix(in srgb,var(--ok) 13%,transparent);   color:var(--ok); }
+  .msg.warn { background:color-mix(in srgb,var(--warn) 15%,transparent); color:var(--warn); }
+  .msg.err  { background:color-mix(in srgb,var(--err) 13%,transparent);  color:var(--err); }
+  .msg.busy { background:var(--brand-soft); color:var(--brand); }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:7px;
+         vertical-align:1px; }
+  .dot.ok { background:var(--ok); } .dot.err { background:var(--err); }
+  .dot.idle { background:var(--muted); }
+  a.dl { display:block; text-align:center; padding:14px; margin-top:10px;
+         border-radius:var(--r); background:var(--ok); color:#fff; font-weight:600;
+         text-decoration:none; }
+  .spin { display:inline-block; width:13px; height:13px; margin-right:8px;
+          vertical-align:-2px; border:2px solid currentColor; border-right-color:transparent;
+          border-radius:50%; animation:spin .7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation-duration:2.5s; } }
+  [hidden] { display:none !important; }
+</style></head>
+<body><div class="wrap">
+
+<div class="top">
+  <h1>Trích xuất đơn hàng Zalo</h1>
+  <button class="icon-btn" id="navSettings" aria-label="Cài đặt" title="Cài đặt">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+  </button>
+  <button class="icon-btn" id="navBack" aria-label="Quay lại" title="Quay lại" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M19 12H5M12 19l-7-7 7-7"></path>
+    </svg>
+  </button>
+</div>
+
+<!-- ============================================================ main view -->
+<div id="viewMain">
+
+  <div class="card">
+    <div class="row"><span class="count" id="count">–</span>
+      <span style="color:var(--muted)">đơn đã lưu</span></div>
+    <div class="field" style="margin-top:14px">
+      <label class="lbl" for="period">Tháng đang nhập</label>
+      <select id="period"></select>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Người chốt đơn</h2>
+    <p class="sub">Áp dụng cho các đơn dán bên dưới. Dán lại cùng đơn với tên khác thì
+      tên mới thay tên cũ.</p>
+    <div class="chips" id="closerChips" role="group" aria-label="Chọn người chốt đơn"></div>
+    <div id="newNameRow" hidden style="margin-top:11px">
+      <label class="lbl" for="newName">Tên mới</label>
+      <div class="with-btn">
+        <input type="text" id="newName" autocomplete="off" autocapitalize="words"
+               spellcheck="false" placeholder="Ví dụ: Trà My" aria-describedby="newNameErr">
+        <button id="newNameSave" class="small">Lưu</button>
+        <button id="newNameCancel" class="small ghost">Huỷ</button>
+      </div>
+      <div id="newNameErr" class="hint" role="alert"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Dán đoạn chat</h2>
+    <p class="sub">Mở Zalo, bôi đen đoạn chat rồi Copy, dán vào đây.</p>
+    <textarea id="paste" aria-label="Nội dung chat"
+              placeholder="15/8 đơn 1 - Tên KH&#10;1 tủ HD-1M gương trùm kín&#10;…"></textarea>
+    <button id="save">Lưu đơn</button>
+    <div class="hint">Chỉ nhận tin nhắn bắt đầu bằng <code>15/8 đơn 1 - Tên KH</code>.
+      Dán trùng nhau không sao, mỗi đơn chỉ lưu một lần.</div>
+    <div id="m1" role="status" aria-live="polite"></div>
+  </div>
+
+  <div class="card">
+    <h2>Xuất kết quả</h2>
+    <button id="export" class="ghost">Xuất file Excel mới</button>
+    <button id="append" class="ghost">Thêm vào file quản lý</button>
+    <div class="hint" id="wbhint"></div>
+    <div id="m2" role="status" aria-live="polite"></div>
+    <div id="dl"></div>
+  </div>
+</div>
+
+<!-- ======================================================== settings view -->
+<div id="viewSettings" hidden>
+
+  <div class="card">
+    <h2>AI dùng để đọc đơn</h2>
+    <p class="sub">Đơn được gửi tới nhà cung cấp này để bóc tách thành các cột.</p>
+
+    <div class="field">
+      <label class="lbl" id="provLbl">Nhà cung cấp</label>
+      <div class="seg" role="group" aria-labelledby="provLbl">
+        <button type="button" data-provider="gemini"    aria-pressed="false">Gemini</button>
+        <button type="button" data-provider="anthropic" aria-pressed="false">Anthropic</button>
+      </div>
+      <div class="hint" id="provHint"></div>
+    </div>
+
+    <div class="field">
+      <label class="lbl" for="apiKey">API key</label>
+      <div class="with-btn">
+        <input type="password" id="apiKey" autocomplete="off" spellcheck="false"
+               placeholder="Dán key vào đây">
+        <button type="button" id="keyToggle" class="small ghost"
+                aria-label="Hiện hoặc ẩn key">Hiện</button>
+      </div>
+      <div class="hint" id="keyState"></div>
+      <button type="button" id="keyVerify" class="ghost">Kiểm tra key</button>
+      <div id="keyResult" role="status" aria-live="polite"></div>
+    </div>
+
+    <div class="field">
+      <label class="lbl" for="model">Model</label>
+      <div class="with-btn">
+        <input type="text" id="model" list="modelList" autocomplete="off" spellcheck="false">
+        <button type="button" id="modelFetch" class="small ghost">Danh sách</button>
+      </div>
+      <datalist id="modelList"></datalist>
+      <div class="hint" id="modelHint"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>File và tên mặc định</h2>
+    <div class="field">
+      <label class="lbl" for="workbook">File quản lý (.xlsx)</label>
+      <input type="text" id="workbook" autocomplete="off" spellcheck="false"
+             placeholder="C:/Users/You/Documents/QUẢN LÝ ĐƠN.xlsx">
+      <div class="hint" id="wbState">Để trống thì nút “Thêm vào file quản lý” bị tắt.
+        Trên Windows dùng dấu gạch chéo xuôi <code>/</code>.</div>
+    </div>
+    <div class="field">
+      <label class="lbl" for="defCloser">Người chốt đơn mặc định</label>
+      <input type="text" id="defCloser" autocomplete="off" placeholder="Ví dụ: Trà My">
+      <div class="hint">Chỉ là gợi ý ban đầu — mỗi máy vẫn tự chọn tên trước khi lưu đơn.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <button id="settingsSave">Lưu và áp dụng</button>
+    <div class="hint">Lưu vào <code>config/config.yaml</code> và <code>.env</code>, rồi nạp
+      lại ngay — không cần khởi động lại.</div>
+    <div id="m3" role="status" aria-live="polite"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = i => document.getElementById(i);
+const el = (tag, props = {}) => Object.assign(document.createElement(tag), props);
+
+function show(node, kind, text, busy) {
+  node.innerHTML = '';
+  if (!text) return;
+  const d = el('div', { className: 'msg ' + kind });
+  if (busy) d.appendChild(el('span', { className: 'spin' }));
+  d.appendChild(document.createTextNode(text));
+  node.appendChild(d);
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok || body.error) throw new Error(body.error || ('HTTP ' + r.status));
+  return body;
+}
+
+/* ------------------------------------------------------------ navigation */
+
+function goto(view) {
+  const settings = view === 'settings';
+  $('viewMain').hidden = settings;
+  $('viewSettings').hidden = !settings;
+  $('navSettings').hidden = settings;
+  $('navBack').hidden = !settings;
+  window.scrollTo(0, 0);
+  if (settings) loadSettings();
+}
+$('navSettings').onclick = () => goto('settings');
+$('navBack').onclick = () => { goto('main'); refresh(); };
+
+/* --------------------------------------------------------- closer picker */
+
+// Remembered per device, so the phone and the laptop can be two different people
+// capturing their own orders without resetting each other.
+const remembered = () => localStorage.getItem('lavabo.closer') || '';
+let names = [];
+
+function drawChips() {
+  const box = $('closerChips');
+  const current = remembered();
+  box.innerHTML = '';
+  for (const name of names) {
+    const chip = el('button', { className: 'chip', type: 'button', textContent: name });
+    chip.setAttribute('aria-pressed', String(name === current));
+    chip.onclick = () => { localStorage.setItem('lavabo.closer', name); drawChips(); };
+    box.appendChild(chip);
+  }
+  const add = el('button', { className: 'chip add', type: 'button', textContent: '+ Thêm tên' });
+  add.onclick = openNewName;
+  box.appendChild(add);
+}
+
+function openNewName() {
+  $('newNameRow').hidden = false;
+  $('newNameErr').textContent = '';
+  $('newName').value = '';
+  $('newName').focus();
+}
+function closeNewName() {
+  $('newNameRow').hidden = true;
+  $('newNameErr').textContent = '';
+}
+function commitNewName() {
+  const typed = $('newName').value.trim();
+  if (!typed) { $('newNameErr').textContent = 'Nhập tên trước đã.'; $('newName').focus(); return; }
+  // Case-insensitive match against a name already known, so "trà my" selects the
+  // existing "Trà My" instead of creating a second spelling the SUMIF will miss.
+  const existing = names.find(n => n.toLowerCase() === typed.toLowerCase());
+  const name = existing || typed;
+  if (!existing) names.unshift(name);
+  localStorage.setItem('lavabo.closer', name);
+  closeNewName();
+  drawChips();
+}
+$('newNameSave').onclick = commitNewName;
+$('newNameCancel').onclick = closeNewName;
+$('newName').onkeydown = e => {
+  if (e.key === 'Enter') { e.preventDefault(); commitNewName(); }
+  if (e.key === 'Escape') { e.preventDefault(); closeNewName(); }
+};
+
+/* ----------------------------------------------------------------- month */
+
+function drawPeriods(periods, current) {
+  const sel = $('period');
+  if (sel.dataset.touched === '1' && sel.value === current) return;
+  sel.innerHTML = '';
+  for (const p of periods) sel.appendChild(el('option', { value: p, textContent: 'tháng ' + p }));
+  sel.value = current;
+}
+$('period').onchange = async () => {
+  const sel = $('period');
+  sel.dataset.touched = '1';
+  try { await api('/api/period?value=' + encodeURIComponent(sel.value), { method: 'POST' }); }
+  catch (e) { show($('m1'), 'err', 'Không đổi được tháng: ' + e.message); }
+  refresh();
+};
+
+/* ---------------------------------------------------------------- status */
+
+async function refresh() {
+  try {
+    const s = await api('/api/status');
+    $('count').textContent = s.orders;
+    drawPeriods(s.periods, s.period);
+    $('append').disabled = !s.workbook;
+    $('wbhint').textContent = s.workbook
+      ? 'File quản lý: ' + s.workbook + ' — luôn sao lưu trước khi ghi.'
+      : 'Chưa đặt file quản lý. Mở Cài đặt để chọn file.';
+    const keep = remembered();
+    names = s.closers.slice();
+    if (keep && !names.includes(keep)) names.unshift(keep);
+    drawChips();
+  } catch (e) { /* server restarting; the next tick retries */ }
+}
+
+/* ---------------------------------------------------------------- saving */
+
+$('save').onclick = async () => {
+  const text = $('paste').value;
+  if (!text.trim()) { show($('m1'), 'warn', 'Chưa có nội dung nào.'); return; }
+  const closer = remembered();
+  if (!closer) {
+    show($('m1'), 'warn', 'Chọn người chốt đơn trước đã.');
+    $('closerChips').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return;
+  }
+  $('save').disabled = true;
+  show($('m1'), 'busy', 'Đang lưu…', true);
+  try {
+    const s = await api('/api/capture?closer=' + encodeURIComponent(closer),
+                        { method: 'POST', body: text });
+    if (!s.found) {
+      show($('m1'), 'warn', 'Không tìm thấy đơn nào. Tin nhắn phải bắt đầu bằng ngày và '
+                          + 'số đơn, ví dụ "15/8 đơn 1 - Tên KH".');
+    } else {
+      let t = `Tìm thấy ${s.found} đơn — lưu mới ${s.saved}`;
+      if (s.duplicates) t += `, đã có ${s.duplicates}`;
+      if (s.other_month) t += `, ${s.other_month} khác tháng`;
+      show($('m1'), s.saved ? 'ok' : 'warn', t);
+      if (s.saved) $('paste').value = '';
+    }
+  } catch (e) { show($('m1'), 'err', 'Lỗi: ' + e.message); }
+  $('save').disabled = false;
+  refresh();
+};
+
+/* --------------------------------------------------------------- exports */
+
+async function runJob(mode) {
+  $('export').disabled = $('append').disabled = true;
+  $('dl').innerHTML = '';
+  show($('m2'), 'busy', 'Đang xử lý… bản Gemini miễn phí chạy chậm, vui lòng đợi.', true);
+  try {
+    await api('/api/export?mode=' + mode, { method: 'POST' });
+    const poll = setInterval(async () => {
+      let s;
+      try { s = await api('/api/export/status'); } catch (e) { return; }
+      if (s.state === 'running') { show($('m2'), 'busy', s.step || 'Đang xử lý…', true); return; }
+      clearInterval(poll);
+      $('export').disabled = false;
+      refresh();
+      if (s.state === 'error') { show($('m2'), 'err', s.message); return; }
+      show($('m2'), s.warning ? 'warn' : 'ok', s.message);
+      // Appending writes into the shop's own workbook in place; there is nothing to
+      // download, and offering a copy would invite editing the wrong file.
+      if (s.file) {
+        $('dl').innerHTML = '';
+        $('dl').appendChild(el('a', { className: 'dl', href: '/download/' + encodeURIComponent(s.file),
+                                      textContent: 'Tải file Excel' }));
+      }
+    }, 1500);
+  } catch (e) {
+    show($('m2'), 'err', 'Lỗi: ' + e.message);
+    $('export').disabled = false;
+    refresh();
+  }
+}
+$('export').onclick = () => runJob('new');
+$('append').onclick = () => {
+  if (!confirm('Thêm các đơn của tháng này vào file quản lý?\n\nFile sẽ được sao lưu trước khi ghi.')) return;
+  runJob('append');
+};
+
+/* -------------------------------------------------------------- settings */
+
+let provider = 'gemini';
+
+function setProvider(name) {
+  provider = name;
+  for (const b of document.querySelectorAll('.seg [data-provider]'))
+    b.setAttribute('aria-pressed', String(b.dataset.provider === name));
+  $('provHint').textContent = name === 'gemini'
+    ? 'Gemini có bản miễn phí — key lấy tại aistudio.google.com/apikey.'
+    : 'Anthropic tính phí theo lượng dùng — key lấy tại console.anthropic.com.';
+  $('keyResult').innerHTML = '';
+}
+for (const b of document.querySelectorAll('.seg [data-provider]'))
+  b.onclick = () => { setProvider(b.dataset.provider); refreshKeyState(); };
+
+$('keyToggle').onclick = () => {
+  const f = $('apiKey');
+  f.type = f.type === 'password' ? 'text' : 'password';
+  $('keyToggle').textContent = f.type === 'password' ? 'Hiện' : 'Ẩn';
+};
+
+let keyStatus = {};
+function refreshKeyState() {
+  const s = keyStatus[provider] || {};
+  const box = $('keyState');
+  box.innerHTML = '';
+  const dot = el('span', { className: 'dot ' + (s.ok ? 'ok' : (s.set ? 'err' : 'idle')) });
+  box.appendChild(dot);
+  box.appendChild(document.createTextNode(
+    s.set ? (s.hint + (s.problem ? ' — ' + s.problem : ' — đã lưu'))
+          : 'Chưa có key nào được lưu cho nhà cung cấp này.'));
+}
+
+async function loadSettings() {
+  show($('m3'), '', '');
+  try {
+    const s = await api('/api/settings');
+    keyStatus = s.keys;
+    setProvider(s.provider);
+    $('model').value = s.model;
+    $('workbook').value = s.workbook;
+    $('defCloser').value = s.closer;
+    $('modelHint').textContent = 'Đang dùng: ' + s.model;
+    refreshKeyState();
+  } catch (e) { show($('m3'), 'err', 'Không đọc được cài đặt: ' + e.message); }
+}
+
+$('keyVerify').onclick = async () => {
+  const btn = $('keyVerify');
+  btn.disabled = true;
+  show($('keyResult'), 'busy', 'Đang hỏi nhà cung cấp…', true);
+  try {
+    const s = await api('/api/settings/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, api_key: $('apiKey').value }),
+    });
+    show($('keyResult'), s.ok ? 'ok' : 'err', s.message);
+  } catch (e) { show($('keyResult'), 'err', e.message); }
+  btn.disabled = false;
+};
+
+$('modelFetch').onclick = async () => {
+  const btn = $('modelFetch');
+  btn.disabled = true;
+  $('modelHint').textContent = 'Đang lấy danh sách…';
+  try {
+    const s = await api('/api/settings/models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, api_key: $('apiKey').value }),
+    });
+    const dl = $('modelList');
+    dl.innerHTML = '';
+    for (const m of s.models) dl.appendChild(el('option', { value: m }));
+    $('modelHint').textContent = s.models.length + ' model khả dụng — bấm vào ô để chọn.';
+  } catch (e) { $('modelHint').textContent = 'Không lấy được danh sách: ' + e.message; }
+  btn.disabled = false;
+};
+
+$('settingsSave').onclick = async () => {
+  const btn = $('settingsSave');
+  btn.disabled = true;
+  show($('m3'), 'busy', 'Đang lưu và nạp lại…', true);
+  try {
+    const s = await api('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider,
+        model: $('model').value.trim(),
+        api_key: $('apiKey').value,          // blank means "leave the stored key alone"
+        workbook: $('workbook').value.trim(),
+        closer: $('defCloser').value.trim(),
+      }),
+    });
+    $('apiKey').value = '';
+    keyStatus = s.keys;
+    refreshKeyState();
+    show($('m3'), s.warnings.length ? 'warn' : 'ok',
+         ['Đã lưu và nạp lại.', ...s.warnings].join('\n'));
+    refresh();
+  } catch (e) { show($('m3'), 'err', 'Không lưu được: ' + e.message); }
+  btn.disabled = false;
+};
+
+/* -------------------------------------------------------------- start up */
+
+refresh();
+setInterval(() => { if (!$('viewMain').hidden) refresh(); }, 5000);
+</script>
+</div></body></html>
