@@ -93,10 +93,15 @@ Same pipeline, reached through a browser instead of the terminal.
 |---|---|
 | macOS | double-click **`web.command`** |
 | Windows | double-click **`web.bat`** |
-| Terminal | `bash web.sh --lan` |
+| Terminal | `bash web.sh --lan`, or on Windows `web.bat --lan` |
+
+First run on Windows installs everything itself via `scripts\setup.ps1`; it needs
+Python 3.11+ with *Add python.exe to PATH* ticked. Nothing else differs — the page, the
+capture and the Excel writing are identical on both.
 
 Without `--lan` it listens on this machine only. With `--lan` it prints a second URL to
-open on a phone connected to the same wifi:
+open on a phone connected to the same wifi. Double-clicking cannot pass `--lan`, so run
+it from a terminal when you want the phone to reach it:
 
 ```
   máy này:      http://127.0.0.1:8765

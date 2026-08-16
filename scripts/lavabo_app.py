@@ -347,7 +347,12 @@ def main() -> int:
     if not first_run_setup():
         return 1
 
-    cfg = Config.load()
+    try:
+        cfg = Config.load()
+    except ValueError as exc:
+        print(f"\n{RED}{exc}{OFF}\n")
+        input("Nhấn Enter để thoát…")
+        return 1
     closer = read_app_setting("closer")
     today = date.today()
     month, year = today.month, today.year

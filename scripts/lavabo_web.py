@@ -487,7 +487,12 @@ def main() -> int:
     except ImportError:
         pass
 
-    cfg = Config.load()
+    try:
+        cfg = Config.load()
+    except ValueError as exc:
+        print(f"\n{exc}\n")
+        input("Nhấn Enter để thoát…")
+        return 1
     today = date.today()
 
     import yaml

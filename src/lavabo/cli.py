@@ -733,7 +733,11 @@ def main(argv: list[str] | None = None) -> int:
 
     args = ap.parse_args(argv)
     _setup_logging(args.verbose)
-    cfg = Config.load(args.config)
+    try:
+        cfg = Config.load(args.config)
+    except ValueError as exc:          # a broken config file, not a broken program
+        print(f"\n{exc}\n", file=sys.stderr)
+        return 1
     _apply_llm_overrides(args, cfg)
 
     handlers = {"check": cmd_check, "ingest": cmd_ingest, "extract": cmd_extract,

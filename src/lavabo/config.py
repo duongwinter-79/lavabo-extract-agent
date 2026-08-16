@@ -17,6 +17,27 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+
+def _read_yaml(path: Path) -> dict[str, Any]:
+    """Parse a config file, turning YAML's own errors into something actionable.
+
+    The trap this exists for is a Windows path in double quotes: YAML reads "\\U" in
+    "C:\\Users\\..." as the start of an escape, and the whole file fails to load with a
+    scanner error pointing at a column number. Somebody editing config.yaml to name
+    their workbook should not have to know that.
+    """
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        hint = ""
+        mark = getattr(exc, "problem_mark", None)
+        where = f" (line {mark.line + 1})" if mark else ""
+        if "\\" in path.read_text(encoding="utf-8"):
+            hint = ("\n  A Windows path in \"double quotes\" is the usual cause: YAML "
+                    "treats \\ as an escape.\n"
+                    "  Use forward slashes — C:/Users/You/file.xlsx — or 'single quotes'.")
+        raise ValueError(f"{path.name} is not valid YAML{where}.{hint}") from None
+
 JSON_TYPES = {"string": "string", "number": "number", "integer": "integer",
               "boolean": "boolean", "date": "string", "array": "array"}
 
@@ -89,7 +110,7 @@ class ExtractionSchema:
 
     @classmethod
     def load(cls, path: Path) -> "ExtractionSchema":
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        data = _read_yaml(path)
         cols = [Column(**c) for c in data.get("columns", [])]
         if not cols:
             raise ValueError(f"{path}: no columns defined")
@@ -185,7 +206,7 @@ class Config:
         path = path or REPO_ROOT / "config" / "config.yaml"
         if not path.exists():
             return cls()
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        data = _read_yaml(path)
         cfg = cls()
         if m := data.get("meta"):
             cfg.meta = MetaConfig(**m)

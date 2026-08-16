@@ -52,9 +52,15 @@ app:
   closer: ""
 
   # The shop's own workbook, for "Thêm vào file quản lý" / `lavabo append`. Left empty,
-  # that button is disabled and only a separate month file is produced. Give the full
-  # path, e.g. "/Users/you/Documents/QUẢN LÝ ĐƠN SENKAHOMES.xlsx" — it is backed up
+  # that button is disabled and only a separate month file is produced. It is backed up
   # before every write.
+  #
+  #   macOS:   workbook: "/Users/you/Documents/QUẢN LÝ ĐƠN SENKAHOMES.xlsx"
+  #   Windows: workbook: "C:/Users/You/Documents/QUẢN LÝ ĐƠN SENKAHOMES.xlsx"
+  #
+  # On Windows use forward slashes as above, or 'single quotes' around a backslash
+  # path. In "double quotes" YAML reads \ as an escape and the file stops loading.
+  # Easiest is to skip this: press [2] in the app and paste the path once.
   workbook: ""
 
 db_path: "data/staging.db"
