@@ -159,6 +159,9 @@ name and only the sidecar changes.
 | VND text → number parser | done — `money.py`, 21 cases |
 | Excel writer: one row per line item | done — `lavabo load --layout senkahomes` |
 | Write into your existing workbook's monthly sheet vs a new file | both — `load` writes a separate file, `append` inserts into yours after a backup |
+| Người chốt đơn asked per order, not per run | done — see §4 |
+| Both reachable without the command line | done — `[1]`/`[2]` in the app, two buttons on the web page, over `app.workbook` |
+| Choosing which month is being captured | done — `[4]` in the app, the selector on the web page |
 
 ### The sheet is a template, not an empty grid
 

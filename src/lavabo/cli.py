@@ -349,32 +349,19 @@ def cmd_check(args, cfg: Config) -> int:
 
 def cmd_append(args, cfg: Config) -> int:
     """Insert orders into the shop's own workbook, after a backup."""
-    from .extract.prompt import PROMPT_VERSION
     from .load.append import append_orders
     from .load.senkahomes import missing_schema_fields
+    from .pipeline import stored_for_month
 
     schema = cfg.load_schema()
     if _schema_mismatch(schema, missing_schema_fields(schema)):
         return 1
     target = Path(args.into)
 
-    with Store(cfg.db_path) as store:
-        conversations = [c for c in store.conversations()
-                         if c.raw.get("order_month") == args.month
-                         and (not args.year
-                              or (c.raw.get("order_year") or args.year) == args.year)]
-        if not conversations:
-            print(f"No orders stored for {args.month:02d}/{args.year}. Nothing to add.")
-            return 1
-
-        results = {}
-        for conv in conversations:
-            hit = store.cached_extraction(
-                conv, schema_version=schema.version, schema_hash=schema.fingerprint(),
-                prompt_version=PROMPT_VERSION, model=cfg.extract.model,
-            )
-            if hit:
-                results[conv.conversation_id] = hit
+    conversations, results = stored_for_month(cfg, args.month, args.year)
+    if not conversations:
+        print(f"No orders stored for {args.month:02d}/{args.year}. Nothing to add.")
+        return 1
 
     unextracted = len(conversations) - len(results)
     if unextracted:

@@ -13,12 +13,10 @@ them to .env and config/config.yaml, and does not ask again.
 
 from __future__ import annotations
 
-import io
 import os
 import sys
 import threading
 import time
-from contextlib import redirect_stdout
 from datetime import date
 from pathlib import Path
 
@@ -97,12 +95,22 @@ def write_config(closer: str) -> None:
     )
 
 
-def read_closer() -> str:
+def read_app_setting(key: str) -> str:
+    """Read config.yaml's `app:` block, which Config.load ignores — it belongs to
+    the front ends, not the pipeline."""
     if not CONFIG_PATH.exists():
         return ""
     import yaml
     data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
-    return ((data.get("app") or {}).get("closer") or "").strip()
+    return str((data.get("app") or {}).get(key) or "").strip()
+
+
+def write_app_setting(key: str, value: str) -> None:
+    import yaml
+    data = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")) or {}
+    data.setdefault("app", {})[key] = value
+    CONFIG_PATH.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+                           encoding="utf-8")
 
 
 def first_run_setup() -> bool:
@@ -239,43 +247,92 @@ def choose_closer(cfg: Config, current: str) -> str:
     return current
 
 
+def choose_month(month: int, year: int) -> tuple[int, int]:
+    """Pick which month is being captured — normally this one, but the shop closes a
+    month a few days late, so the first days of September still see August orders."""
+    options = []
+    m, y = month, year
+    for _ in range(6):
+        options.append((m, y))
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+
+    print(f"\n{BOLD}Đang nhập đơn của tháng nào?{OFF}")
+    for i, (mm, yy) in enumerate(options, start=1):
+        mark = f"  {GREEN}← đang dùng{OFF}" if (mm, yy) == (month, year) else ""
+        print(f"  {BOLD}[{i}]{OFF}  {MONTHS_VI} {mm:02d}/{yy}{mark}")
+
+    choice = ask("\nChọn", default="")
+    if choice.isdigit() and 1 <= int(choice) <= len(options):
+        return options[int(choice) - 1]
+    return month, year
+
+
 # ------------------------------------------------------------------ the one action
 
+def _step(text: str) -> None:
+    print(f"\n{BOLD}{text}{OFF}")
+
+
 def export(cfg: Config, month: int, year: int, closer: str) -> None:
-    from lavabo.cli import cmd_extract, cmd_ingest, cmd_load
+    from lavabo import pipeline
 
-    class A:                                              # stand-in for parsed argv
-        pass
+    total, failed = pipeline.ingest_and_extract(cfg, _step)
+    print(f"  {total} đơn")
+    if failed:
+        print(f"{YELLOW}  {failed} đơn trích xuất lỗi — vẫn xuất file với phần đã có.{OFF}")
 
-    print(f"\n{BOLD}[1/3] Đọc các đơn đã lưu…{OFF}")
-    a = A(); a.source = "zalo"; a.full = False
-    # The CLI prints counters and a JSON dump here, which is noise for someone who
-    # only wants the spreadsheet. The useful number is printed below instead.
-    with io.StringIO() as sink, redirect_stdout(sink):
-        cmd_ingest(a, cfg)
-    from lavabo.store import Store
-    with Store(cfg.db_path) as store:
-        total = store.stats()["conversations"]
-    print(f"  {total} đơn sẵn sàng")
-
-    print(f"\n{BOLD}[2/3] Trích xuất bằng AI…{OFF}  {DIM}(bản miễn phí chạy chậm, "
-          f"gặp giới hạn sẽ tự chờ){OFF}")
-    a = A(); a.source = "zalo"; a.limit = None; a.force = False
-    a.dry_run = False; a.strict = False
-    a.provider = a.model = a.api_key = None
-    code = cmd_extract(a, cfg)
-    if code:
-        print(f"{YELLOW}Một số đơn trích xuất chưa xong — vẫn xuất file với phần đã có.{OFF}")
-
-    out = cfg.output_dir / f"donhang-{year}{month:02d}.xlsx"
-    print(f"\n{BOLD}[3/3] Ghi file Excel…{OFF}")
-    a = A(); a.out = str(out); a.layout = "senkahomes"
-    a.sheet = None; a.year = year; a.status = "New"; a.closer = closer or None
-    a.provider = a.model = a.api_key = None
-    cmd_load(a, cfg)
-
+    out = pipeline.write_workbook(cfg, month, year, closer, _step)
     print(f"\n{GREEN}{BOLD}Xong.{OFF}  File: {BOLD}{out}{OFF}")
     print(f"{DIM}Mở thư mục: {out.parent}{OFF}")
+
+
+def append(cfg: Config, month: int, year: int, closer: str) -> None:
+    """Add the month's orders into the shop's own workbook, in place."""
+    from lavabo import pipeline
+
+    target = Path(read_app_setting("workbook"))
+    if not target or not target.exists():
+        if target:
+            print(f"\n{YELLOW}Không tìm thấy: {target}{OFF}")
+        print(f"\n{DIM}Kéo file quản lý vào đây rồi Enter, hoặc dán đường dẫn.{OFF}")
+        typed = ask("File quản lý (.xlsx)", default="")
+        # A path dragged into a terminal arrives quoted and space-escaped.
+        typed = typed.strip().strip("'\"").replace("\\ ", " ")
+        if not typed:
+            return
+        target = Path(typed).expanduser()
+        if not target.exists():
+            print(f"{RED}Không tìm thấy file: {target}{OFF}")
+            return
+        write_app_setting("workbook", str(target))
+
+    total, failed = pipeline.ingest_and_extract(cfg, _step)
+    print(f"  {total} đơn")
+    if failed:
+        print(f"{YELLOW}  {failed} đơn trích xuất lỗi{OFF}")
+
+    summary = pipeline.append_to_workbook(cfg, target, month, year, closer, progress=_step)
+
+    if summary["collision"]:
+        rows = ", ".join(str(r) for r in summary["collision"])
+        print(f"\n{RED}Không ghi được vào sheet {summary['sheet']}.{OFF}")
+        print(f"  Dòng {rows} đang có nội dung khác (thường là bảng tổng kết).")
+        print("  Chuyển bảng đó xuống dưới rồi thử lại.")
+        return
+
+    print(f"\n{GREEN}{BOLD}Xong.{OFF}  Sheet {BOLD}{summary['sheet']}{OFF}"
+          + ("  (mới tạo)" if summary["created_sheet"] else ""))
+    print(f"  Đã thêm {BOLD}{summary['added']}{OFF} đơn"
+          + (f", từ dòng {summary['start_row']}" if summary["start_row"] else ""))
+    if summary["already_present"]:
+        print(f"  {summary['already_present']} đơn đã có sẵn — bỏ qua")
+    if summary["unextracted"]:
+        print(f"{YELLOW}  {summary['unextracted']} đơn chỉ có ngày và tên khách "
+              f"(chưa trích xuất được){OFF}")
+    if summary["backup"]:
+        print(f"{DIM}  Bản sao lưu: {Path(summary['backup']).name}{OFF}")
 
 
 # -------------------------------------------------------------------------- main
@@ -291,7 +348,7 @@ def main() -> int:
         return 1
 
     cfg = Config.load()
-    closer = read_closer()
+    closer = read_app_setting("closer")
     today = date.today()
     month, year = today.month, today.year
 
@@ -305,6 +362,7 @@ def main() -> int:
 
         inbox = cfg.zalo.inbox_dir
         on_disk = len(list(inbox.glob("*.txt"))) if inbox.exists() else 0
+        workbook = read_app_setting("workbook")
 
         if capturer.error:
             print(f"\n{RED}Không đọc được clipboard: {capturer.error}{OFF}")
@@ -323,8 +381,11 @@ def main() -> int:
         for line in capturer.drain():
             print("  " + line)
 
-        print(f"\n{BOLD}  [1]{OFF}  Xuất file Excel")
-        print(f"{BOLD}  [2]{OFF}  Đổi người chốt đơn")
+        print(f"\n{BOLD}  [1]{OFF}  Xuất file Excel mới")
+        print(f"{BOLD}  [2]{OFF}  Thêm vào file quản lý"
+              + (f"   {DIM}({Path(workbook).name}){OFF}" if workbook else ""))
+        print(f"{BOLD}  [3]{OFF}  Đổi người chốt đơn")
+        print(f"{BOLD}  [4]{OFF}  Đổi tháng")
         print(f"{DIM}  [r]  Làm mới    [q]  Thoát{OFF}\n")
 
         try:
@@ -337,15 +398,22 @@ def main() -> int:
             return 0
         if choice in ("", "r"):
             continue
-        if choice == "2":
+        if choice == "3":
             capturer.closer = choose_closer(cfg, capturer.closer)
             continue
-        if choice == "1":
+        if choice == "4":
+            month, year = choose_month(month, year)
+            capturer.month, capturer.year = month, year
+            continue
+        if choice in ("1", "2"):
             if not on_disk:
                 print(f"\n{YELLOW}Chưa có đơn nào. Copy đoạn chat từ Zalo trước đã.{OFF}")
             else:
+                action = export if choice == "1" else append
                 try:
-                    export(cfg, month, year, capturer.closer)
+                    action(cfg, month, year, capturer.closer)
+                except RuntimeError as exc:       # ours, already phrased for the operator
+                    print(f"\n{YELLOW}{exc}{OFF}")
                 except Exception as exc:
                     print(f"\n{RED}Lỗi: {type(exc).__name__}: {exc}{OFF}")
             input(f"\n{DIM}Nhấn Enter để quay lại…{OFF}")

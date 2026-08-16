@@ -52,14 +52,24 @@ Tổng 29tr
 
 Everything else in the chat is ignored, and only the current month is captured.
 
-### 3. Pick who closed them, press `1`
+### 3. Pick who closed them, press `1` or `2`
 
 ```
   Người chốt đơn: Trà My
 
-  [1]  Xuất file Excel
-  [2]  Đổi người chốt đơn
+  [1]  Xuất file Excel mới
+  [2]  Thêm vào file quản lý   (QUẢN LÝ ĐƠN SENKAHOMES.xlsx)
+  [3]  Đổi người chốt đơn
+  [4]  Đổi tháng
 ```
+
+`[1]` writes a fresh file you can check before touching anything. `[2]` adds the month's
+orders straight into your own workbook — it backs the file up first, skips orders already
+in the sheet, and refuses to write if the rows it needs aren't empty. Set which workbook
+under `app.workbook` in `config/config.yaml`, or press `[2]` and paste the path once.
+
+`[4]` matters at the start of a month: on 2 September the app is looking for September
+orders, so switch to August to finish closing it.
 
 That name is recorded **per order**, not per session, so if two people's orders are in one
 paste you can switch with `[2]` and paste the rest. Re-pasting an order with a different
@@ -94,8 +104,11 @@ open on a phone connected to the same wifi:
 ```
 
 On the phone: copy the chat in Zalo, pick **Người chốt đơn**, paste into the box, tap
-**Lưu đơn**, then **Xuất file Excel** and download. The picked name is remembered on that
-device, so the phone and the laptop can be two different people capturing their own orders.
+**Lưu đơn**, then **Xuất file Excel mới** and download. The picked name is remembered on
+that device, so the phone and the laptop can be two different people capturing their own
+orders. **Thêm vào file quản lý** does the same as `[2]` above, writing into the workbook
+on the machine running the server — so there is nothing to download, and no second copy
+to edit by mistake. The month selector at the top applies to everyone using the page.
 
 > The page has no password. Anyone on the same network can open it while it runs, so use
 > it on your own wifi rather than a public one, and close it when you are done.
@@ -196,6 +209,7 @@ src/lavabo/
   load/        senkahomes.py           the 12-column layout
                excel.py                generic layout
   closers.py   who chốt each order, stored beside them
+  pipeline.py  the steps behind the buttons, shared by both front ends
   money.py     Vietnamese amounts -> VND
   store.py     SQLite staging + extraction cache
 data/          inbox/ staging.db out/  gitignored — never commit chat content

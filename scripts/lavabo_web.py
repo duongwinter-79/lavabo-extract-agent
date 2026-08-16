@@ -85,7 +85,9 @@ PAGE = """<!doctype html>
 
 <div class="card">
   <div class="row"><span class="count" id="count">–</span>
-    <span style="color:var(--muted)">đơn đã lưu — tháng <span id="period"></span></span></div>
+    <span style="color:var(--muted)">đơn đã lưu</span></div>
+  <label class="lbl" style="margin-top:14px" for="period">Tháng đang nhập</label>
+  <select id="period"></select>
 </div>
 
 <div class="card">
@@ -103,7 +105,9 @@ PAGE = """<!doctype html>
 </div>
 
 <div class="card">
-  <button id="export" class="ghost">Xuất file Excel</button>
+  <button id="export" class="ghost">Xuất file Excel mới</button>
+  <button id="append" class="ghost">Thêm vào file quản lý</button>
+  <div class="hint" id="wbhint"></div>
   <div id="m2"></div>
   <div id="dl"></div>
 </div>
@@ -150,10 +154,32 @@ $('closer').onchange = () => {
   drawClosers(closers, typed);
 };
 
+function drawPeriods(periods, current) {
+  const sel = $('period');
+  if (sel.dataset.touched === '1' && sel.value === current) return;
+  sel.innerHTML = '';
+  for (const p of periods) {
+    const o = document.createElement('option'); o.value = p; o.textContent = 'tháng ' + p;
+    sel.appendChild(o);
+  }
+  sel.value = current;
+}
+
+$('period').onchange = async () => {
+  const sel = $('period'); sel.dataset.touched = '1';
+  await fetch('/api/period?value=' + encodeURIComponent(sel.value), {method:'POST'});
+  refresh();
+};
+
 async function refresh() {
   try {
     const r = await fetch('/api/status'); const s = await r.json();
-    $('count').textContent = s.orders; $('period').textContent = s.period;
+    $('count').textContent = s.orders;
+    drawPeriods(s.periods || [s.period], s.period);
+    $('append').disabled = !s.workbook;
+    $('wbhint').textContent = s.workbook
+      ? 'File quản lý: ' + s.workbook + ' — luôn sao lưu trước khi ghi.'
+      : 'Chưa đặt file quản lý. Mở config/config.yaml và thêm app.workbook: đường dẫn tới file .xlsx.';
     const keep = $('closer').value === NEW_NAME ? remembered() : ($('closer').value || remembered());
     const names = s.closers || [];
     if (keep && !names.includes(keep)) names.unshift(keep);
@@ -185,20 +211,31 @@ $('save').onclick = async () => {
   $('save').disabled = false; refresh();
 };
 
-$('export').onclick = async () => {
-  $('export').disabled = true; $('dl').innerHTML = '';
+async function runJob(mode) {
+  $('export').disabled = $('append').disabled = true; $('dl').innerHTML = '';
   show($('m2'),'ok','Đang xử lý… bản Gemini miễn phí chạy chậm, vui lòng đợi.');
   try {
-    await fetch('/api/export', {method:'POST'});
+    await fetch('/api/export?mode=' + mode, {method:'POST'});
     const poll = setInterval(async () => {
       const r = await fetch('/api/export/status'); const s = await r.json();
       if (s.state === 'running') { show($('m2'),'ok', s.step || 'Đang xử lý…'); return; }
-      clearInterval(poll); $('export').disabled = false;
+      clearInterval(poll); $('export').disabled = false; refresh();
       if (s.state === 'error') { show($('m2'),'err', s.message); return; }
       show($('m2'), s.warning ? 'warn' : 'ok', s.message);
-      $('dl').innerHTML = `<a class="dl" href="/download/${encodeURIComponent(s.file)}">Tải file Excel</a>`;
+      // Appending writes into the shop's own workbook in place; there is nothing to
+      // download, and offering a copy would invite editing the wrong file.
+      if (s.file) $('dl').innerHTML =
+        `<a class="dl" href="/download/${encodeURIComponent(s.file)}">Tải file Excel</a>`;
     }, 1500);
-  } catch (e) { show($('m2'),'err','Lỗi: ' + e); $('export').disabled = false; }
+  } catch (e) {
+    show($('m2'),'err','Lỗi: ' + e); $('export').disabled = false; refresh();
+  }
+}
+
+$('export').onclick = () => runJob('new');
+$('append').onclick = () => {
+  if (!confirm('Thêm các đơn của tháng này vào file quản lý?\n\nFile sẽ được sao lưu trước khi ghi.')) return;
+  runJob('append');
 };
 
 refresh(); setInterval(refresh, 5000);
@@ -208,6 +245,19 @@ refresh(); setInterval(refresh, 5000);
 
 JOB: dict = {"state": "idle", "step": "", "message": "", "file": "", "warning": False}
 JOB_LOCK = threading.Lock()
+
+
+def recent_periods(month: int, year: int, count: int = 6) -> list[str]:
+    """This month and the five before it. The shop closes a month a few days late, so
+    early September still sees August orders arriving."""
+    out = []
+    m, y = month, year
+    for _ in range(count):
+        out.append(f"{m:02d}/{y}")
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+    return out
 
 
 def lan_ip() -> str:
@@ -220,45 +270,43 @@ def lan_ip() -> str:
         return "127.0.0.1"
 
 
-def run_export(cfg: Config, month: int, year: int, closer: str) -> None:
-    from lavabo.cli import cmd_extract, cmd_ingest, cmd_load
-    from lavabo.store import Store
+def run_export(cfg: Config, month: int, year: int, closer: str,
+               *, mode: str = "new", workbook: Path | None = None) -> None:
+    """Extract everything captured, then either write a fresh month file or add the
+    month's orders into the shop's own workbook."""
+    from lavabo import pipeline
 
     def step(text: str) -> None:
         with JOB_LOCK:
             JOB["step"] = text
 
-    class A:
-        pass
-
     try:
-        step("Đang đọc các đơn đã lưu…")
-        a = A(); a.source = "zalo"; a.full = False
-        with io.StringIO() as sink, redirect_stdout(sink):
-            cmd_ingest(a, cfg)
+        total, failed = pipeline.ingest_and_extract(cfg, step)
 
-        with Store(cfg.db_path) as store:
-            total = store.stats()["conversations"]
-        if not total:
-            raise RuntimeError("Chưa có đơn nào để xuất.")
+        if mode == "append":
+            if not workbook:
+                raise RuntimeError("Chưa đặt file quản lý (app.workbook trong config.yaml).")
+            summary = pipeline.append_to_workbook(cfg, workbook, month, year, closer,
+                                                  progress=step)
+            if summary["collision"]:
+                rows = ", ".join(str(r) for r in summary["collision"])
+                raise RuntimeError(
+                    f"Sheet {summary['sheet']}: dòng {rows} đang có nội dung khác "
+                    "(thường là bảng tổng kết). Chuyển bảng đó xuống rồi thử lại."
+                )
+            bits = [f"Xong. Đã thêm {summary['added']} đơn vào sheet {summary['sheet']}."]
+            if summary["already_present"]:
+                bits.append(f"{summary['already_present']} đơn đã có sẵn.")
+            if summary["unextracted"]:
+                bits.append(f"{summary['unextracted']} đơn chỉ có ngày và tên khách.")
+            if summary["backup"]:
+                bits.append(f"Sao lưu: {Path(summary['backup']).name}")
+            with JOB_LOCK:
+                JOB.update(state="done", step="", message=" ".join(bits), file="",
+                           warning=bool(summary["unextracted"]))
+            return
 
-        step(f"Đang trích xuất {total} đơn bằng AI…")
-        a = A(); a.source = "zalo"; a.limit = None; a.force = False
-        a.dry_run = False; a.strict = False
-        a.provider = a.model = a.api_key = None
-        with io.StringIO() as sink, redirect_stdout(sink):
-            cmd_extract(a, cfg)
-            extract_log = sink.getvalue()
-        failed = extract_log.count("  FAIL ")
-
-        step("Đang ghi file Excel…")
-        out = cfg.output_dir / f"donhang-{year}{month:02d}.xlsx"
-        a = A(); a.out = str(out); a.layout = "senkahomes"
-        a.sheet = None; a.year = year; a.status = "New"; a.closer = closer or None
-        a.provider = a.model = a.api_key = None
-        with io.StringIO() as sink, redirect_stdout(sink):
-            cmd_load(a, cfg)
-
+        out = pipeline.write_workbook(cfg, month, year, closer, step)
         message = f"Xong. {total} đơn."
         if failed:
             message += f" {failed} đơn trích xuất lỗi — các cột AI sẽ trống."
@@ -266,9 +314,11 @@ def run_export(cfg: Config, month: int, year: int, closer: str) -> None:
             JOB.update(state="done", step="", message=message,
                        file=out.name, warning=bool(failed))
     except Exception as exc:
+        # RuntimeError is ours and already phrased for the operator; anything else is a
+        # surprise, and its type is the useful half of the message.
+        detail = str(exc) if isinstance(exc, RuntimeError) else f"{type(exc).__name__}: {exc}"
         with JOB_LOCK:
-            JOB.update(state="error", step="", message=f"{type(exc).__name__}: {exc}",
-                       file="", warning=True)
+            JOB.update(state="error", step="", message=detail, file="", warning=True)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -276,6 +326,7 @@ class Handler(BaseHTTPRequestHandler):
     month: int
     year: int
     closer: str
+    workbook: Path | None = None
 
     def log_message(self, *args) -> None:          # quiet; the page is the interface
         pass
@@ -315,6 +366,8 @@ class Handler(BaseHTTPRequestHandler):
                 names.append(self.closer)          # the config default, as a fallback
             self._json({"orders": self._orders_on_disk(),
                         "period": f"{self.month:02d}/{self.year}",
+                        "periods": recent_periods(self.month, self.year),
+                        "workbook": self.workbook.name if self.workbook else "",
                         "closers": names})
         elif path == "/api/export/status":
             with JOB_LOCK:
@@ -330,8 +383,27 @@ class Handler(BaseHTTPRequestHandler):
             self._capture()
         elif path == "/api/export":
             self._start_export()
+        elif path == "/api/period":
+            self._set_period()
         else:
             self._json({"error": "not found"}, 404)
+
+    def _set_period(self) -> None:
+        """Change which month new pastes are filtered to.
+
+        Set on the class, not the instance: every request gets a fresh handler, and the
+        phone changing the month must apply to the next paste from the laptop too.
+        """
+        raw = parse_qs(urlparse(self.path).query).get("value", [""])[0]
+        try:
+            month, year = (int(part) for part in raw.split("/", 1))
+            if not 1 <= month <= 12 or not 2000 <= year <= 2100:
+                raise ValueError(raw)
+        except ValueError:
+            self._json({"error": f"tháng không hợp lệ: {raw!r}"}, 400)
+            return
+        Handler.month, Handler.year = month, year
+        self._json({"period": f"{month:02d}/{year}"})
 
     def _capture(self) -> None:
         import zalo_capture as zc
@@ -357,6 +429,15 @@ class Handler(BaseHTTPRequestHandler):
                     "duplicates": duplicates, "other_month": other})
 
     def _start_export(self) -> None:
+        mode = parse_qs(urlparse(self.path).query).get("mode", ["new"])[0]
+        if mode not in ("new", "append"):
+            self._json({"error": f"unknown mode {mode!r}"}, 400)
+            return
+        if mode == "append" and not self.workbook:
+            self._json({"error": "Chưa đặt file quản lý trong config.yaml (app.workbook)."},
+                       400)
+            return
+
         with JOB_LOCK:
             if JOB["state"] == "running":
                 self._json(dict(JOB))
@@ -365,6 +446,7 @@ class Handler(BaseHTTPRequestHandler):
         threading.Thread(
             target=run_export,
             args=(self.cfg, self.month, self.year, self.closer),
+            kwargs={"mode": mode, "workbook": self.workbook},
             daemon=True,
         ).start()
         self._json({"state": "running"})
@@ -403,15 +485,23 @@ def main() -> int:
 
     import yaml
     config_path = ROOT / "config" / "config.yaml"
-    closer = ""
+    closer, workbook = "", ""
     if config_path.exists():
-        data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        closer = ((data.get("app") or {}).get("closer") or "").strip()
+        app = (yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}).get("app") or {}
+        closer = str(app.get("closer") or "").strip()
+        workbook = str(app.get("workbook") or "").strip()
+
+    target = Path(workbook).expanduser() if workbook else None
+    if target and not target.exists():
+        print(f"\n  ! app.workbook không tồn tại: {target}")
+        print("    Nút 'Thêm vào file quản lý' sẽ bị tắt cho đến khi sửa lại.")
+        target = None
 
     Handler.cfg = cfg
     Handler.month = args.month or today.month
     Handler.year = args.year or today.year
     Handler.closer = closer
+    Handler.workbook = target
 
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     server = ThreadingHTTPServer((host, args.port), Handler)

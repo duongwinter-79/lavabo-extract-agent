@@ -45,6 +45,18 @@ extract:
   temperature: 0.0               # deterministic: this is extraction, not writing
   max_transcript_chars: 120000
 
+# Read by the terminal app and the web page only — the pipeline ignores this block.
+app:
+  # Default Người chốt đơn. Both front ends ask per capture and remember the answer;
+  # this is only the starting suggestion before anyone has been asked.
+  closer: ""
+
+  # The shop's own workbook, for "Thêm vào file quản lý" / `lavabo append`. Left empty,
+  # that button is disabled and only a separate month file is produced. Give the full
+  # path, e.g. "/Users/you/Documents/QUẢN LÝ ĐƠN SENKAHOMES.xlsx" — it is backed up
+  # before every write.
+  workbook: ""
+
 db_path: "data/staging.db"
 output_dir: "data/out"
 schema_path: "config/schema.yaml"
