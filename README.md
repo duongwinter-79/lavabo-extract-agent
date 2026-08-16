@@ -101,7 +101,10 @@ capture and the Excel writing are identical on both.
 
 Without `--lan` it listens on this machine only. With `--lan` it prints a second URL to
 open on a phone connected to the same wifi. Double-clicking cannot pass `--lan`, so run
-it from a terminal when you want the phone to reach it:
+it from a terminal when you want the phone to reach it.
+
+For a phone that is **not** on the shop wifi — on 4G, at a customer's house — see
+[docs/08-tailscale.md](docs/08-tailscale.md).
 
 ```
   máy này:      http://127.0.0.1:8765
@@ -195,6 +198,7 @@ python scripts/zalo_capture.py --debug     # explain what was accepted or reject
 | [docs/05-schema-guide.md](docs/05-schema-guide.md) | changing the extracted columns |
 | [docs/06-output-mapping.md](docs/06-output-mapping.md) | column-by-column mapping and open questions |
 | [docs/07-zalo-oa-flow.md](docs/07-zalo-oa-flow.md) | the Zalo OA group flow — built, but **needs an Official Account**, which a Zalo Business account is not |
+| [docs/08-tailscale.md](docs/08-tailscale.md) | reaching the browser version from a phone that is **not** on the shop wifi |
 
 ### Shape of it
 
