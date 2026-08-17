@@ -128,18 +128,25 @@ that generates one; the agent only *uses* a domain that already exists on your a
 2. **Claim the domain:** in the dashboard go to **Universal Edge → Domains** (older accounts
    show **Cloud Edge → Domains**) and press **+ New Domain**. Free accounts get one. You can
    type a subdomain you like, or accept the name it offers; either way you end up with
-   something of the form `<name>.ngrok-free.app`. Copy it.
+   something of the form `<name>.ngrok-free.dev`. Copy it exactly.
 3. **Install the agent and save your token** — the token is on the dashboard's *Your
    Authtoken* page:
    ```bash
    ngrok config add-authtoken <your-token>
    ```
-4. **Run it against that domain:**
-   ```bash
-   ngrok http 8765 --url https://<name>.ngrok-free.app \
-                   --oauth google --oauth-allow-email you@gmail.com
+4. **Run it against that domain — all on one line:**
+   ```powershell
+   ngrok http 8765 --url <name>.ngrok-free.dev --oauth google --oauth-allow-email you@gmail.com
    ```
-   On ngrok agents older than v3.19 the flag is `--domain=<name>.ngrok-free.app` instead of
+   Newly issued domains end in `.ngrok-free.dev`; older ones are `.ngrok-free.app`. Use
+   whichever the dashboard gave you.
+
+   **Do not break the line with `\`.** That is a shell continuation and PowerShell does not
+   use it — it reports `Missing expression after unary operator '--'`. PowerShell continues a
+   line with a backtick `` ` ``; simplest is to keep it on one line, or use the config file
+   below.
+
+   On ngrok agents older than v3.19 the flag is `--domain=<name>.ngrok-free.dev` instead of
    `--url`. If one is rejected, use the other; `ngrok --version` tells you which you have.
 
 `--oauth google` is available on the free plan and is the login: a Google account is
@@ -157,7 +164,7 @@ tunnels:
   lavabo:
     proto: http
     addr: 8765
-    domain: <name>.ngrok-free.app
+    domain: <name>.ngrok-free.dev
     oauth:
       provider: google
       allow_emails:
@@ -247,8 +254,9 @@ installing an app on every phone is the bigger problem — and then do not skip 
 | Tunnel URL changed by itself | A Cloudflare *quick* tunnel — use a named tunnel (C2) or ngrok's static domain (C1) |
 | ngrok stopped serving mid-month | The 20k request or 1 GB allowance ran out — close idle tabs, or move to C2 |
 | ngrok: "domain not found" / not authorized | The domain was never claimed in the dashboard, or belongs to another account — see C1 step 2 |
-| ngrok: unknown flag `--url` | An agent older than v3.19 — use `--domain=<name>.ngrok-free.app` |
+| ngrok: unknown flag `--url` | An agent older than v3.19 — use `--domain=<name>.ngrok-free.dev` |
 | Tunnel up, but 502 from ngrok | The app is not running, or is on a different port than the tunnel's `addr` |
+| PowerShell: `Missing expression after unary operator '--'` | A `\` line continuation — PowerShell uses a backtick, so put the command on one line |
 
 ## Do not use Funnel
 
