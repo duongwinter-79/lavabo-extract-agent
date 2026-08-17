@@ -348,10 +348,12 @@ $('newName').onkeydown = e => {
 // A rolling list of the last N months cannot reach January from December without N
 // being large enough to be a scrolling chore.
 let years = [];
+let selected = { month: 0, year: 0 };
 
 function drawPeriod(month, year, allowedYears) {
   const mSel = $('month'), ySel = $('year');
   years = allowedYears;
+  selected = { month, year };
 
   if (mSel.options.length !== 12) {
     mSel.innerHTML = '';
@@ -432,13 +434,20 @@ $('save').onclick = async () => {
       let t = `Tìm thấy ${s.found} đơn — lưu mới ${s.saved}`;
       if (s.duplicates) t += `, đã có ${s.duplicates}`;
       if (s.other_month) t += `, ${s.other_month} khác tháng`;
-      // The span is the check on the paste itself: if it starts later than expected,
-      // the clipboard carried only part of the conversation and nothing here can help.
-      if (s.span && s.span.length === 2) {
-        t += s.span[0] === s.span[1]
-          ? `\nĐơn trong đoạn vừa dán: ngày ${s.span[0]}.`
-          : `\nĐơn trong đoạn vừa dán: ${s.span[0]} → ${s.span[1]}. Thiếu ngày đầu tháng?`
-            + ` Zalo chỉ copy phần đã tải — cuộn lên rồi copy thêm.`;
+      // Which days of the selected month this paste reached. Phrased as a question,
+      // not a verdict: a month can legitimately have no orders until the 13th, and
+      // claiming data is missing when it is not is worse than saying nothing.
+      const days = s.span_days || [];
+      if (days.length === 2) {
+        const [from, to] = days;
+        t += `\nĐơn tháng ${selected.month} trong đoạn này: ngày `
+           + (from === to ? `${from}` : `${from}–${to}`) + '.';
+        if (from > 5) {
+          t += ` Nếu tháng ${selected.month} còn đơn trước ngày ${from},`
+             + ' cuộn lên trong Zalo rồi copy thêm — Zalo chỉ copy phần đã tải.';
+        }
+      } else if (s.found) {
+        t += `\nKhông có đơn nào của tháng ${selected.month}/${selected.year} trong đoạn này.`;
       }
       show($('m1'), s.saved ? 'ok' : 'warn', t);
       if (s.saved) $('paste').value = '';

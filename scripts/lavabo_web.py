@@ -314,15 +314,16 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
             return
-        # The span of dates in the paste, so a clipboard that only carried part of the
-        # month is visible immediately. Zalo renders long conversations lazily, so a
-        # copy can silently contain far less than what was selected — and without this
-        # the only symptom is a workbook that looks short weeks later.
-        dated = sorted((b.month, b.day) for b in blocks)
-        span = [f"{d}/{m}" for m, d in (dated[0], dated[-1])] if dated else []
+        # Which days of the *selected* month this paste covered, so a clipboard that
+        # only carried part of it is visible immediately — Zalo renders long
+        # conversations lazily, so a copy can contain far less than what was selected.
+        # Measured over the in-month orders alone: a paste of the whole group chat spans
+        # every month in it, and reporting that span said nothing about the month being
+        # captured.
+        days = sorted(b.day for b in blocks if zc.in_month(b, self.month, self.year))
         self._json({"found": len(blocks), "saved": saved,
                     "duplicates": duplicates, "other_month": other,
-                    "span": span})
+                    "span_days": [days[0], days[-1]] if days else []})
 
     def _start_export(self) -> None:
         mode = parse_qs(urlparse(self.path).query).get("mode", ["new"])[0]
