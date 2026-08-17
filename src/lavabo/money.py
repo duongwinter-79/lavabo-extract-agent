@@ -26,8 +26,10 @@ _MILLIONS = re.compile(
 )
 # "500k", "800 nghìn"
 _THOUSANDS = re.compile(r"(?P<whole>\d+)\s*(?:k|nghìn|nghin|ngàn|ngan)\b", re.IGNORECASE)
-# Bare "6.000.000" / "6,000,000" / "17500000"
-_PLAIN = re.compile(r"\d[\d.,\s]*")
+# Bare "6.000.000" / "6,000,000" / "17500000". Must end on a digit, so the sentence
+# comma in "Đã cọc 500, còn lại 4.700" is not mistaken for a decimal separator -- which
+# made the amount read as a fraction of a million rather than a bare count.
+_PLAIN = re.compile(r"\d(?:[\d.,\s]*\d)?")
 
 
 def parse_vnd(text: str | None) -> int | None:
@@ -91,6 +93,14 @@ def _plain_amount(raw: str) -> int | None:
     # Already a believable amount in đồng: "6.000.000", "17500000".
     if literal >= PLAUSIBLE_MIN:
         return literal
+
+    # No separator at all, so there is no decimal point to read. The shop's own
+    # arithmetic settles the scale: "Tổng 5.200 / Đã cọc 500, còn lại 4.700" only
+    # balances if 500 means 500 thousand, not 500 million. So a bare number of three
+    # digits or more is a count of thousands -- the "500k" convention with the k left
+    # off -- while one or two digits stays a count of millions ("29" is 29 triệu).
+    if "." not in raw and "," not in raw and literal >= 100:
+        return literal * THOUSAND
 
     millions = _as_millions(raw)
     if millions is None:

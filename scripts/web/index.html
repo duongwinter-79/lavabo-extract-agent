@@ -175,7 +175,8 @@
     <textarea id="paste" aria-label="Nội dung chat"
               placeholder="15/8 đơn 1 - Tên KH&#10;1 tủ HD-1M gương trùm kín&#10;…"></textarea>
     <button id="save">Lưu đơn</button>
-    <div class="hint">Chỉ nhận tin nhắn bắt đầu bằng <code>15/8 đơn 1 - Tên KH</code>.
+    <div class="hint">Chỉ nhận tin nhắn bắt đầu bằng <code>15/8 đơn 1 - Tên KH</code>
+      hoặc <code>2/7 đơn 2 (Tên KH)</code>.
       Dán trùng nhau không sao, mỗi đơn chỉ lưu một lần.</div>
     <div id="m1" role="status" aria-live="polite"></div>
   </div>
@@ -426,7 +427,7 @@ $('save').onclick = async () => {
                         { method: 'POST', body: text });
     if (!s.found) {
       show($('m1'), 'warn', 'Không tìm thấy đơn nào. Tin nhắn phải bắt đầu bằng ngày và '
-                          + 'số đơn, ví dụ "15/8 đơn 1 - Tên KH".');
+                          + 'số đơn, ví dụ "15/8 đơn 1 - Tên KH" hoặc "2/7 đơn 2 (Tên KH)".');
     } else {
       let t = `Tìm thấy ${s.found} đơn — lưu mới ${s.saved}`;
       if (s.duplicates) t += `, đã có ${s.duplicates}`;

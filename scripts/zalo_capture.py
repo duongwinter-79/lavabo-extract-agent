@@ -11,8 +11,9 @@ so rather than selecting them one at a time you copy whole chunks and this split
 
 An order is recognised by its header line, which also carries the facts worth having:
 
-    15/8 - đơn 4              -> date + order number
-    15/8 đơn 1 - Meloxicam    -> date + order number + customer display name
+    15/8 - đơn 4                 -> date + order number
+    15/8 đơn 1 - Meloxicam       -> date + order number + customer display name
+    2/7 đơn 2 (Trần Thị Liên)    -> the same, with the name in brackets
 
 Overlapping copies are expected and harmless: orders are identified by day + month +
 order number, so re-covering ground costs nothing, and an order truncated by where you
@@ -53,7 +54,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from lavabo import closers  # noqa: E402
 from lavabo.config import Config  # noqa: E402
-from lavabo.connectors.zalo_export import DEFAULT_PATTERNS, ORDER_HEADER  # noqa: E402
+from lavabo.connectors.zalo_export import (  # noqa: E402
+    DEFAULT_PATTERNS, ORDER_HEADER, header_customer)  # noqa: E402
 
 POLL_SECONDS = 0.5
 MIN_TRANSCRIPT_CHARS = 40
@@ -272,7 +274,7 @@ def split_orders(text: str) -> list[OrderBlock]:
                 month=int(m["month"]),
                 year=year,
                 order_no=int(m["order"]),
-                customer=(m["customer"] or "").strip() or None,
+                customer=header_customer(m) or None,
                 lines=[],
             )
             blocks.append(current)

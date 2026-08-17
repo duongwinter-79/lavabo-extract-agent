@@ -235,7 +235,7 @@ workbook.
 | `setup.ps1` fails immediately | Python is missing from PATH — reinstall it with that box ticked |
 | `ZoneInfoNotFoundError: 'No time zone found with key Asia/Ho_Chi_Minh'` | Windows has no timezone database. `.venv\Scripts\python.exe -m pip install tzdata`, then restart the app. Installs from this commit on already include it |
 | Page loads, extraction fails | Key not set or wrong — gear icon, paste it, **Kiểm tra key** |
-| "Không tìm thấy đơn nào" | The paste must start with a header like `15/8 đơn 1 - Tên KH` |
+| "Không tìm thấy đơn nào" | The paste must start with a header like `15/8 đơn 1 - Tên KH` or `2/7 đơn 2 (Tên KH)` |
 | Phone times out, `127.0.0.1` works | Started without `--lan`, or Windows Firewall is blocking 8765 |
 | Phone cannot reach `100.x` at all | Tailscale off on one device, or different accounts — check the admin console lists both |
 | Worked yesterday, not today | The computer is asleep or off — revisit step 5 |

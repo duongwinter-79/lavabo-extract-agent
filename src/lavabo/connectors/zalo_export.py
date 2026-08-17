@@ -55,8 +55,9 @@ TIMESTAMP_FORMATS = [
 ]
 
 # Order notes open with a header carrying three facts, e.g.
-#     "15/8 - đơn 4"                 -> date + order number
-#     "15/8 đơn 1 - Meloxicam"       -> date + order number + Zalo display name
+#     "15/8 - đơn 4"                  -> date + order number
+#     "15/8 đơn 1 - Meloxicam"        -> date + order number + Zalo display name
+#     "2/7 đơn 2 (Trần Thị Liên)"     -> the same, name in brackets instead
 # These are parsed here rather than asked of the model: they are unambiguous, so a
 # regex is exactly right and costs nothing, while an LLM would merely be probably right.
 ORDER_HEADER = re.compile(
@@ -64,9 +65,25 @@ ORDER_HEADER = re.compile(
     r"(?:\s*[/.\-]\s*(?P<year>\d{2,4}))?"
     r"\s*[-–—,]?\s*"
     r"(?:đơn|don|dơn)\s*(?:hàng\s*)?(?P<order>\d+)"
-    r"\s*(?:[-–—:]\s*(?P<customer>\S.*?))?\s*$",
+    # The name is written either way, and both are common in the same month:
+    #   "15/8 đơn 1 - Meloxicam"        separator then name
+    #   "2/7 đơn 2 (Trần Thị Liên)"     name in brackets, no separator
+    # Only the first was accepted, so every order written the second way failed to
+    # match, and a line that is not a header is chatter — the whole order was dropped
+    # silently. Nothing reported it, because nothing had seen an order to report.
+    r"\s*(?:"
+    r"[-–—:]\s*(?P<customer>\S.*?)"
+    r"|\(\s*(?P<customer_paren>[^)]+?)\s*\)"
+    r")?\s*$",
     re.IGNORECASE,
 )
+
+
+def header_customer(match: re.Match) -> str:
+    """The display name from an order header, however it was written."""
+    raw = match["customer"] or match["customer_paren"] or ""
+    return raw.strip().strip("()").strip()
+
 
 ATTACHMENT_MARKERS = {
     "image": ["[hình ảnh]", "[image]", "[photo]", "[ảnh]"],
@@ -214,7 +231,7 @@ class ZaloExportConnector:
         # when it does not, leave the field empty rather than letting the filename
         # fallback stand in -- for an order note the filename is just the header
         # repeated, so "15-8 - don 4" would masquerade as a customer name.
-        customer = (match["customer"] or "").strip()
+        customer = header_customer(match)
         conv.customer_name = customer or None
         conv.raw["customer_from_header"] = bool(customer)
 
