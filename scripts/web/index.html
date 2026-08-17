@@ -150,6 +150,7 @@
       </div>
       <div class="hint" id="periodHint"></div>
     </div>
+    <div id="gapWarning"></div>
   </div>
 
   <div class="card">
@@ -408,7 +409,21 @@ async function refresh() {
     names = s.closers.slice();
     if (keep && !names.includes(keep)) names.unshift(keep);
     drawChips();
+    drawGaps(s.gaps || []);
   } catch (e) { /* server restarting; the next tick retries */ }
+}
+
+// A day with đơn 2,3,4 but no đơn 1 almost certainly has an order still sitting
+// further up in Zalo -- the number was skipped because a Ctrl+A/Ctrl+C did not
+// reach that far. Shown here rather than only inside a save result, since it is
+// about everything captured so far for this month, not any one paste.
+function drawGaps(gaps) {
+  const box = $('gapWarning');
+  box.innerHTML = '';
+  if (!gaps.length) return;
+  const msg = 'Có thể sót đơn — số thứ tự bị nhảy cách:\n' + gaps.join('\n')
+            + '\n\nCuộn lên trong Zalo để tìm và dán bổ sung.';
+  box.appendChild(el('div', { className: 'msg warn', textContent: msg }));
 }
 
 /* ---------------------------------------------------------------- saving */

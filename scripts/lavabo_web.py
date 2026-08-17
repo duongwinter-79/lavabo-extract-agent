@@ -163,6 +163,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json(settings.read_settings())
         elif path == "/api/status":
             from lavabo import closers
+            import zalo_capture as zc
 
             names = closers.known_names(self.cfg.zalo.inbox_dir)
             if self.closer and self.closer not in names:
@@ -172,7 +173,8 @@ class Handler(BaseHTTPRequestHandler):
                         "period": f"{self.month:02d}/{self.year}",
                         "years": allowed_years(),
                         "workbook": self.workbook.name if self.workbook else "",
-                        "closers": names})
+                        "closers": names,
+                        "gaps": zc.order_gaps(self.cfg.zalo.inbox_dir, self.month)})
         elif path == "/api/export/status":
             with JOB_LOCK:
                 self._json(dict(JOB))

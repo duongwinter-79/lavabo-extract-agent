@@ -432,6 +432,40 @@ def existing_orders(inbox: Path) -> dict[tuple[int, int, int], tuple[Path, int]]
     return found
 
 
+def order_gaps(inbox: Path, month: int) -> list[str]:
+    """Days in `month` whose captured order numbers skip one -- the strongest signal
+    available that a Ctrl+A/Ctrl+C did not reach the whole conversation.
+
+    Zalo PC keeps only a scrollable window of messages actually loaded, so a single
+    select-all can silently miss part of the month no matter how far you scrolled --
+    this is the practical size limit, not the clipboard, which has no real cap of its
+    own. Capturing in overlapping chunks as you scroll is the standing workaround (safe
+    because orders dedupe by day/month/order number), but nothing short of comparing
+    against a source of truth can PROVE nothing was missed.
+
+    This is the closest thing to one that costs nothing extra: within a shop day, order
+    numbers are written 1, 2, 3... with no gaps -- staff number them by hand as they go.
+    A day with đơn 2, 3, 4 captured but no đơn 1 almost certainly has an order sitting
+    further up in Zalo that was never pasted. A day with zero captured orders is not
+    flagged; the shop does not get orders every single day, and that is not evidence of
+    anything missing.
+    """
+    by_day: dict[int, set[int]] = {}
+    for day, m, order_no in existing_orders(inbox):
+        if m == month:
+            by_day.setdefault(day, set()).add(order_no)
+
+    notes = []
+    for day in sorted(by_day):
+        nums = by_day[day]
+        missing = [n for n in range(1, max(nums)) if n not in nums]
+        if missing:
+            have = ", ".join(str(n) for n in sorted(nums))
+            miss = ", ".join(str(n) for n in missing)
+            notes.append(f"{day}/{month}: thiếu đơn {miss} (đã có đơn {have})")
+    return notes
+
+
 def looks_capturable(text: str) -> bool:
     """Accept transcripts AND unlabelled blocks such as order notes.
 

@@ -385,6 +385,13 @@ def main() -> int:
               + (f"{BOLD}{capturer.closer}{OFF}" if capturer.closer
                  else f"{YELLOW}chưa chọn{OFF}"))
 
+        if inbox.exists():
+            import zalo_capture as zc
+            # A day with đơn 2,3,4 but no đơn 1 almost certainly has an order still
+            # sitting further up in Zalo -- Ctrl+A/Ctrl+C did not reach that far.
+            for gap in zc.order_gaps(inbox, month):
+                print(f"  {YELLOW}⚠ có thể sót đơn — {gap}{OFF}")
+
         for line in capturer.drain():
             print("  " + line)
 
