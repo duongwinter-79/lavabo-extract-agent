@@ -28,6 +28,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any, Literal
 
@@ -113,3 +115,59 @@ def summary(conv_raw: dict[str, Any]) -> tuple[list[str], list[str]]:
     updates = [i["text"] for i in items if i.get("kind") == "update"]
     versions = [i["text"] for i in items if i.get("kind") == "version"]
     return updates, versions
+
+
+# Read against the diacritic-folded text, MOST SPECIFIC FIRST, because these overlap:
+# "tổng thu hộ 13.800" contains both "tổng" and "thu", and reporting it three times under
+# three labels is worse than not reporting it. Each match blanks its own span (see
+# amounts), so a later, broader pattern cannot re-read ground already claimed.
+#
+# The amount itself is captured loosely and handed to parse_vnd rather than matched
+# precisely here: it already knows "1tr8" is 1,800,000 and "13.800" is 13,800,000, and a
+# second grammar for the same shorthand would only be a second thing to get wrong. A
+# tight [\d.,]+ read "1tr8" as 1 -- off by 800,000 on a real order.
+#
+# The (?<!guong ) guard is the one DEPOSIT_ANY also needs: "gương cộc" folds to the same
+# letters as "cọc", and a product name is not a deposit.
+_AMOUNT_PATTERNS = [
+    (re.compile(r"to+ng[rsfjx]?\s+thu\s+ho\b([^\n]{0,20})"), "thu hộ"),
+    (re.compile(r"thu\s+them\b([^\n]{0,20})"), "thu thêm"),
+    (re.compile(r"\bto+ng[rsfjx]?\b([^\n]{0,20})"), "Tổng"),
+    (re.compile(r"\b(?:da\s+)?(?<!guong )coc\b([^\n]{0,20})"), "cọc"),
+    (re.compile(r"\bthu\b([^\n]{0,20})"), "thu"),
+]
+
+
+def amounts(text: str) -> str:
+    """Every money figure stated in a later message, labelled and converted.
+
+    A reading aid, not a decision: this lands in its own review column and never in
+    Tổng/Cọc/Xe thu hộ, so nothing here can reach =SUM or =SUMIF. The operator sees
+    "Tổng 12.000.000" beside the order's own 5.800.000 and picks; the app does not,
+    because these figures do not reliably reconcile against the shop's own workbook.
+
+    Each label is reported once, from its first occurrence -- a revision restating a
+    deposit it already stated is one deposit, not two.
+    """
+    from .money import format_vnd, parse_vnd          # local: avoids an import cycle
+
+    working = _fold(text)
+    out: list[str] = []
+    for pattern, label in _AMOUNT_PATTERNS:
+        if not (m := pattern.search(working)):
+            continue
+        if (value := parse_vnd(m.group(1))) is None:
+            continue
+        out.append(f"{label} {format_vnd(value)}")
+        # Blank what this match consumed, so "tổng" cannot re-report the figure that
+        # "tổng thu hộ" already claimed.
+        working = working[:m.start()] + " " * (m.end() - m.start()) + working[m.end():]
+    return " · ".join(out)
+
+
+def _fold(text: str) -> str:
+    """Lowercase, strip Vietnamese tone marks. Mirrors zalo_capture.fold, which lives in
+    a script rather than the package and so cannot be imported from here."""
+    decomposed = unicodedata.normalize("NFD", text)
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return stripped.replace("đ", "d").replace("Đ", "D").lower()

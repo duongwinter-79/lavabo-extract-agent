@@ -41,10 +41,11 @@ HEADERS = [
 # using HEADERS -- widening that list would trip its own column guard. A workbook this
 # tool creates from scratch has no such constraint, so revisions get their own columns
 # here and nowhere else.
-EXTRA_HEADERS = ["Bổ sung", "Cần xem lại"]
+EXTRA_HEADERS = ["Bổ sung", "Số tiền bổ sung", "Cần xem lại"]
 EXPORT_HEADERS = HEADERS + EXTRA_HEADERS
 COL_EXTRA = len(HEADERS) + 1       # M: the later message, verbatim
-COL_REVIEW = len(HEADERS) + 2      # N: why this row needs a human
+COL_AMOUNT = len(HEADERS) + 2      # N: the money it states, parsed but NOT applied
+COL_REVIEW = len(HEADERS) + 3      # O: why this row needs a human
 
 MONEY_COLUMNS = {7, 8, 9}          # 1-based: Tổng, Xe thu hộ, Cọc
 MONEY_FORMAT = "#,##0"
@@ -171,14 +172,17 @@ def write_orders_workbook(
                     # A Zalo OA delivery records who posted the order, so use that in
                     # preference to the run-wide default, which is only a guess.
                     who,
-                    # Later messages changing this order, verbatim and uninterpreted.
+                    # Later messages changing this order, verbatim and uninterpreted,
+                    # with any money they state read out beside them so the figure is
+                    # visible without opening the cell.
                     "\n\n".join(updates) or None,
+                    " · ".join(filter(None, (extras.amounts(u) for u in updates))) or None,
                     "có bổ sung" if updates else None,
                 ])
                 first = False
             else:
                 ws.append([None, None, None, None, name, qty,
-                           None, None, None, None, None, None, None, None])
+                           None, None, None, None, None, None, None, None, None])
 
         # A competing version of the same order gets its own row so both are visible,
         # but carries no money: the shop's sheet totals with =SUMIF and =SUM over these
@@ -193,6 +197,7 @@ def write_orders_workbook(
                        None, None, None,
                        None, None, None,
                        version,
+                       extras.amounts(version) or None,
                        "2 phiên bản"])
 
     _finish(ws, len(orders))
@@ -217,7 +222,7 @@ def _finish(ws, order_count: int) -> None:
         cell.font = HEADER_FONT
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    widths = [6, 13, 20, 42, 46, 9, 17, 14, 12, 13, 14, 15, 52, 14]
+    widths = [6, 13, 20, 42, 46, 9, 17, 14, 12, 13, 14, 15, 52, 26, 14]
     for i, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = width
 
