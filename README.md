@@ -205,6 +205,7 @@ python scripts/zalo_capture.py --debug     # explain what was accepted or reject
 | [docs/06-output-mapping.md](docs/06-output-mapping.md) | column-by-column mapping and open questions |
 | [docs/07-zalo-oa-flow.md](docs/07-zalo-oa-flow.md) | the Zalo OA group flow — built, but **needs an Official Account**, which a Zalo Business account is not |
 | [docs/08-tailscale.md](docs/08-tailscale.md) | reaching the browser version from a phone that is **not** on the shop wifi |
+| [docs/09-cloud-architecture.md](docs/09-cloud-architecture.md) | plan for moving to Cloud Run — what breaks, what it costs, and the cheaper alternative |
 
 ### Shape of it
 
