@@ -194,7 +194,17 @@ def fold(text: str) -> str:
 # total and deposit are frequently on one line -- "Toongr 6tr, đã cọc 500k".
 # A number must follow within a few characters, so chatter like "em cọc rồi ạ" (no
 # amount) cannot be mistaken for the real deposit.
-DEPOSIT_ANY = re.compile(r"\b(?:da\s+)?coc\b[^\d\n]{0,12}\d")
+#
+# fold() strips every combining mark, so "cọc" (stake/deposit) and "cộc" (short/stubby,
+# as in "gương cộc" -- a cropped mirror style) become the identical string "coc". Product
+# lines naming that style are then followed by a dimension ("gương cộc - 80x40"), which
+# supplies the trailing digit DEPOSIT_ANY looks for -- so the FIRST line of the order was
+# being mistaken for its deposit line, and _terminator (first match wins) discarded
+# everything genuine after it: the real total, deposit, phone and address. Excluding
+# "gương " immediately before is exact for this collision without narrowing anything a
+# real deposit line relies on -- every deposit in this shop's own messages is written
+# "(đã/đaz) cọc ...", never preceded by "gương".
+DEPOSIT_ANY = re.compile(r"\b(?:da\s+)?(?<!guong )coc\b[^\d\n]{0,12}\d")
 # "tong", "toong", "toongr", "tongr" ... o repeated, optional trailing telex tone key.
 TOTAL_ANY = re.compile(r"\bto+ng[rsfjx]?\b[^\d\n]{0,12}\d")
 # A line addressed at someone is group chatter, never part of an order.
