@@ -202,14 +202,16 @@ class Capturer(threading.Thread):
             if not any(zc.ORDER_HEADER.match(ln.strip()) for ln in current.splitlines()):
                 continue
             try:
-                saved, _, _ = zc.handle_orders(current, self.cfg, self.month, self.year,
-                                               all_months=False, trim=True,
-                                               closer=self.closer)
+                saved, _, _, swaps = zc.handle_orders(current, self.cfg, self.month, self.year,
+                                                      all_months=False, trim=True,
+                                                      closer=self.closer)
             except Exception as exc:                      # keep the app alive
                 self._lines.append(f"{RED}lỗi khi lưu: {exc}{OFF}")
                 continue
             if saved:
                 self.saved += saved
+            for note in swaps:
+                self._lines.append(f"{YELLOW}ngày/tháng bị đảo: {note}{OFF}")
 
     def drain(self) -> list[str]:
         lines, self._lines = self._lines, []

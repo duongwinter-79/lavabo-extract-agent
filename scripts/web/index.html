@@ -449,6 +449,13 @@ $('save').onclick = async () => {
       } else if (s.found) {
         t += `\nKhông có đơn nào của tháng ${selected.month}/${selected.year} trong đoạn này.`;
       }
+      // A header like "8/3" is ambiguous by itself -- day and month both read as
+      // valid dates. When the app resolves it against the month being captured, the
+      // operator needs to see that guess, not just trust it silently.
+      if (s.date_swaps && s.date_swaps.length) {
+        t += '\nĐã tự đổi ngày/tháng cho ' + s.date_swaps.length + ' đơn (kiểm tra lại nhé): '
+           + s.date_swaps.join('; ');
+      }
       show($('m1'), s.saved ? 'ok' : 'warn', t);
       if (s.saved) $('paste').value = '';
     }

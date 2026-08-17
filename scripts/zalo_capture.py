@@ -162,6 +162,12 @@ class OrderBlock:
     order_no: int
     customer: str | None
     lines: list[str]
+    # True when day/month were exchanged by resolve_swapped_dates -- see split_orders.
+    # original_header is always the literal line as typed, for reporting the swap;
+    # header is what actually gets saved and later re-parsed at ingest, so it must
+    # carry the corrected date for the fix to survive past this capture session.
+    date_swapped: bool = False
+    original_header: str = ""
 
     @property
     def text(self) -> str:
@@ -260,7 +266,75 @@ def trim_after_deposit(lines: list[str]) -> tuple[list[str], int]:
     return kept, dropped
 
 
-def split_orders(text: str) -> list[OrderBlock]:
+def _swap_header_date(line: str, match: re.Match) -> str:
+    """Exchange the day/month substrings in a header line, touching nothing else.
+
+    Slices around the matched spans rather than reformatting, so a leading zero or an
+    unusual separator survives exactly as typed -- only the two numbers trade places.
+    """
+    day_s, month_s = match["day"], match["month"]
+    return (line[: match.start("day")] + month_s
+            + line[match.end("day"): match.start("month")] + day_s
+            + line[match.end("month"):])
+
+
+def _should_swap(block: "OrderBlock", prev: "OrderBlock | None", next_: "OrderBlock | None",
+                 target_month: int) -> bool:
+    """Should this block's day/month be exchanged?
+
+    Deliberately narrow, on purpose: swapping must land EXACTLY on the month being
+    captured -- not merely close to it -- and at least one immediate neighbour in the
+    pasted text must already, literally, be that same month. A block that just belongs
+    to a different month (normal in a paste covering several months at once, which
+    this shop routinely sends) has no target-month neighbour and fails this check, so
+    it is left for the in-month filter downstream to exclude as intended, rather than
+    being forced to fit a month it was never written for.
+    """
+    if block.month == target_month or block.day > 12 or block.day == block.month:
+        return False
+    if block.day != target_month:
+        return False
+    return (prev is not None and prev.month == target_month) or \
+           (next_ is not None and next_.month == target_month)
+
+
+def resolve_swapped_dates(blocks: list["OrderBlock"], target_month: int) -> None:
+    """Correct a transposed day/month in place, using each block's position in the
+    pasted text as the only evidence beyond the digits themselves.
+
+    Staff write headers like "8/3 đơn 1" by hand, always as day/month -- but transpose
+    the two often enough that it shows up in real capture sessions ("8/3" meant as
+    3 August, typed day-first out of habit). The header alone cannot decide this: both
+    readings are valid dates. What decides it is context -- the surrounding orders were
+    typed by the same person in the same sitting, and are overwhelmingly one month. See
+    _should_swap for the exact, conservative rule.
+
+    Runs left to right, so a corrected block can corroborate the next one in a run of
+    several typos in a row -- the real case behind this was a single mistyped header
+    sitting between an already-correct order on each side, but nothing here assumes
+    only one exists.
+
+    Known limitation, accepted rather than engineered around: `target_month` is trusted
+    as ground truth for what "already correct" means. If it is chosen far from what the
+    paste actually contains -- capturing March while pasting a chat that is almost
+    entirely August -- an unrelated, genuinely-correct date can be miscorroborated by
+    the very typo this exists to fix. That does not happen in normal use, where the
+    operator selects the month most of what they are pasting belongs to; every realistic
+    target checked against this shop's own multi-month chat log left every unambiguous
+    date untouched.
+    """
+    for i, block in enumerate(blocks):
+        prev = blocks[i - 1] if i > 0 else None
+        next_ = blocks[i + 1] if i + 1 < len(blocks) else None
+        if not _should_swap(block, prev, next_, target_month):
+            continue
+        match = ORDER_HEADER.match(block.header)
+        block.header = _swap_header_date(block.header, match)
+        block.day, block.month = block.month, block.day
+        block.date_swapped = True
+
+
+def split_orders(text: str, target_month: int | None = None) -> list[OrderBlock]:
     """Cut a chunk of group chat into order blocks.
 
     A line matching the order header starts a new block; everything until the next
@@ -269,27 +343,35 @@ def split_orders(text: str) -> list[OrderBlock]:
     Trailing chatter after an order's last real line is kept rather than guessed at:
     there is no reliable end-of-order marker, and including a stray "ok chị" costs
     nothing at extraction time, whereas trimming too eagerly would lose order lines.
+
+    `target_month` resolves a transposed day/month against the month being captured
+    (see resolve_swapped_dates); omit it to keep every header exactly as written.
     """
     blocks: list[OrderBlock] = []
     current: OrderBlock | None = None
 
     for line in text.splitlines():
-        if m := ORDER_HEADER.match(line.strip()):
+        stripped = line.strip()
+        if m := ORDER_HEADER.match(stripped):
             year = int(m["year"]) if m["year"] else None
             if year is not None and year < 100:
                 year += 2000
             current = OrderBlock(
-                header=line.strip(),
+                header=stripped,
                 day=int(m["day"]),
                 month=int(m["month"]),
                 year=year,
                 order_no=int(m["order"]),
                 customer=header_customer(m) or None,
                 lines=[],
+                original_header=stripped,
             )
             blocks.append(current)
         elif current is not None:
             current.lines.append(line.rstrip())
+
+    if target_month is not None:
+        resolve_swapped_dates(blocks, target_month)
 
     return blocks
 
@@ -402,21 +484,28 @@ def ask_name() -> str:
 
 def handle_orders(text: str, cfg, month: int, year: int, *,
                   all_months: bool, trim: bool = True,
-                  closer: str | None = None) -> tuple[int, int, int]:
+                  closer: str | None = None) -> tuple[int, int, int, list[str]]:
     """Split a chat chunk into orders and save the wanted ones.
 
     `closer` is who chốt these orders. Recorded per order in a sidecar rather than in
     the note itself, and applied to duplicates too, so re-pasting with the right name
     corrects orders captured earlier under the wrong one.
 
-    Returns (saved, duplicates, out_of_month).
+    Returns (saved, duplicates, out_of_month, date_swaps). date_swaps is one string per
+    order whose day/month were exchanged against `month` -- see resolve_swapped_dates --
+    since that correction has to happen before the in-month filter below (an unswapped
+    "8/3" during an August capture is excluded here as "outside 08/2026" and never even
+    reaches disk) and is otherwise invisible: it changes what gets filed, silently.
     """
-    blocks = split_orders(text)
+    blocks = split_orders(text, target_month=month)
     if not blocks:
-        return (0, 0, 0)
+        return (0, 0, 0, [])
 
     wanted = blocks if all_months else [b for b in blocks if in_month(b, month, year)]
     skipped_month = len(blocks) - len(wanted)
+    date_swaps = [f"{b.original_header} → {b.day}/{b.month}" for b in blocks if b.date_swapped]
+    for note in date_swaps:
+        print(f"  note    ngày/tháng bị đảo: {note}")
 
     known = existing_orders(cfg.zalo.inbox_dir)
     saved = duplicates = trimmed_lines = 0
@@ -455,7 +544,7 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
         bits.append(f"{trimmed_lines} trailing line(s) trimmed")
     print("  → " + ", ".join(bits))
 
-    return (saved, duplicates, skipped_month)
+    return (saved, duplicates, skipped_month, date_swaps)
 
 
 def handle(text: str, cfg, own: set[str], forced: str | None) -> Path | None:
@@ -622,10 +711,10 @@ def main() -> int:
                 continue
 
             if not args.no_split and any(ORDER_HEADER.match(ln.strip()) for ln in current.splitlines()):
-                saved, _, _ = handle_orders(current, cfg, month, year,
-                                            all_months=args.all_months,
-                                            trim=not args.no_trim,
-                                            closer=args.closer)
+                saved, _, _, _ = handle_orders(current, cfg, month, year,
+                                               all_months=args.all_months,
+                                               trim=not args.no_trim,
+                                               closer=args.closer)
                 seen.add(digest)
                 captured += saved
                 if args.once and saved:
