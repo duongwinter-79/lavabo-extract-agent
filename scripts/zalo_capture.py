@@ -287,6 +287,39 @@ def in_month(block: OrderBlock, month: int, year: int) -> bool:
     return block.month == month and (block.year or year) == year
 
 
+def merge_into(path: Path, existing: str, block: "OrderBlock") -> str:
+    """Fold a re-seen order into the file already holding it, without losing text.
+
+    An order header can turn up more than once for two unrelated reasons, and telling
+    them apart matters:
+
+    1. **The same message, captured again** — overlapping pastes, or a chunk that ended
+       mid-order and was re-copied in full. One body contains the other, so the longer
+       one is genuinely the more complete capture and wins.
+    2. **A different message about the same order** — "13/7 đơn 5 đã giao" arriving days
+       after "13/7 đơn 5" itself. Neither is more complete; they are both true.
+
+    Comparing sizes alone cannot distinguish these, and treating (2) as (1) silently
+    replaced a real order with a follow-up fragment whenever the fragment happened to be
+    the larger of the two. Early orders suffer most, because they accumulate the most
+    follow-ups. So (2) appends instead: nothing captured is ever thrown away, and the
+    extraction step reads the whole block and takes the fields from wherever they sit.
+    """
+    body = block.text.strip()
+    if body in existing:                       # already have every line of it
+        return "duplicate"
+    if existing in body:                       # a fuller capture of the same message
+        path.write_text(body, encoding="utf-8")
+        return "updated"
+
+    # Same order, different message. Keep both, and only the lines we do not have.
+    fresh = [ln for ln in block.lines if ln.strip() and ln.strip() not in existing]
+    if not fresh:
+        return "duplicate"
+    path.write_text(existing + "\n" + "\n".join(fresh) + "\n", encoding="utf-8")
+    return "added"
+
+
 def existing_orders(inbox: Path) -> dict[tuple[int, int, int], tuple[Path, int]]:
     """Map already-captured order keys to their file and size.
 
@@ -382,16 +415,15 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
             trimmed_lines += dropped
         body = block.text
         if block.key in known:
-            path, size = known[block.key]
-            # A chunk can end mid-order, so a later, longer capture of the same
-            # order is a more complete one and replaces the truncated version.
-            if len(body.encode("utf-8")) > size:
-                path.write_text(body, encoding="utf-8")
-                known[block.key] = (path, len(body.encode("utf-8")))
-                print(f"  updated {path.name}  (longer capture of the same order)")
-                saved += 1
-            else:
+            path, _ = known[block.key]
+            existing = path.read_text(encoding="utf-8", errors="replace").strip()
+            action = merge_into(path, existing, block)
+            if action == "duplicate":
                 duplicates += 1
+            else:
+                known[block.key] = (path, path.stat().st_size)
+                print(f"  {action:7} {path.name}")
+                saved += 1
             closers.record(cfg.zalo.inbox_dir, path.name, closer)
             continue
 

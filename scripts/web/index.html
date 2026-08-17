@@ -431,6 +431,14 @@ $('save').onclick = async () => {
       let t = `Tìm thấy ${s.found} đơn — lưu mới ${s.saved}`;
       if (s.duplicates) t += `, đã có ${s.duplicates}`;
       if (s.other_month) t += `, ${s.other_month} khác tháng`;
+      // The span is the check on the paste itself: if it starts later than expected,
+      // the clipboard carried only part of the conversation and nothing here can help.
+      if (s.span && s.span.length === 2) {
+        t += s.span[0] === s.span[1]
+          ? `\nĐơn trong đoạn vừa dán: ngày ${s.span[0]}.`
+          : `\nĐơn trong đoạn vừa dán: ${s.span[0]} → ${s.span[1]}. Thiếu ngày đầu tháng?`
+            + ` Zalo chỉ copy phần đã tải — cuộn lên rồi copy thêm.`;
+      }
       show($('m1'), s.saved ? 'ok' : 'warn', t);
       if (s.saved) $('paste').value = '';
     }

@@ -314,8 +314,15 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
             return
+        # The span of dates in the paste, so a clipboard that only carried part of the
+        # month is visible immediately. Zalo renders long conversations lazily, so a
+        # copy can silently contain far less than what was selected — and without this
+        # the only symptom is a workbook that looks short weeks later.
+        dated = sorted((b.month, b.day) for b in blocks)
+        span = [f"{d}/{m}" for m, d in (dated[0], dated[-1])] if dated else []
         self._json({"found": len(blocks), "saved": saved,
-                    "duplicates": duplicates, "other_month": other})
+                    "duplicates": duplicates, "other_month": other,
+                    "span": span})
 
     def _start_export(self) -> None:
         mode = parse_qs(urlparse(self.path).query).get("mode", ["new"])[0]
