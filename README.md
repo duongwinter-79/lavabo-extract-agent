@@ -104,7 +104,9 @@ open on a phone connected to the same wifi. Double-clicking cannot pass `--lan`,
 it from a terminal when you want the phone to reach it.
 
 For a phone that is **not** on the shop wifi — on 4G, at a customer's house — see
-[docs/08-tailscale.md](docs/08-tailscale.md).
+[docs/08-tailscale.md](docs/08-tailscale.md): Tailscale keeps it private to your own devices,
+or a tunnel (ngrok / Cloudflare) gives a public URL that needs nothing installed, with a
+login in front.
 
 The gear icon opens **Cài đặt**: AI provider, API key (with a *Kiểm tra key* button that
 asks the provider before you commit to it), model, the workbook path and the default
@@ -204,7 +206,7 @@ python scripts/zalo_capture.py --debug     # explain what was accepted or reject
 | [docs/05-schema-guide.md](docs/05-schema-guide.md) | changing the extracted columns |
 | [docs/06-output-mapping.md](docs/06-output-mapping.md) | column-by-column mapping and open questions |
 | [docs/07-zalo-oa-flow.md](docs/07-zalo-oa-flow.md) | the Zalo OA group flow — built, but **needs an Official Account**, which a Zalo Business account is not |
-| [docs/08-tailscale.md](docs/08-tailscale.md) | reaching the browser version from a phone that is **not** on the shop wifi |
+| [docs/08-tailscale.md](docs/08-tailscale.md) | reaching the browser version off the shop wifi — Tailscale, or a public URL via ngrok / Cloudflare Tunnel |
 | [docs/09-cloud-architecture.md](docs/09-cloud-architecture.md) | plan for moving to Cloud Run — what breaks, what it costs, and the cheaper alternative |
 | [docs/10-setup-guide.md](docs/10-setup-guide.md) | **start here on a new machine** — install, Gemini key, autostart, Tailscale, first run |
 

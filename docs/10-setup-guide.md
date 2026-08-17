@@ -198,9 +198,14 @@ Nothing is published and no router port is opened.
 
 That is the URL to give your staff. It keeps working as they move between networks.
 
-For a proper HTTPS name instead of an IP — `https://your-pc.tailnet-name.ts.net` — see
-[docs/08-tailscale.md](08-tailscale.md) §Route B. It is a little more setup and lets you drop
-`--lan`, which also stops the page being reachable from the shop wifi at all.
+Prefer a public URL your staff can open with **nothing installed**? Use a tunnel instead —
+ngrok's free static domain or Cloudflare Tunnel, both with a login in front. See
+[docs/08-tailscale.md](08-tailscale.md) §Route C — a tunnel needs no app on the phone, but
+because the URL is public the login is not optional.
+
+For a proper HTTPS name on Tailscale — `https://your-pc.tailnet-name.ts.net` — see §Route B
+there. It is a little more setup and lets you drop `--lan`, which also stops the page being
+reachable from the shop wifi at all.
 
 **Do not use `tailscale funnel`.** It looks similar and publishes the page to the entire
 internet. The app has no password, and *Thêm vào file quản lý* writes into your real

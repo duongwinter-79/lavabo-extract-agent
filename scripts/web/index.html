@@ -546,7 +546,17 @@ $('settingsSave').onclick = async () => {
 
 /* -------------------------------------------------------------- start up */
 
+// The counter only needs to catch changes made from another device, so it is refreshed
+// on load, when this tab becomes visible again, and after every action -- plus a slow
+// heartbeat while visible. A tight timer costs nothing on the shop wifi but is metered
+// when the page is published through a tunnel: at 5s, one tab left open all day spends
+// ~170k requests a month, and ngrok's free allowance is 20k.
+const HEARTBEAT_MS = 60000;
+
 refresh();
-setInterval(() => { if (!$('viewMain').hidden) refresh(); }, 5000);
+setInterval(() => { if (!document.hidden && !$('viewMain').hidden) refresh(); }, HEARTBEAT_MS);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && !$('viewMain').hidden) refresh();
+});
 </script>
 </div></body></html>
