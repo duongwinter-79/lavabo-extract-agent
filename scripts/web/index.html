@@ -182,6 +182,7 @@
 
   <div class="card">
     <h2>Xuất kết quả</h2>
+    <p class="sub" id="exportScope"></p>
     <button id="export" class="ghost">Xuất file Excel mới</button>
     <button id="append" class="ghost">Thêm vào file quản lý</button>
     <div class="hint" id="wbhint"></div>
@@ -369,6 +370,11 @@ function drawPeriod(month, year, allowedYears) {
   $('periodHint').textContent = isNow
     ? 'Đang nhập tháng này. Đơn của tháng khác sẽ bị bỏ qua.'
     : `Đang nhập tháng ${month}/${year} — không phải tháng này. Đơn của tháng khác sẽ bị bỏ qua.`;
+
+  // Both export buttons act on the selected month alone, which is not obvious from
+  // labels that never mention a month: one press is one month, not everything saved.
+  $('exportScope').textContent =
+    `Chỉ xuất các đơn của tháng ${month}/${year}. Muốn tháng khác thì đổi ở trên rồi bấm lại.`;
 }
 
 async function setPeriod() {
