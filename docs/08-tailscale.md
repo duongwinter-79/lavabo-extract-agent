@@ -192,8 +192,13 @@ Two free-tier facts to plan around:
 
 ### C2 — Cloudflare Tunnel + Access, if you have a domain (recommended)
 
-Better in every way that matters, and the only cost is a domain (~$10/year) on Cloudflare
-DNS. No interstitial, no request cap, and a real login.
+Better in every way that matters, and the only cost is a domain (~$10/year) — bought from
+any registrar, with its nameservers pointed at Cloudflare's free plan. No interstitial, no
+request cap, and a real login.
+
+**Cloudflare has no equivalent of ngrok's free static domain.** Its persistent hostnames bind
+to a zone *you* control, so a named tunnel needs a domain; the account-less quick tunnel is
+the only no-domain option and its hostname rotates. If you have no domain, C1 is the choice.
 
 ```bash
 cloudflared tunnel login
