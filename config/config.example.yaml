@@ -31,7 +31,8 @@ zalo:
 extract:
   # --- Gemini free tier (no card needed; key from https://aistudio.google.com/apikey) ---
   provider: "gemini"
-  model: "gemini-3.1-flash"      # verify with `lavabo models` -- model names change
+  model: "gemini-3.1-flash-lite" # same default the app's first run writes; the settings
+                                 # screen's "Danh sách" button lists what your key can use
                                  # often, and that command lists what YOUR key accepts
   concurrency: 1                 # free tier is a few requests/minute; keep this at 1
                                  # (429s are retried with backoff, but going slow is faster)
