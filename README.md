@@ -124,7 +124,9 @@ On the phone: copy the chat in Zalo, pick **Người chốt đơn**, paste into 
 that device, so the phone and the laptop can be two different people capturing their own
 orders. **Thêm vào file quản lý** does the same as `[2]` above, writing into the workbook
 on the machine running the server — so there is nothing to download, and no second copy
-to edit by mistake. The month selector at the top applies to everyone using the page.
+to edit by mistake. The month and year selectors at the top cover this year and last, and
+apply to everyone using the page — with a line under them stating plainly which month is
+being captured when it is not the current one.
 
 > The page has no password. Anyone on the same network can open it while it runs, so use
 > it on your own wifi rather than a public one, and close it when you are done.

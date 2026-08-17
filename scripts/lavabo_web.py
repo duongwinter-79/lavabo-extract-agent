@@ -41,17 +41,15 @@ JOB_LOCK = threading.Lock()
 SETTINGS_LOCK = threading.Lock()
 
 
-def recent_periods(month: int, year: int, count: int = 6) -> list[str]:
-    """This month and the five before it. The shop closes a month a few days late, so
-    early September still sees August orders arriving."""
-    out = []
-    m, y = month, year
-    for _ in range(count):
-        out.append(f"{m:02d}/{y}")
-        m -= 1
-        if m == 0:
-            m, y = 12, y - 1
-    return out
+def allowed_years() -> list[int]:
+    """Last year and this one.
+
+    Wide enough to reopen a month from the previous year — closing December in January
+    crosses the boundary — and narrow enough that a mistyped year cannot quietly file
+    orders under 2019, where nobody would look for them.
+    """
+    this_year = date.today().year
+    return [this_year - 1, this_year]
 
 
 def lan_ip() -> str:
@@ -170,8 +168,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.closer and self.closer not in names:
                 names.append(self.closer)          # the config default, as a fallback
             self._json({"orders": self._orders_on_disk(),
+                        "month": self.month, "year": self.year,
                         "period": f"{self.month:02d}/{self.year}",
-                        "periods": recent_periods(self.month, self.year),
+                        "years": allowed_years(),
                         "workbook": self.workbook.name if self.workbook else "",
                         "closers": names})
         elif path == "/api/export/status":
@@ -279,13 +278,21 @@ class Handler(BaseHTTPRequestHandler):
         raw = parse_qs(urlparse(self.path).query).get("value", [""])[0]
         try:
             month, year = (int(part) for part in raw.split("/", 1))
-            if not 1 <= month <= 12 or not 2000 <= year <= 2100:
-                raise ValueError(raw)
         except ValueError:
             self._json({"error": f"tháng không hợp lệ: {raw!r}"}, 400)
             return
+        if not 1 <= month <= 12:
+            self._json({"error": f"tháng phải từ 1 đến 12, không phải {month}"}, 400)
+            return
+        years = allowed_years()
+        if year not in years:
+            # Checked here as well as in the page: the year decides which sheet the
+            # orders land in, and a stale tab or a hand-typed URL must not pick one
+            # the operator never chose.
+            self._json({"error": f"chỉ nhận năm {years[0]} hoặc {years[1]}"}, 400)
+            return
         Handler.month, Handler.year = month, year
-        self._json({"period": f"{month:02d}/{year}"})
+        self._json({"month": month, "year": year, "period": f"{month:02d}/{year}"})
 
     def _capture(self) -> None:
         import zalo_capture as zc

@@ -57,6 +57,8 @@
     box-shadow:var(--focus); }
   textarea { min-height:180px; resize:vertical;
              font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:15px; }
+  .two-col { display:flex; gap:9px; }
+  .two-col > * { flex:1; min-width:0; }
   .with-btn { display:flex; gap:8px; }
   .with-btn input { flex:1; min-width:0; }
   .with-btn button { width:auto; flex:0 0 auto; margin:0; padding:0 14px; font-size:14px; }
@@ -141,8 +143,12 @@
     <div class="row"><span class="count" id="count">–</span>
       <span style="color:var(--muted)">đơn đã lưu</span></div>
     <div class="field" style="margin-top:14px">
-      <label class="lbl" for="period">Tháng đang nhập</label>
-      <select id="period"></select>
+      <span class="lbl" id="periodLbl">Tháng đang nhập</span>
+      <div class="two-col" role="group" aria-labelledby="periodLbl">
+        <select id="month" aria-label="Tháng"></select>
+        <select id="year" aria-label="Năm"></select>
+      </div>
+      <div class="hint" id="periodHint"></div>
     </div>
   </div>
 
@@ -336,20 +342,47 @@ $('newName').onkeydown = e => {
 
 /* ----------------------------------------------------------------- month */
 
-function drawPeriods(periods, current) {
-  const sel = $('period');
-  if (sel.dataset.touched === '1' && sel.value === current) return;
-  sel.innerHTML = '';
-  for (const p of periods) sel.appendChild(el('option', { value: p, textContent: 'tháng ' + p }));
-  sel.value = current;
+// Month and year are separate so every month of both allowed years is one tap away.
+// A rolling list of the last N months cannot reach January from December without N
+// being large enough to be a scrolling chore.
+let years = [];
+
+function drawPeriod(month, year, allowedYears) {
+  const mSel = $('month'), ySel = $('year');
+  years = allowedYears;
+
+  if (mSel.options.length !== 12) {
+    mSel.innerHTML = '';
+    for (let m = 1; m <= 12; m++)
+      mSel.appendChild(el('option', { value: String(m), textContent: 'Tháng ' + m }));
+  }
+  if (ySel.options.length !== allowedYears.length) {
+    ySel.innerHTML = '';
+    for (const y of allowedYears)
+      ySel.appendChild(el('option', { value: String(y), textContent: 'Năm ' + y }));
+  }
+  mSel.value = String(month);
+  ySel.value = String(year);
+
+  const now = new Date();
+  const isNow = month === now.getMonth() + 1 && year === now.getFullYear();
+  $('periodHint').textContent = isNow
+    ? 'Đang nhập tháng này. Đơn của tháng khác sẽ bị bỏ qua.'
+    : `Đang nhập tháng ${month}/${year} — không phải tháng này. Đơn của tháng khác sẽ bị bỏ qua.`;
 }
-$('period').onchange = async () => {
-  const sel = $('period');
-  sel.dataset.touched = '1';
-  try { await api('/api/period?value=' + encodeURIComponent(sel.value), { method: 'POST' }); }
-  catch (e) { show($('m1'), 'err', 'Không đổi được tháng: ' + e.message); }
+
+async function setPeriod() {
+  const value = $('month').value + '/' + $('year').value;
+  try {
+    await api('/api/period?value=' + encodeURIComponent(value), { method: 'POST' });
+    show($('m1'), '', '');
+  } catch (e) {
+    show($('m1'), 'err', 'Không đổi được tháng: ' + e.message);
+  }
   refresh();
-};
+}
+$('month').onchange = setPeriod;
+$('year').onchange = setPeriod;
 
 /* ---------------------------------------------------------------- status */
 
@@ -357,7 +390,7 @@ async function refresh() {
   try {
     const s = await api('/api/status');
     $('count').textContent = s.orders;
-    drawPeriods(s.periods, s.period);
+    drawPeriod(s.month, s.year, s.years);
     $('append').disabled = !s.workbook;
     $('wbhint').textContent = s.workbook
       ? 'File quản lý: ' + s.workbook + ' — luôn sao lưu trước khi ghi.'
