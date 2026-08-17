@@ -27,11 +27,19 @@ Progress = Callable[[str], None]
 
 
 class _Args:
-    """Stand-in for parsed argv — the CLI commands take an argparse namespace."""
+    """Stand-in for parsed argv — the CLI commands take an argparse namespace.
+
+    Unset flags read as None, the way argparse itself behaves: it defines every declared
+    argument whether or not it was given. Without this, forgetting one field here raises
+    AttributeError from inside a CLI command, which is how `write_workbook` shipped
+    without passing `month` — a crash at the end of an export, far from the cause.
+    """
 
     def __init__(self, **kw: Any) -> None:
-        self.provider = self.model = self.api_key = None
         self.__dict__.update(kw)
+
+    def __getattr__(self, name: str) -> None:
+        return None
 
 
 def _silent(_: str) -> None:
@@ -72,7 +80,11 @@ def write_workbook(cfg: Config, month: int, year: int, closer: str | None,
     progress("Đang ghi file Excel…")
     out = cfg.output_dir / f"donhang-{year}{month:02d}.xlsx"
     with io.StringIO() as sink, redirect_stdout(sink):
-        cmd_load(_Args(out=str(out), layout="senkahomes", sheet=None, year=year,
+        # month and year both matter: the store holds every month ever captured, and
+        # without the filter one file would contain all of them under a sheet named
+        # after whichever order came out first.
+        cmd_load(_Args(out=str(out), layout="senkahomes", sheet=None,
+                       month=month, year=year,
                        status="New", closer=closer or None), cfg)
     return out
 
