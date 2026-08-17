@@ -118,17 +118,68 @@ options below include one at no cost, and neither needs a change to the app.
 
 ### C1 — ngrok, if you have no domain
 
-Free tier gives **one static domain** — a random-looking hostname that does not change
-between restarts, which is what makes it usable with autostart.
+Free tier gives **one static domain** — a hostname that does not change between restarts,
+which is what makes it usable with autostart.
 
-```bash
-ngrok config add-authtoken <your-token>
-ngrok http 8765 --url your-static-domain.ngrok-free.app \
-                --oauth google --oauth-allow-email you@gmail.com
+**The domain is claimed in the dashboard, not from the CLI.** There is no `ngrok` command
+that generates one; the agent only *uses* a domain that already exists on your account.
+
+1. **Sign up** at [dashboard.ngrok.com](https://dashboard.ngrok.com) — free, no card.
+2. **Claim the domain:** in the dashboard go to **Universal Edge → Domains** (older accounts
+   show **Cloud Edge → Domains**) and press **+ New Domain**. Free accounts get one. You can
+   type a subdomain you like, or accept the name it offers; either way you end up with
+   something of the form `<name>.ngrok-free.app`. Copy it.
+3. **Install the agent and save your token** — the token is on the dashboard's *Your
+   Authtoken* page:
+   ```bash
+   ngrok config add-authtoken <your-token>
+   ```
+4. **Run it against that domain:**
+   ```bash
+   ngrok http 8765 --url https://<name>.ngrok-free.app \
+                   --oauth google --oauth-allow-email you@gmail.com
+   ```
+   On ngrok agents older than v3.19 the flag is `--domain=<name>.ngrok-free.app` instead of
+   `--url`. If one is rejected, use the other; `ngrok --version` tells you which you have.
+
+`--oauth google` is available on the free plan and is the login: a Google account is
+required, restricted to the addresses you list — repeat `--oauth-allow-email` per person.
+`--basic-auth "user:password"` works instead if you prefer one shared password.
+
+**Keep the flags in a config file rather than the command.** Cleaner, and it is what the
+autostart step below runs. Put this in ngrok's config file — `ngrok config check` prints its
+path and validates the file:
+
+```yaml
+version: "2"
+authtoken: <your-token>
+tunnels:
+  lavabo:
+    proto: http
+    addr: 8765
+    domain: <name>.ngrok-free.app
+    oauth:
+      provider: google
+      allow_emails:
+        - you@gmail.com
+        - staff@gmail.com
 ```
 
-`--oauth google` is available on the free plan and is the login: Google account required,
-restricted to the addresses you list. Basic auth works too if you prefer a shared password.
+Then the whole thing is `ngrok start lavabo`.
+
+**Make the tunnel start itself too.** The app coming back after a reboot is no use if the
+tunnel does not. On Windows, alongside the task from [docs/10](10-setup-guide.md) §5:
+
+```powershell
+schtasks /Create /TN "Lavabo Tunnel" /TR "ngrok start lavabo" /SC ONLOGON /RL LIMITED /F
+```
+
+On macOS, a second LaunchAgent with `ProgramArguments` of `ngrok`, `start`, `lavabo` and
+`KeepAlive` set — ngrok reconnects on its own, but `KeepAlive` covers the process dying.
+
+With the tunnel running, the app does **not** need `--lan`: ngrok connects to it on
+`127.0.0.1:8765`, so you can drop that flag and stop the page being reachable from the shop
+wifi at all.
 
 Two free-tier facts to plan around:
 
@@ -190,6 +241,9 @@ installing an app on every phone is the bigger problem — and then do not skip 
 | Worked yesterday, not today | The computer is asleep or the app was closed |
 | Tunnel URL changed by itself | A Cloudflare *quick* tunnel — use a named tunnel (C2) or ngrok's static domain (C1) |
 | ngrok stopped serving mid-month | The 20k request or 1 GB allowance ran out — close idle tabs, or move to C2 |
+| ngrok: "domain not found" / not authorized | The domain was never claimed in the dashboard, or belongs to another account — see C1 step 2 |
+| ngrok: unknown flag `--url` | An agent older than v3.19 — use `--domain=<name>.ngrok-free.app` |
+| Tunnel up, but 502 from ngrok | The app is not running, or is on a different port than the tunnel's `addr` |
 
 ## Do not use Funnel
 
