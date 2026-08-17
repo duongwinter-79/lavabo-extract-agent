@@ -24,6 +24,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from .. import extras
 from ..models import Conversation, ExtractionResult
 from ..money import parse_vnd
 
@@ -35,6 +36,16 @@ HEADERS = [
     "Người chốt đơn",
 ]
 
+# Export-only. `lavabo append` writes into the shop's own workbook, whose sheets have
+# exactly the 12 columns above and formulas positioned around them, so it must keep
+# using HEADERS -- widening that list would trip its own column guard. A workbook this
+# tool creates from scratch has no such constraint, so revisions get their own columns
+# here and nowhere else.
+EXTRA_HEADERS = ["Bổ sung", "Cần xem lại"]
+EXPORT_HEADERS = HEADERS + EXTRA_HEADERS
+COL_EXTRA = len(HEADERS) + 1       # M: the later message, verbatim
+COL_REVIEW = len(HEADERS) + 2      # N: why this row needs a human
+
 MONEY_COLUMNS = {7, 8, 9}          # 1-based: Tổng, Xe thu hộ, Cọc
 MONEY_FORMAT = "#,##0"
 DATE_FORMAT = "DD/MM/YYYY"
@@ -42,6 +53,9 @@ DATE_FORMAT = "DD/MM/YYYY"
 HEADER_FILL = PatternFill("solid", fgColor="1F3864")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 MISSING_FILL = PatternFill("solid", fgColor="FFF2CC")
+# Distinct from MISSING_FILL on purpose: pale amber already means "the AI found nothing
+# here", and a row needing a human decision is a different problem with a different fix.
+REVIEW_FILL = PatternFill("solid", fgColor="FCE4D6")
 THIN = Side(style="thin", color="BFBFBF")
 
 
@@ -120,7 +134,7 @@ def write_orders_workbook(
     ws = wb.active
     ws.title = sheet_name or f"{orders[0].raw.get('order_month', date.today().month):02d}{default_year}" \
         if orders else f"{date.today():%m%Y}"
-    ws.append(HEADERS)
+    ws.append(EXPORT_HEADERS)
 
     stt = 0
     missing: list[str] = []
@@ -140,6 +154,8 @@ def write_orders_workbook(
         items = _items(values) or [(None, None)]
         stt += 1
         first = True
+        updates, versions = extras.summary(conv.raw)
+        who = conv.raw.get("sender_name") or closer or None
 
         for name, qty in items:
             if first:
@@ -154,12 +170,30 @@ def write_orders_workbook(
                     values.get("delivery_date_text") or None,
                     # A Zalo OA delivery records who posted the order, so use that in
                     # preference to the run-wide default, which is only a guess.
-                    conv.raw.get("sender_name") or closer or None,
+                    who,
+                    # Later messages changing this order, verbatim and uninterpreted.
+                    "\n\n".join(updates) or None,
+                    "có bổ sung" if updates else None,
                 ])
                 first = False
             else:
                 ws.append([None, None, None, None, name, qty,
-                           None, None, None, None, None, None])
+                           None, None, None, None, None, None, None, None])
+
+        # A competing version of the same order gets its own row so both are visible,
+        # but carries no money: the shop's sheet totals with =SUMIF and =SUM over these
+        # columns, so filling them would count one order twice. STT and Người chốt đơn
+        # are left blank for the same reason -- until a human picks a version, this row
+        # is evidence, not an order.
+        for version in versions:
+            ws.append([None,
+                       _order_date(conv, default_year),
+                       conv.customer_name,
+                       None, None, None,
+                       None, None, None,
+                       None, None, None,
+                       version,
+                       "2 phiên bản"])
 
     _finish(ws, len(orders))
     _sheet_run(wb.create_sheet("Run"), orders, results, missing, default_status, closer)
@@ -177,20 +211,21 @@ def write_orders_workbook(
 
 
 def _finish(ws, order_count: int) -> None:
-    for i in range(1, len(HEADERS) + 1):
+    for i in range(1, len(EXPORT_HEADERS) + 1):
         cell = ws.cell(row=1, column=i)
         cell.fill = HEADER_FILL
         cell.font = HEADER_FONT
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    widths = [6, 13, 20, 42, 46, 9, 17, 14, 12, 13, 14, 15]
+    widths = [6, 13, 20, 42, 46, 9, 17, 14, 12, 13, 14, 15, 52, 14]
     for i, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(i)].width = width
 
-    for row in ws.iter_rows(min_row=2, max_col=len(HEADERS)):
+    for row in ws.iter_rows(min_row=2, max_col=len(EXPORT_HEADERS)):
         for cell in row:
             cell.border = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
-            cell.alignment = Alignment(vertical="top", wrap_text=cell.column in (4, 5))
+            cell.alignment = Alignment(
+                vertical="top", wrap_text=cell.column in (4, 5, COL_EXTRA))
             if cell.column in MONEY_COLUMNS and isinstance(cell.value, (int, float)):
                 cell.number_format = MONEY_FORMAT
             if cell.column == 2 and isinstance(cell.value, date):
@@ -198,9 +233,14 @@ def _finish(ws, order_count: int) -> None:
         # Flag an order whose total never made it through, so a blank is not read as zero.
         if row[0].value is not None and row[6].value is None:
             row[6].fill = MISSING_FILL
+        # Anything carrying a review reason is tinted across the whole row, so it is
+        # visible while scrolling rather than only when column N is in view.
+        if row[COL_REVIEW - 1].value:
+            for cell in row:
+                cell.fill = REVIEW_FILL
 
     ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:{get_column_letter(len(HEADERS))}{ws.max_row}"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(EXPORT_HEADERS))}{ws.max_row}"
 
 
 def _sheet_run(ws, orders, results, missing, status, closer) -> None:

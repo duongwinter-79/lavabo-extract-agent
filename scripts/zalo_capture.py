@@ -52,7 +52,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from lavabo import closers  # noqa: E402
+from lavabo import closers, extras  # noqa: E402
 from lavabo.config import Config  # noqa: E402
 from lavabo.connectors.zalo_export import (  # noqa: E402
     DEFAULT_PATTERNS, ORDER_HEADER, header_customer)  # noqa: E402
@@ -266,6 +266,42 @@ def trim_after_deposit(lines: list[str]) -> tuple[list[str], int]:
     return kept, dropped
 
 
+# Words that mark a trailing message as changing the order rather than chatting about it.
+# Matched against the FOLDED line, so "đổi"/"doi" and "Thu thêm"/"thu them" both hit.
+UPDATE_WORDS = re.compile(
+    r"\b(?:them|lay\s+them|thu\s+them|tong\s+thu\s+ho|thay\s+doi|doi\s+.*\s*thanh|"
+    r"doi\s+tu|sua\s+lai|bo\s+.*\s+di|giam\s+cho\s+khach)\b"
+)
+
+
+def trailing_update(lines: list[str], kept: list[str]) -> str:
+    """The part trim_after_deposit cut, when it reads as a change to the order.
+
+    Everything after an order's deposit line is normally other people talking, which is
+    why it is cut. But the shop also revises orders there, with no new header --
+    "Đơn này lấy thêm / 1 tủ M52 + gương gấu / Tổng thu hộ 13.800". Discarding that is
+    how Thảo Nguyễn exported at 6.000.000 against a real 14.000.000.
+
+    Requires both an update word and a digit somewhere in the remainder: "Thêm 1 cây sen
+    / Thu thêm 2.900" qualifies, while "đơn này đi chưa ạ?" does not. Returns "" when the
+    remainder is ordinary chatter, which is the overwhelmingly common case.
+    """
+    remainder = [ln for ln in lines[len(kept):] if ln.strip()]
+    if not remainder:
+        return ""
+    # Stop at the first @mention: past that it is unambiguously group conversation, and
+    # a revision written before one should not drag the whole thread in with it.
+    cut = next((i for i, ln in enumerate(remainder) if MENTION_LINE.match(ln)), len(remainder))
+    remainder = remainder[:cut]
+    if not remainder:
+        return ""
+
+    blob = fold(" ".join(remainder))
+    if not UPDATE_WORDS.search(blob) or not re.search(r"\d", blob):
+        return ""
+    return "\n".join(remainder).strip()
+
+
 def _swap_header_date(line: str, match: re.Match) -> str:
     """Exchange the day/month substrings in a header line, touching nothing else.
 
@@ -381,7 +417,7 @@ def in_month(block: OrderBlock, month: int, year: int) -> bool:
     return block.month == month and (block.year or year) == year
 
 
-def merge_into(path: Path, existing: str, block: "OrderBlock") -> str:
+def merge_into(inbox: Path, path: Path, existing: str, block: "OrderBlock") -> str:
     """Fold a re-seen order into the file already holding it, without losing text.
 
     An order header can turn up more than once for two unrelated reasons, and telling
@@ -396,8 +432,13 @@ def merge_into(path: Path, existing: str, block: "OrderBlock") -> str:
     Comparing sizes alone cannot distinguish these, and treating (2) as (1) silently
     replaced a real order with a follow-up fragment whenever the fragment happened to be
     the larger of the two. Early orders suffer most, because they accumulate the most
-    follow-ups. So (2) appends instead: nothing captured is ever thrown away, and the
-    extraction step reads the whole block and takes the fields from wherever they sit.
+    follow-ups.
+
+    (2) used to be appended into the same file. That lost nothing, but it produced one
+    order carrying two contradictory totals -- "Tổng 5.800" and "Tổng 12.000" in the same
+    block -- and left the model to pick, on the one field where a wrong answer moves
+    money. It is now kept as a separate version instead (see extras.py), so both are
+    preserved and the choice reaches a human.
     """
     body = block.text.strip()
     if body in existing:                       # already have every line of it
@@ -406,12 +447,10 @@ def merge_into(path: Path, existing: str, block: "OrderBlock") -> str:
         path.write_text(body, encoding="utf-8")
         return "updated"
 
-    # Same order, different message. Keep both, and only the lines we do not have.
-    fresh = [ln for ln in block.lines if ln.strip() and ln.strip() not in existing]
-    if not fresh:
-        return "duplicate"
-    path.write_text(existing + "\n" + "\n".join(fresh) + "\n", encoding="utf-8")
-    return "added"
+    # Same order key, materially different text: a revision, not a fuller capture.
+    if extras.record(inbox, path.name, "version", body):
+        return "version"
+    return "duplicate"
 
 
 def existing_orders(inbox: Path) -> dict[tuple[int, int, int], tuple[Path, int]]:
@@ -542,28 +581,43 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
         print(f"  note    ngày/tháng bị đảo: {note}")
 
     known = existing_orders(cfg.zalo.inbox_dir)
-    saved = duplicates = trimmed_lines = 0
+    saved = duplicates = trimmed_lines = revisions = 0
 
+    inbox = cfg.zalo.inbox_dir
     for block in wanted:
+        update = ""
         if trim:
-            block.lines, dropped = trim_after_deposit(block.lines)
+            kept, dropped = trim_after_deposit(block.lines)
+            # Read the discarded tail BEFORE replacing block.lines, since the whole
+            # point is to recover what the trim was about to throw away.
+            update = trailing_update(block.lines, kept)
+            block.lines = kept
             trimmed_lines += dropped
         body = block.text
         if block.key in known:
             path, _ = known[block.key]
             existing = path.read_text(encoding="utf-8", errors="replace").strip()
-            action = merge_into(path, existing, block)
+            action = merge_into(inbox, path, existing, block)
             if action == "duplicate":
                 duplicates += 1
+            elif action == "version":
+                # A competing version of an order already captured: stored beside it,
+                # not merged in, and surfaced for review rather than counted as saved.
+                revisions += 1
+                print(f"  version {path.name}  (bản khác — cần xem lại)")
             else:
                 known[block.key] = (path, path.stat().st_size)
                 print(f"  {action:7} {path.name}")
                 saved += 1
-            closers.record(cfg.zalo.inbox_dir, path.name, closer)
+            closers.record(inbox, path.name, closer)
+            if update and extras.record(inbox, path.name, "update", update):
+                revisions += 1
             continue
 
-        path = save(body, block.header, cfg.zalo.inbox_dir)
-        closers.record(cfg.zalo.inbox_dir, path.name, closer)
+        path = save(body, block.header, inbox)
+        closers.record(inbox, path.name, closer)
+        if update and extras.record(inbox, path.name, "update", update):
+            revisions += 1
         known[block.key] = (path, len(body.encode("utf-8")))
         print(f"  saved   {path.name}  ({len(block.lines)} lines"
               + (f", {block.customer}" if block.customer else "") + ")")
@@ -574,6 +628,8 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
         bits.append(f"{duplicates} already captured")
     if skipped_month:
         bits.append(f"{skipped_month} outside {month:02d}/{year}")
+    if revisions:
+        bits.append(f"{revisions} cần xem lại")
     if trimmed_lines:
         bits.append(f"{trimmed_lines} trailing line(s) trimmed")
     print("  → " + ", ".join(bits))

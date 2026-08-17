@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .. import closers
+from .. import closers, extras
 from ..config import ZaloConfig
 from ..models import Attachment, Conversation, Direction, Message, Source
 from ..tz import zone as tz_zone
@@ -104,8 +104,9 @@ class ZaloExportConnector:
         self.own = {n.strip().casefold() for n in config.own_names if n.strip()}
         self.processed = processed or set()
         self.seen_hashes: set[str] = set()
-        # Read once per run: fetch() touches every file, and this is one small map.
+        # Read once per run: fetch() touches every file, and these are small maps.
         self._closers = closers.load(config.inbox_dir)
+        self._extras = extras.load(config.inbox_dir)
 
     def check(self) -> tuple[bool, str]:
         if not self.config.inbox_dir.exists():
@@ -117,9 +118,10 @@ class ZaloExportConnector:
 
     def _files(self) -> list[Path]:
         allowed = TEXT_SUFFIXES | JSON_SUFFIXES | HTML_SUFFIXES
+        sidecars = {closers.SIDECAR, extras.SIDECAR}   # bookkeeping, not transcripts
         return sorted(p for p in self.config.inbox_dir.rglob("*")
                       if p.is_file() and p.suffix.lower() in allowed
-                      and p.name != closers.SIDECAR)     # bookkeeping, not a transcript
+                      and p.name not in sidecars)
 
     def fetch(self) -> Iterator[Conversation]:
         for path in self._files():
@@ -166,6 +168,11 @@ class ZaloExportConnector:
         # before this existed still gets the old behaviour.
         if name := closers.closer_for(self._closers, path.name):
             conv.raw["sender_name"] = name
+        # Later messages about this order -- revisions and add-ons. Carried through
+        # verbatim for the writer to surface for review; never folded into the text the
+        # model reads, so a revision cannot silently move a total.
+        if items := self._extras.get(path.name):
+            conv.raw["extras"] = items
         return conv
 
     def _parse_plain(self, path: Path, digest: str, lines: list[str]) -> Conversation:
