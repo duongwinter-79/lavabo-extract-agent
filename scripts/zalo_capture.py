@@ -47,6 +47,7 @@ import time
 import unicodedata
 from collections import Counter
 from dataclasses import dataclass
+from typing import NamedTuple
 from datetime import date
 from pathlib import Path
 
@@ -555,9 +556,24 @@ def ask_name() -> str:
         return ""
 
 
+class CaptureResult(NamedTuple):
+    """What one paste did. A named tuple rather than a bare one because this has grown
+    a field twice now, and every growth silently broke a caller that unpacked by arity."""
+    saved: int
+    duplicates: int
+    out_of_month: int
+    date_swaps: list[str]
+    # Counted apart because they mean different things to the arithmetic: a version is
+    # its own block in the paste, so saved + duplicates + out_of_month + versions equals
+    # the number of orders found. An update is trailing text inside a block already
+    # counted under saved, so adding it in would double-count that order.
+    versions: int
+    updates: int
+
+
 def handle_orders(text: str, cfg, month: int, year: int, *,
                   all_months: bool, trim: bool = True,
-                  closer: str | None = None) -> tuple[int, int, int, list[str]]:
+                  closer: str | None = None) -> CaptureResult:
     """Split a chat chunk into orders and save the wanted ones.
 
     `closer` is who chốt these orders. Recorded per order in a sidecar rather than in
@@ -572,7 +588,7 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
     """
     blocks = split_orders(text, target_month=month)
     if not blocks:
-        return (0, 0, 0, [])
+        return CaptureResult(0, 0, 0, [], 0, 0)
 
     wanted = blocks if all_months else [b for b in blocks if in_month(b, month, year)]
     skipped_month = len(blocks) - len(wanted)
@@ -581,7 +597,7 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
         print(f"  note    ngày/tháng bị đảo: {note}")
 
     known = existing_orders(cfg.zalo.inbox_dir)
-    saved = duplicates = trimmed_lines = revisions = 0
+    saved = duplicates = trimmed_lines = versions = updates = 0
 
     inbox = cfg.zalo.inbox_dir
     for block in wanted:
@@ -603,7 +619,7 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
             elif action == "version":
                 # A competing version of an order already captured: stored beside it,
                 # not merged in, and surfaced for review rather than counted as saved.
-                revisions += 1
+                versions += 1
                 print(f"  version {path.name}  (bản khác — cần xem lại)")
             else:
                 known[block.key] = (path, path.stat().st_size)
@@ -611,13 +627,13 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
                 saved += 1
             closers.record(inbox, path.name, closer)
             if update and extras.record(inbox, path.name, "update", update):
-                revisions += 1
+                updates += 1
             continue
 
         path = save(body, block.header, inbox)
         closers.record(inbox, path.name, closer)
         if update and extras.record(inbox, path.name, "update", update):
-            revisions += 1
+            updates += 1
         known[block.key] = (path, len(body.encode("utf-8")))
         print(f"  saved   {path.name}  ({len(block.lines)} lines"
               + (f", {block.customer}" if block.customer else "") + ")")
@@ -628,13 +644,16 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
         bits.append(f"{duplicates} already captured")
     if skipped_month:
         bits.append(f"{skipped_month} outside {month:02d}/{year}")
-    if revisions:
-        bits.append(f"{revisions} cần xem lại")
+    if versions:
+        bits.append(f"{versions} bản khác")
+    if updates:
+        bits.append(f"{updates} có bổ sung")
     if trimmed_lines:
         bits.append(f"{trimmed_lines} trailing line(s) trimmed")
     print("  → " + ", ".join(bits))
 
-    return (saved, duplicates, skipped_month, date_swaps)
+    return CaptureResult(saved, duplicates, skipped_month, date_swaps,
+                         versions, updates)
 
 
 def handle(text: str, cfg, own: set[str], forced: str | None) -> Path | None:
@@ -801,10 +820,11 @@ def main() -> int:
                 continue
 
             if not args.no_split and any(ORDER_HEADER.match(ln.strip()) for ln in current.splitlines()):
-                saved, _, _, _ = handle_orders(current, cfg, month, year,
-                                               all_months=args.all_months,
-                                               trim=not args.no_trim,
-                                               closer=args.closer)
+                result = handle_orders(current, cfg, month, year,
+                                       all_months=args.all_months,
+                                       trim=not args.no_trim,
+                                       closer=args.closer)
+                saved = result.saved
                 seen.add(digest)
                 captured += saved
                 if args.once and saved:

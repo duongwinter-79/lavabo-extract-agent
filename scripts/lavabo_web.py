@@ -314,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             with io.StringIO() as sink, redirect_stdout(sink):
-                saved, duplicates, other, swaps = zc.handle_orders(
+                result = zc.handle_orders(
                     text, self.cfg, self.month, self.year, all_months=False, trim=True,
                     closer=closer)
         except Exception as exc:
@@ -327,10 +327,14 @@ class Handler(BaseHTTPRequestHandler):
         # every month in it, and reporting that span said nothing about the month being
         # captured.
         days = sorted(b.day for b in blocks if zc.in_month(b, self.month, self.year))
-        self._json({"found": len(blocks), "saved": saved,
-                    "duplicates": duplicates, "other_month": other,
+        self._json({"found": len(blocks), "saved": result.saved,
+                    "duplicates": result.duplicates, "other_month": result.out_of_month,
                     "span_days": [days[0], days[-1]] if days else [],
-                    "date_swaps": swaps})
+                    "date_swaps": result.date_swaps,
+                    # Without these the counts do not add up to `found` on a first
+                    # paste, and the orders needing a human decision are never mentioned.
+                    "versions": result.versions,
+                    "updates": result.updates})
 
     def _start_export(self) -> None:
         mode = parse_qs(urlparse(self.path).query).get("mode", ["new"])[0]

@@ -449,6 +449,11 @@ $('save').onclick = async () => {
       let t = `Tìm thấy ${s.found} đơn — lưu mới ${s.saved}`;
       if (s.duplicates) t += `, đã có ${s.duplicates}`;
       if (s.other_month) t += `, ${s.other_month} khác tháng`;
+      // A version is its own block, so it belongs in the arithmetic beside saved and
+      // đã có. An update is trailing text on an order already counted, so it is
+      // reported but deliberately not added in.
+      if (s.versions) t += `, ${s.versions} bản khác`;
+      if (s.updates) t += `\n${s.updates} đơn có bổ sung — xem cột "Cần xem lại" khi xuất file.`;
       // Which days of the selected month this paste reached. Phrased as a question,
       // not a verdict: a month can legitimately have no orders until the 13th, and
       // claiming data is missing when it is not is worse than saying nothing.

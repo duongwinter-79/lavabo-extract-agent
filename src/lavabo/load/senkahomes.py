@@ -71,6 +71,25 @@ def missing_schema_fields(schema) -> list[str]:
     return [name for name in REQUIRED_FIELDS if name not in have]
 
 
+def _duplicate_keys(conversations: list[Conversation]) -> set[tuple]:
+    """Order keys (day, month, số đơn) held by more than one captured order.
+
+    A safety net independent of the revision sidecar, which only links a version to the
+    order it was merged against. Two separate files can still carry the same key -- from
+    a capture made before versions were tracked, or from a filename collision -- and
+    then nothing connects them: they extract independently, land as two full rows with
+    two STTs, and both totals count. That is the one duplicate shape that reaches the
+    money silently, so it is detected here from the rows themselves.
+    """
+    seen: dict[tuple, int] = {}
+    for conv in conversations:
+        raw = conv.raw or {}
+        key = (raw.get("order_day"), raw.get("order_month"), raw.get("order_number"))
+        if all(part is not None for part in key):
+            seen[key] = seen.get(key, 0) + 1
+    return {key for key, count in seen.items() if count > 1}
+
+
 def _order_sort_key(conv: Conversation) -> tuple:
     raw = conv.raw or {}
     return (raw.get("order_month") or 0, raw.get("order_day") or 0,
@@ -139,6 +158,7 @@ def write_orders_workbook(
 
     stt = 0
     missing: list[str] = []
+    duplicate_keys = _duplicate_keys(orders)
 
     for conv in orders:
         res = results.get(conv.conversation_id)
@@ -157,6 +177,10 @@ def write_orders_workbook(
         first = True
         updates, versions = extras.summary(conv.raw)
         who = conv.raw.get("sender_name") or closer or None
+        is_dupe = (conv.raw.get("order_day"), conv.raw.get("order_month"),
+                   conv.raw.get("order_number")) in duplicate_keys
+        reasons = [r for r in ("trùng số đơn" if is_dupe else "",
+                               "có bổ sung" if updates else "") if r]
 
         for name, qty in items:
             if first:
@@ -177,7 +201,7 @@ def write_orders_workbook(
                     # visible without opening the cell.
                     "\n\n".join(updates) or None,
                     " · ".join(filter(None, (extras.amounts(u) for u in updates))) or None,
-                    "có bổ sung" if updates else None,
+                    ", ".join(reasons) or None,
                 ])
                 first = False
             else:
@@ -216,6 +240,7 @@ def write_orders_workbook(
 
 
 def _finish(ws, order_count: int) -> None:
+    tinted = False
     for i in range(1, len(EXPORT_HEADERS) + 1):
         cell = ws.cell(row=1, column=i)
         cell.fill = HEADER_FILL
@@ -238,9 +263,14 @@ def _finish(ws, order_count: int) -> None:
         # Flag an order whose total never made it through, so a blank is not read as zero.
         if row[0].value is not None and row[6].value is None:
             row[6].fill = MISSING_FILL
-        # Anything carrying a review reason is tinted across the whole row, so it is
-        # visible while scrolling rather than only when column N is in view.
-        if row[COL_REVIEW - 1].value:
+        # Tint the whole order GROUP, not just the row carrying the reason. An order
+        # spans one row per line item, and colouring only the first leaves a four-item
+        # order three-quarters plain, which reads as a rendering fault rather than a
+        # flag. A continuation row has no STT, so the state carries down until the next
+        # order starts.
+        if row[0].value is not None:
+            tinted = bool(row[COL_REVIEW - 1].value)
+        if tinted:
             for cell in row:
                 cell.fill = REVIEW_FILL
 
