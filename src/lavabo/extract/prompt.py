@@ -6,8 +6,8 @@ changing the prompt correctly invalidates previously cached results.
 
 from __future__ import annotations
 
-from zoneinfo import ZoneInfo
 
+from ..tz import zone as tz_zone
 from ..config import ExtractionSchema
 from ..models import Conversation
 
@@ -86,7 +86,7 @@ def build_user_prompt(
     max_chars: int,
     display_timezone: str = "UTC",
 ) -> str:
-    tz = ZoneInfo(display_timezone)
+    tz = tz_zone(display_timezone)
     transcript = conv.transcript(tz=tz)
 
     if len(transcript) > max_chars:

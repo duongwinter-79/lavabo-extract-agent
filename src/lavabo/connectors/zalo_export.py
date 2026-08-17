@@ -21,14 +21,14 @@ import hashlib
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
-from zoneinfo import ZoneInfo
 
 from .. import closers
 from ..config import ZaloConfig
 from ..models import Attachment, Conversation, Direction, Message, Source
+from ..tz import zone as tz_zone
 
 log = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ class ZaloExportConnector:
 
     def __init__(self, config: ZaloConfig, *, processed: set[str] | None = None) -> None:
         self.config = config
-        self.tz = ZoneInfo(config.timezone)
+        self.tz = tz_zone(config.timezone)
         self.patterns = [re.compile(p) for p in (config.line_patterns or []) + DEFAULT_PATTERNS]
         self.own = {n.strip().casefold() for n in config.own_names if n.strip()}
         self.processed = processed or set()
@@ -340,19 +340,19 @@ class ZaloExportConnector:
             if n > 10**12:
                 n //= 1000
             if 10**8 < n < 10**11:
-                return datetime.fromtimestamp(n, tz=self.tz).astimezone(ZoneInfo("UTC"))
+                return datetime.fromtimestamp(n, tz=self.tz).astimezone(timezone.utc)
 
         normalized = re.sub(r"\s+", " ", value)
         for fmt in TIMESTAMP_FORMATS:
             try:
-                return datetime.strptime(normalized, fmt).replace(tzinfo=self.tz).astimezone(ZoneInfo("UTC"))
+                return datetime.strptime(normalized, fmt).replace(tzinfo=self.tz).astimezone(timezone.utc)
             except ValueError:
                 continue
         try:
             dt = datetime.fromisoformat(normalized)
         except ValueError:
             return None
-        return (dt.replace(tzinfo=self.tz) if dt.tzinfo is None else dt).astimezone(ZoneInfo("UTC"))
+        return (dt.replace(tzinfo=self.tz) if dt.tzinfo is None else dt).astimezone(timezone.utc)
 
 
 def _detect_attachments(text: str) -> list[Attachment]:

@@ -10,12 +10,12 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from ..tz import zone as tz_zone
 from ..config import ExtractionSchema
 from ..models import Conversation, ExtractionResult
 
@@ -37,7 +37,7 @@ def write_workbook(
     display_timezone: str = "UTC",
 ) -> Path:
     wb = Workbook()
-    tz = ZoneInfo(display_timezone)
+    tz = tz_zone(display_timezone)
 
     _sheet_data(wb.active, schema, conversations, results)
     _sheet_sources(wb.create_sheet("Sources"), conversations, results, tz)

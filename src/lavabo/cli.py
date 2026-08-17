@@ -311,6 +311,18 @@ def cmd_check(args, cfg: Config) -> int:
             print(f"schema:     NOT READY — {exc}")
             ok = False
 
+        # Checked here because the failure otherwise lands at the end of an export, after
+        # a capture session, rather than before one.
+        from .tz import problem as tz_problem
+
+        zones = {cfg.zalo.timezone, cfg.extract.display_timezone}
+        if troubles := [t for z in sorted(zones) if (t := tz_problem(z))]:
+            for trouble in troubles:
+                print(f"FAIL tz:    {trouble}")
+            ok = False
+        else:
+            print(f"timezone:   {', '.join(sorted(zones))}")
+
         # LLM key: only needed for `extract`, so report it without failing the preflight.
         try:
             from .extract.base import extractor_class

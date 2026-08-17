@@ -1,5 +1,6 @@
 requests>=2.31
 PyYAML>=6.0
+tzdata>=2024.1          # Windows ships no IANA timezone database; zoneinfo needs this
 openpyxl>=3.1
 python-dotenv>=1.0
 pyperclip>=1.8          # scripts/zalo_capture.py; falls back to tkinter
