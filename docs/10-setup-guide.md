@@ -215,16 +215,84 @@ workbook.
 
 ## Step 7 — Your first real run
 
-1. In Zalo, select an order conversation and copy it.
-2. In the app, check **Tháng đang nhập** is the right month.
-3. Pick **Người chốt đơn** — tap a name, or **+ Thêm tên** for a new one. This fills the
-   column your revenue split reports on, so it matters more than it looks.
-4. Paste into the box, press **Lưu đơn**. It reports how many orders it found and saved.
-5. Repeat for the month's conversations. Duplicates are ignored, so re-pasting is safe.
+1. In the app, set **Tháng** and **Năm** to the month you are closing. The selectors cover
+   this year and last. On 2 September the app defaults to September, so switch back to
+   August to finish it.
+2. Pick **Người chốt đơn** — tap a name, or **+ Thêm tên** for a new one. This fills the
+   column your revenue split reports on, so it matters more than it looks. The app will not
+   save without one.
+3. In Zalo, open the group chat, **scroll up to the start of the month**, then `Ctrl+A`,
+   `Ctrl+C`.
+4. Paste into the box, press **Lưu đơn**.
+5. Read what it reports, then repeat from step 3 for the rest of the month.
 6. Press **Xuất file Excel mới** and download the result. **Check this file before trusting
-   it** — the AI columns are the part worth reviewing.
+   it** — the AI columns and anything tinted are the parts worth reviewing.
 7. Once it looks right, set your workbook path in the gear screen and use **Thêm vào file
    quản lý** from then on. It backs the file up before every write.
+
+### Capture the month in chunks, not one sweep
+
+`Ctrl+A` copies only what Zalo has loaded, and Zalo loads history as you scroll. This is
+not a setting you can raise — a select-all reaches back exactly as far as you scrolled, so
+one sweep over a busy month usually misses its first two weeks entirely.
+
+Scroll up, copy, paste, repeat. **Let the chunks overlap**: an order already captured is
+recognised and not saved twice, so there is no cost to pasting the same stretch again, and
+a real cost to leaving a gap between chunks.
+
+### What the save message is telling you
+
+```
+Tìm thấy 69 đơn — lưu mới 37, đã có 1, 31 khác tháng
+1 đơn có bổ sung — xem cột "Cần xem lại" khi xuất file.
+Đơn tháng 7 trong đoạn này: ngày 13–31.
+```
+
+| Phrase | Meaning |
+|---|---|
+| `lưu mới` | new orders written |
+| `đã có` | already captured, from an earlier paste — expected when chunks overlap |
+| `khác tháng` | belongs to another month, so not saved under this one |
+| `bản khác` | a second, different version of an order already captured — kept for review |
+| `có bổ sung` | a later message about an order, attached to it for review |
+| `Đơn tháng 7 trong đoạn này: ngày 13–31` | **the days this paste actually reached.** Starting at 13 means everything before the 13th is still further up in Zalo |
+
+An amber box reading **Có thể sót đơn — số thứ tự bị nhảy cách** means a `đơn N` is missing
+between two you captured. Scroll up to that day and paste it again.
+
+### The three review columns
+
+The exported file carries three columns your own workbook does not have: **Bổ sung** (a
+later message about the order, word for word), **Số tiền bổ sung** (the money it states —
+shown, never added to Tổng) and **Cần xem lại**. Any row with a reason in **Cần xem lại**
+is tinted, the whole order rather than just its first row.
+
+Money is never changed behind your back, so `=SUM` and `=SUMIF` stay right while you
+review. Three reasons appear:
+
+- **`có bổ sung`** — a later message changed or added to this order. Read it and decide.
+- **`2 phiên bản`** — two different versions of the same order. The second gets a row with
+  the date and the name but **no STT and no money**, so it cannot be counted twice.
+- **`trùng số đơn`** — the same day and số đơn arrived as two separate orders. This one
+  *is* counted twice until you delete a row. Do that before using the file.
+
+**Thêm vào file quản lý** writes only the original 12 columns, so none of this reaches
+your workbook.
+
+---
+
+## Step 8 — Keeping it updated
+
+```powershell
+git pull
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+```
+
+macOS / Linux: `git pull && bash scripts/setup.sh`.
+
+Re-running setup installs anything newly required and leaves `config/config.yaml`, `.env`
+and everything under `data/` alone. Stop the app first (or `schtasks /End /TN "Lavabo Web"`),
+then start it again afterwards.
 
 ---
 
@@ -241,6 +309,15 @@ workbook.
 | Worked yesterday, not today | The computer is asleep or off — revisit step 5 |
 | **Thêm vào file quản lý** greyed out | No workbook set, or the path does not exist — gear icon |
 | Rate-limit warnings during extraction | Normal on the free tier. It waits and retries; leave it |
+| Orders missing from the export | The paste never reached them. Check the day range in the save message, scroll further up in Zalo, paste again |
+| "Có thể sót đơn — số thứ tự bị nhảy cách" | A `đơn N` between two captured ones is missing — scroll to that day and paste it |
+| Everything says `khác tháng` | Wrong month selected at the top of the page |
+| A day/month looks swapped | `8/3` during an August capture is read as 8 March unless the orders around it say otherwise, in which case it is filed as 3 August. Check the date in the export if an order lands on an odd day |
+| The total is higher than the real one | Look for `trùng số đơn` — a duplicated order is counted twice until you delete the row |
+| A tinted row with a name but no money | A second version of an order, kept for comparison. Deliberately outside the total |
+
+Nothing tinted is ever fixed silently: money that reached the sheet stays as captured, and
+the flag exists so you make the call.
 
 ## Worth doing once your orders live here
 

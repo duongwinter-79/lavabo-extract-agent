@@ -38,7 +38,7 @@ Leave the app open. In Zalo, open the group chat, scroll up through the month, t
 The counter on screen goes up. Copy in chunks as you scroll — overlapping is fine, each
 order is saved once.
 
-Only messages starting with an order header are kept:
+Only messages starting with an order header are kept. Both of these are recognised:
 
 ```
 15/8 đơn 1 - Meloxicam
@@ -50,7 +50,21 @@ Tổng 29tr
 Đã cọc 500k
 ```
 
-Everything else in the chat is ignored, and only the current month is captured.
+```
+2/7 đơn 2 (Trần Thị Liên)
+...
+```
+
+Everything else in the chat is ignored, and only the selected month is captured.
+
+> **`Ctrl+A` only copies what Zalo has loaded.** It is not a size limit you can raise —
+> Zalo lazy-loads history, so a select-all reaches back exactly as far as you scrolled.
+> One sweep over a whole month usually misses the start of it.
+>
+> Work in chunks: scroll up, copy, paste, repeat, letting the chunks overlap. The app
+> reports which days of the month each paste reached, and warns when order numbers skip
+> (a day with `đơn 2` and `đơn 4` but no `đơn 3` means one is still sitting further up).
+> Nothing is lost by pasting the same stretch twice.
 
 ### 3. Pick who closed them, press `1` or `2`
 
@@ -80,8 +94,10 @@ It matters more than it looks: your sheet totals revenue with
 `=SUMIF($L:$L,"Trà My",$G:$G)`, so a wrong name here moves money between staff.
 
 It reads the orders, extracts them with AI, and writes
-`data/out/donhang-YYYYMM.xlsx` — same 12 columns as the existing sheet, one row per line
-item, ready to paste in.
+`data/out/donhang-YYYYMM.xlsx` — the same 12 columns as the existing sheet, one row per
+line item, ready to paste in, followed by three review columns that exist only in this
+file (see [What it fills in](#what-it-fills-in)). `[2]` writes the 12 columns and nothing
+else, so your own workbook keeps its shape.
 
 That is the whole job.
 
@@ -155,6 +171,34 @@ never guessed at.
 
 Amber cells mean the AI found nothing there, rather than zero.
 
+### Three more columns, in the exported file only
+
+`Xuất file Excel mới` adds these after column L. **Thêm vào file quản lý** does not write
+them, so your own workbook is untouched:
+
+| Column | What it holds |
+|---|---|
+| Bổ sung | a later message about this order, kept word for word |
+| Số tiền bổ sung | the money that message states — read out so you can see it, but **never added to Tổng** |
+| Cần xem lại | why a human should look: `có bổ sung`, `trùng số đơn`, `2 phiên bản` |
+
+Rows with anything in **Cần xem lại** are tinted, the whole order, not just its first row.
+
+Nothing here is decided for you, on purpose. When a later message changes an order, the
+app cannot tell a correction from an add-on, so it never edits the money it already saved:
+
+- **A later message with no header** (`đã thu thêm 2tr`) is attached to the order it
+  belongs to, in `Bổ sung`, and the order is flagged.
+- **A second full version of the same order** gets a row of its own — same date and
+  customer, no STT and no money — so both versions are visible and neither is counted
+  twice. Marked `2 phiên bản`.
+- **The same day and số đơn arriving as two separate orders** is marked `trùng số đơn`.
+  This one *does* count twice in the total until you delete a row, which is exactly why it
+  is flagged rather than merged.
+
+So `=SUM` and `=SUMIF` over the exported columns stay right while you review, and you
+decide what the order really was.
+
 ---
 
 ## If something looks off
@@ -165,6 +209,11 @@ Amber cells mean the AI found nothing there, rather than zero.
 | A total looks wrong | tell us the exact text — it is a conversion rule, fixed without re-running the AI |
 | Rows nearly empty | extraction failed; run `lavabo inspect` (below) to see why |
 | "rate limited, retrying" | normal on the free tier, it waits and continues |
+| Orders missing from the export | the paste never reached them — see the day range it reports, scroll further up in Zalo and paste again |
+| "Có thể sót đơn — số thứ tự bị nhảy cách" | a `đơn N` is missing between two captured ones; scroll up and paste that stretch |
+| An order counted twice in the total | flagged `trùng số đơn` and tinted — delete the row you do not want |
+| A tinted row with no money | a second version of an order, kept for you to compare; it is deliberately not in the total |
+| `ZoneInfoNotFoundError: Asia/Ho_Chi_Minh` | Windows has no timezone database: `.venv\Scripts\python.exe -m pip install tzdata`, then restart |
 
 ---
 

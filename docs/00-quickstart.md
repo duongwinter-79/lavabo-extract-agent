@@ -7,6 +7,12 @@ pipeline works before spending 45 minutes capturing 50 of them.
 
 Every command below was run against a clean clone before being written down.
 
+> **Setting up the shop's order capture rather than exploring the pipeline?** Use
+> [docs/10-setup-guide.md](10-setup-guide.md) instead — it installs with one script, skips
+> the CLI entirely and ends with a URL staff can open from a phone. This page is the manual
+> route: one conversation at a time, every step visible, useful when something needs
+> debugging.
+
 ---
 
 ## 0. Prerequisites
@@ -216,7 +222,7 @@ GEMINI_API_KEY=AIza...
 ```
 
 That matches the default in `config.example.yaml` (`provider: gemini`,
-`model: gemini-3.1-flash`, `concurrency: 1`). Keep concurrency at 1 — the free tier allows
+`model: gemini-3.1-flash-lite`, `concurrency: 1`). Keep concurrency at 1 — the free tier allows
 only a few requests per minute; 429s are retried with backoff, but going slow is faster than
 being throttled.
 
@@ -304,6 +310,7 @@ re-running is cheap and safe.
 | `ANTHROPIC_API_KEY is not set` | no key in `.env` | step 8 (or use `--dry-run`) |
 | Capture script prints nothing | format not recognised | save manually, send me a sample |
 | `No clipboard access` | missing backend | `pip install pyperclip` |
+| `ZoneInfoNotFoundError: Asia/Ho_Chi_Minh` | Windows ships no timezone database | `pip install tzdata` — already in `requirements.txt`, so this only hits older installs |
 | Match rate below 50% | regex mismatch | send me the first 5 lines |
 | Message count too low | didn't scroll to top | redo step 5.2 |
 | Everything labelled inbound | `own_names` wrong | step 3 |
