@@ -128,6 +128,15 @@ class ZaloExportConnector:
             return True, f"zalo: {n} file(s) found — WARNING: zalo.own_names is empty, every message will be read as inbound"
         return True, f"zalo: {n} file(s) in {self.config.inbox_dir}"
 
+    def current_ids(self) -> set[str]:
+        """Conversation ids for every file in the inbox right now, ingested or not.
+
+        Lets the caller drop conversations whose file has gone -- deleted by hand, renamed
+        when a transposed date was corrected, or minted under the older id scheme that
+        included the content digest.
+        """
+        return {f"zalo:{path.stem}" for path in self._files()}
+
     def _files(self) -> list[Path]:
         allowed = TEXT_SUFFIXES | JSON_SUFFIXES | HTML_SUFFIXES
         sidecars = {closers.SIDECAR, extras.SIDECAR, flags.SIDECAR}  # bookkeeping
@@ -171,7 +180,15 @@ class ZaloExportConnector:
         # Filename is the conversation identity: "Nguyen Van A.txt" -> customer name.
         conv = Conversation(
             source=Source.ZALO,
-            conversation_id=f"zalo:{path.stem}:{digest}",
+            # The FILE identifies the conversation, not its bytes. With the content
+            # digest in here, rewriting a file -- a fuller re-capture, a retrim, a
+            # resegment -- minted a second conversation while the first stayed in the
+            # staging database forever, and the export wrote both. One order file then
+            # produced two rows with the same date and customer and different addresses,
+            # which reads as the model inventing an order rather than as bookkeeping.
+            # The digest is still kept in raw below, and the extraction cache keys on the
+            # text separately, so changed content still re-extracts.
+            conversation_id=f"zalo:{path.stem}",
             customer_name=path.stem.strip(),
             origin=str(path.name),
             raw={"file": str(path), "sha256_16": digest},

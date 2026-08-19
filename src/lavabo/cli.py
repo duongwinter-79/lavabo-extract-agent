@@ -115,9 +115,16 @@ def cmd_ingest(args, cfg: Config) -> int:
             done = set(json.loads(store.get_state("zalo:files") or "[]"))
             conn = ZaloExportConnector(cfg.zalo, processed=set() if args.full else done)
             for conv in conn.fetch():
-                total_msg += store.upsert_conversation(conv)
+                # A Zalo order file IS the whole conversation, so a file that shrank must
+                # not leave the lines it lost staged behind it.
+                total_msg += store.upsert_conversation(conv, replace_messages=True)
                 total_conv += 1
             store.set_state("zalo:files", json.dumps(sorted(done | conn.seen_hashes)))
+            # Drop anything staged with no file behind it any more: deleted by hand,
+            # renamed when a transposed date was corrected, or left by the older id
+            # scheme that minted a new conversation every time a file was rewritten.
+            if dropped := store.prune_conversations(Source.ZALO, conn.current_ids()):
+                print(f"removed {dropped} staged order(s) with no file in the inbox")
 
         if "oa" in sources:
             from .connectors.zalo_oa import ZaloOAConnector

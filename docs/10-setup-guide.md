@@ -524,6 +524,7 @@ then start it again afterwards.
 | Everything says `khác tháng` | Wrong month selected at the top of the page |
 | A day/month looks swapped | `8/3` during an August capture is read as 8 March unless the orders around it say otherwise, in which case it is filed as 3 August. Check the date in the export if an order lands on an odd day |
 | The total is higher than the real one | Look for `trùng số đơn` — a duplicated order is counted twice until you delete the row |
+| Two rows for one order — same ngày and Tên KH, **different địa chỉ** | Not the AI inventing an order. An older copy of that order was left staged from before its file was rewritten. Run `lavabo ingest --source zalo`; it removes them and reports how many |
 | A tinted row with a name but no money | A second version of an order, kept for comparison. Deliberately outside the total |
 
 Nothing tinted is ever fixed silently: money that reached the sheet stays as captured, and

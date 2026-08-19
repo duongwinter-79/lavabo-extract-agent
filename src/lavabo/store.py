@@ -188,8 +188,16 @@ class Store:
 
     # ---------------------------------------------------------------- writes
 
-    def upsert_conversation(self, conv: Conversation) -> int:
-        """Insert/refresh a conversation and its messages. Returns new message count."""
+    def upsert_conversation(self, conv: Conversation, *,
+                            replace_messages: bool = False) -> int:
+        """Insert/refresh a conversation and its messages. Returns new message count.
+
+        `replace_messages` drops any message of this conversation that the incoming set no
+        longer carries. Right for a Zalo order file, which IS the whole conversation, so a
+        file that gets shorter -- a retrim, a resegment -- must not leave the lines it lost
+        behind. Wrong for Meta, which pages history in incrementally and would be deleting
+        the messages it has not fetched yet, so it stays off by default.
+        """
         with self.tx() as c:
             c.execute(
                 """INSERT INTO conversations
@@ -209,6 +217,15 @@ class Store:
                 "SELECT COUNT(*) FROM messages WHERE source=? AND conversation_id=?",
                 (conv.source.value, conv.conversation_id),
             ).fetchone()[0]
+
+            if replace_messages:
+                keep = [m.message_id for m in conv.messages]
+                placeholders = ",".join("?" * len(keep))
+                c.execute(
+                    "DELETE FROM messages WHERE source=? AND conversation_id=?"
+                    + (f" AND message_id NOT IN ({placeholders})" if keep else ""),
+                    (conv.source.value, conv.conversation_id, *keep),
+                )
 
             c.executemany(
                 """INSERT INTO messages
@@ -233,6 +250,31 @@ class Store:
             ).fetchone()[0]
 
         return after - before
+
+    def prune_conversations(self, source: Source, keep: set[str]) -> int:
+        """Drop conversations of `source` outside `keep`, with their messages.
+
+        Called after an ingest that saw the whole inbox, so anything staged that no longer
+        has a file behind it goes -- including rows left by the older id scheme, which put
+        the content digest in the id and so minted a fresh conversation every time a file
+        was rewritten. Extractions are keyed on conversation_id too and go with them.
+        """
+        if not keep:
+            return 0                    # never prune to nothing on an empty listing
+        placeholders = ",".join("?" * len(keep))
+        args = (source.value, *keep)
+        with self.tx() as c:
+            stale = [row[0] for row in c.execute(
+                f"SELECT conversation_id FROM conversations "
+                f"WHERE source=? AND conversation_id NOT IN ({placeholders})", args)]
+            if not stale:
+                return 0
+            marks = ",".join("?" * len(stale))
+            for table in ("messages", "extractions", "conversations"):
+                c.execute(f"DELETE FROM {table} WHERE source=? "
+                          f"AND conversation_id IN ({marks})", (source.value, *stale))
+        log.info("pruned %d conversation(s) with no file behind them", len(stale))
+        return len(stale)
 
     def save_extraction(self, res: ExtractionResult, content_hash: str) -> None:
         with self.tx() as c:

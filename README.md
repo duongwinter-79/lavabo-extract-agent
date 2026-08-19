@@ -213,6 +213,7 @@ decide what the order really was.
 | Rows nearly empty | extraction failed; run `lavabo inspect` (below) to see why |
 | "rate limited, retrying" | normal on the free tier, it waits and continues |
 | Orders missing from the export | the paste never reached them — see the day range it reports, scroll further up in Zalo and paste again |
+| Two rows for one order, same date and name, different addresses | a stale copy staged from before the file was rewritten. `lavabo ingest --source zalo` removes it and says how many it dropped |
 | "Có thể sót đơn — số thứ tự bị nhảy cách" | a `đơn N` is missing between two captured ones; scroll up and paste that stretch |
 | An order counted twice in the total | flagged `trùng số đơn` and tinted — delete the row you do not want |
 | A tinted row with no money | a second version of an order, kept for you to compare; it is deliberately not in the total |
