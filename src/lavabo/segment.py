@@ -235,10 +235,11 @@ def _header_agrees(header: str, day: int, month: int, number: int) -> bool:
             and ((day in values and month in values) or day == month))
 
 
-# Roughly what one order costs to describe in line numbers, measured from the schema:
-# two line numbers, three integers, a name and a couple of flags. Generous on purpose --
-# running out of output budget is the failure this exists to prevent.
-TOKENS_PER_ORDER = 60
+# Measured, not guessed: a real month of this chat -- ~900 lines, 69 orders -- answered in
+# 4,952 output tokens, so ~5.5 per input line. Doubled, because the cost of overshooting
+# is a few unused tokens while the cost of undershooting is a truncated answer, and a
+# truncated answer is what returned 1 order out of 69.
+TOKENS_PER_LINE = 12
 MIN_OUTPUT_TOKENS = 4096
 MAX_OUTPUT_TOKENS = 64_000
 
@@ -246,13 +247,11 @@ MAX_OUTPUT_TOKENS = 64_000
 def output_budget(lines: int) -> int:
     """How much room to give the answer, from the size of the question.
 
-    A month of this shop's chat is ~900 lines and ~70 orders. The configured max_tokens is
-    shared with field extraction, where 4096 is ample for one order -- and it silently is
-    not, here, for a whole month at once. Sizing it from the input is the only way this
-    scales with a chat that keeps growing.
+    The configured max_tokens is shared with field extraction, where 4096 is ample for one
+    order's fields -- and silently is not, here, for a whole month of them at once. Sizing
+    from the input is the only thing that keeps working as the chat grows.
     """
-    orders = max(1, lines // 8)                 # ~8 lines per order in this chat
-    return max(MIN_OUTPUT_TOKENS, min(MAX_OUTPUT_TOKENS, orders * TOKENS_PER_ORDER))
+    return max(MIN_OUTPUT_TOKENS, min(MAX_OUTPUT_TOKENS, lines * TOKENS_PER_LINE))
 
 
 def segment(completer: JsonCompleter, text: str, month: int, year: int) -> SegmentResult:
@@ -306,42 +305,55 @@ class Disagreement:
         return f"[{self.kind}] {where}: {self.detail}"
 
 
-def compare(ai: SegmentResult, regex_blocks: list[Any]) -> list[Disagreement]:
+def compare(ai: SegmentResult, regex_blocks: list[Any],
+            ai_blocks: list[Any] | None = None) -> list[Disagreement]:
     """What the model saw that the regexes did not, and the reverse.
 
-    Pure, and takes the regex blocks as plain objects with .key/.customer, so the whole
-    comparison is testable without a provider, a key, or a network.
+    `ai_blocks` is the model's answer AFTER conversion -- which is to say after the
+    deterministic day/month correction still runs over it. Compare without that and the
+    log reports differences that do not exist in what gets saved: the first good live run
+    showed "8/3 đơn 1" as an order the model missed and "3/8 đơn 1" as one it invented,
+    when they are the same order and the converted output already had it right. Reporting
+    a phantom `only_regex` is not a harmless inaccuracy -- that line is the one that is
+    supposed to stop the switch.
+
+    Pure, and takes both sides as plain objects with .key/.header, so the whole comparison
+    is testable without a provider, a key, or a network.
     """
     if not ai.ok:
         return [Disagreement("error", None, ai.error or "unknown")]
 
-    ai_by_key = {o.key: o for o in ai.orders}
+    ai_by_key = {b.key: b for b in (ai_blocks if ai_blocks is not None else ai.orders)}
     regex_by_key = {b.key: b for b in regex_blocks}
     out: list[Disagreement] = []
 
     for key in ai_by_key.keys() - regex_by_key.keys():
-        order = ai_by_key[key]
+        block = ai_by_key[key]
         out.append(Disagreement("only_ai", key,
-                                f"model found an order the splitter missed: {order.header!r}"))
+                                f"model found an order the splitter missed: {block.header!r}"))
     for key in regex_by_key.keys() - ai_by_key.keys():
         block = regex_by_key[key]
         out.append(Disagreement("only_regex", key,
                                 f"splitter found an order the model missed: {block.header!r}"))
 
-    for key, order in ai_by_key.items():
+    for key, block in ai_by_key.items():
         if key not in regex_by_key:
             continue
-        if order.updates:
-            confident = sum(1 for u in order.updates if u.confidence == "high")
+        updates = _updates_of(block)
+        if updates:
+            confident = sum(1 for text, confidence in updates if confidence == "high")
             out.append(Disagreement(
                 "extra_updates", key,
-                f"{len(order.updates)} revision(s) attached ({confident} high confidence): "
-                + " | ".join(u.text.replace("\n", " ⏎ ")[:70] for u in order.updates)))
-        if order.date_swapped != bool(getattr(regex_by_key[key], "date_swapped", False)):
-            out.append(Disagreement("date_swap", key,
-                                    f"model says swapped={order.date_swapped}, "
-                                    f"splitter says {bool(regex_by_key[key].date_swapped)}"))
+                f"{len(updates)} revision(s) attached ({confident} high confidence): "
+                + " | ".join(text.replace("\n", " ⏎ ")[:70] for text, _ in updates)))
     return out
+
+
+def _updates_of(block: Any) -> list[tuple[str, str]]:
+    """Revisions on either shape: a SegmentedOrder, or the OrderBlock it converts into."""
+    if hasattr(block, "ai_updates"):
+        return list(block.ai_updates)
+    return [(u.text, u.confidence) for u in getattr(block, "updates", [])]
 
 
 # Below this share of the splitter's orders, the model has not disagreed about a few

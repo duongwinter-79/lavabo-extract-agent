@@ -118,9 +118,9 @@ class OutputBudget(unittest.TestCase):
         self.assertGreater(month, small)
         self.assertGreaterEqual(small, segment.MIN_OUTPUT_TOKENS)
 
-    def test_a_real_month_gets_room_for_every_order(self):
-        """~900 lines and ~70 orders: the answer must fit, with margin."""
-        self.assertGreaterEqual(segment.output_budget(900), 70 * segment.TOKENS_PER_ORDER)
+    def test_a_real_month_gets_room_with_margin(self):
+        """A measured run: ~900 lines, 69 orders, 4,952 output tokens."""
+        self.assertGreaterEqual(segment.output_budget(900), 4952 * 1.5)
 
     def test_the_call_is_given_the_sized_budget_not_the_config_one(self):
         completer = FakeCompleter(payload={"orders": []})
@@ -171,6 +171,28 @@ class BlockConversion(unittest.TestCase):
 
 
 class Comparison(unittest.TestCase):
+    def test_a_date_the_deterministic_pass_fixes_is_not_a_disagreement(self):
+        """The model read "8/3" literally where the splitter swapped it to 3 August. Both
+        end up at 3/8 once converted, so the log must not report the order as missed by
+        one side and invented by the other -- only_regex is the line that stops a switch."""
+        chat = ("3/8 đơn 5 - Phương Phan\n1 tủ\nTổng 5.800\n"
+                "8/3 đơn 1 - hoài bùi\n1 lavabo\nTổng 2tr\n"
+                "3/8 đơn 2 - Nguyễn Tài Lợi\n1 sen\nTổng 3tr")
+        lines = chat.splitlines()
+        blocks = zc.split_orders(chat, target_month=8)
+        ai = segment.parse_response({"orders": [
+            {"header_line": 1, "end_line": 3, "day": 3, "month": 8, "order_number": 5},
+            {"header_line": 4, "end_line": 6, "day": 8, "month": 3, "order_number": 1},
+            {"header_line": 7, "end_line": 9, "day": 3, "month": 8, "order_number": 2},
+        ]}, lines)
+
+        raw = segment.compare(ai, blocks)
+        self.assertEqual(sorted(d.kind for d in raw), ["only_ai", "only_regex"])
+
+        converted = segment.compare(ai, blocks, zc.blocks_from_segments(ai, target_month=8))
+        self.assertEqual(converted, [])
+
+
     def test_orders_only_one_side_found_are_reported(self):
         blocks = zc.split_orders(CHAT, target_month=7)
         lines = LINES + ["16/7 đơn 2", "1 lavabo", "Tổng 2tr"]

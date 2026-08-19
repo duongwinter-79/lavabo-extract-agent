@@ -640,8 +640,14 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
 
     if mode in ("shadow", "on"):
         ai = segment.run(cfg, text, month, year)
-        findings = segment.compare(ai, blocks) if ai is not None else []
+        # Converted BEFORE comparing, so the log describes what would actually be saved.
+        # The deterministic day/month correction still runs over the model's answer, and
+        # comparing without it reported an order as both missed and invented when the
+        # converted output already had it right.
+        ai_blocks = (blocks_from_segments(ai, target_month=month)
+                     if ai is not None and ai.ok else [])
         if ai is not None:
+            findings = segment.compare(ai, blocks, ai_blocks)
             lines = [segment.summarise(ai, blocks, findings)] + [f"  {d}" for d in findings]
             segment.log_shadow(cfg.zalo.inbox_dir, lines)
             for line in lines:
@@ -651,8 +657,8 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
             # key, an empty answer -- any of these fall back to the regexes rather than
             # losing the paste, and the orders that came out of the fallback are flagged
             # so nobody has to remember which ones missed the better segmenter.
-            if ai is not None and ai.ok and ai.orders:
-                blocks = blocks_from_segments(ai, target_month=month)
+            if ai_blocks:
+                blocks = ai_blocks
             else:
                 fallback = True
                 print("  segmentation unavailable — dùng regex, đánh dấu "
