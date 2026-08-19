@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import zalo_capture as zc                                          # noqa: E402
 from lavabo import extras, flags, rawpaste, segment                # noqa: E402
+from lavabo.extract import base                                    # noqa: E402
 
 
 class FakeCompleter:
@@ -291,6 +292,96 @@ class SegmentationSetting(unittest.TestCase):
             finally:
                 settings_module.CONFIG_PATH = original
             self.assertEqual(Config.load(path).extract.ai_segmentation, "on")
+
+
+class Retrying(unittest.TestCase):
+    """A 503 matched none of the rate-limit patterns and was not retried at all, and the
+    Anthropic path had no retry of any kind. Either way a momentary provider hiccup
+    dropped a whole paste to the regex fallback, losing the revisions the model is for."""
+
+    class Clock:
+        """A fake sleep that advances a fake clock, so a deadline test proves something."""
+        def __init__(self):
+            self.t, self.waits = 0.0, []
+
+        def sleep(self, seconds):
+            self.waits.append(seconds)
+            self.t += seconds
+
+        def now(self):
+            return self.t
+
+    def test_provider_hiccups_are_retried(self):
+        for message in ("503 UNAVAILABLE: The model is overloaded",
+                        "529 overloaded_error", "500 INTERNAL", "502 Bad Gateway",
+                        "504 Deadline Exceeded", "ReadTimeout: timed out",
+                        "Connection reset by peer"):
+            with self.subTest(message):
+                self.assertTrue(base.is_transient(Exception(message)))
+
+    def test_quota_errors_are_told_apart_from_hiccups(self):
+        """They need different waits: a quota is a promise about the next minute, an
+        overload usually clears in seconds."""
+        self.assertTrue(base.is_rate_limit(Exception("429 RESOURCE_EXHAUSTED quota")))
+        self.assertFalse(base.is_rate_limit(Exception("503 unavailable")))
+
+    def test_a_bad_request_is_not_retried(self):
+        attempts = []
+
+        def bad():
+            attempts.append(1)
+            raise ValueError("400 INVALID_ARGUMENT: bad schema")
+
+        with self.assertRaises(ValueError):
+            base.retry_call(bad, sleep=lambda s: None)
+        self.assertEqual(len(attempts), 1)
+
+    def test_a_burst_of_503s_recovers(self):
+        attempts = []
+
+        def flaky():
+            attempts.append(1)
+            if len(attempts) < 3:
+                raise RuntimeError("503 UNAVAILABLE: model is overloaded")
+            return "answer"
+
+        clock = self.Clock()
+        self.assertEqual(
+            base.retry_call(flaky, sleep=clock.sleep, monotonic=clock.now), "answer")
+        self.assertEqual(len(attempts), 3)
+        self.assertLess(clock.t, 30, "an overload should not cost half a minute")
+
+    def test_an_overload_waits_far_less_than_a_quota(self):
+        totals = {}
+        for label, message in (("quota", "429 quota exceeded"),
+                               ("overload", "503 unavailable")):
+            clock = self.Clock()
+            with self.assertRaises(RuntimeError):
+                base.retry_call(
+                    lambda: (_ for _ in ()).throw(RuntimeError(message)),
+                    sleep=clock.sleep, monotonic=clock.now)
+            totals[label] = clock.t
+        self.assertGreater(totals["quota"], totals["overload"] * 5)
+
+    def test_the_deadline_is_respected_not_merely_checked(self):
+        """Segmentation runs while somebody waits for Lưu đơn, so it must not spin for
+        the five minutes extraction is allowed."""
+        clock = self.Clock()
+        with self.assertRaises(RuntimeError):
+            base.retry_call(
+                lambda: (_ for _ in ()).throw(RuntimeError("429 quota exceeded")),
+                deadline_seconds=90, sleep=clock.sleep, monotonic=clock.now)
+        self.assertLessEqual(clock.t, 90)
+
+    def test_extraction_keeps_trying_for_minutes(self):
+        """No deadline: nobody is watching a batch, and a retry is cheaper than a blank
+        column somebody has to notice."""
+        clock = self.Clock()
+        with self.assertRaises(RuntimeError):
+            base.retry_call(
+                lambda: (_ for _ in ()).throw(RuntimeError("429 quota exceeded")),
+                sleep=clock.sleep, monotonic=clock.now)
+        self.assertGreater(clock.t, 240)
 
 
 class MoneyNeverMoves(unittest.TestCase):

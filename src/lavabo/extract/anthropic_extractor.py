@@ -15,6 +15,10 @@ from .prompt import PROMPT_VERSION, SYSTEM, build_user_prompt
 
 log = logging.getLogger(__name__)
 
+# Segmentation runs while somebody waits for "Lưu đơn" to come back; extraction runs in a
+# batch nobody is watching. See base.retry_call.
+SEGMENT_DEADLINE_SECONDS = 90
+
 
 class AnthropicExtractor(Extractor):
     API_KEY_VARS = ("ANTHROPIC_API_KEY",)
@@ -66,27 +70,32 @@ class AnthropicExtractor(Extractor):
             prompt_version=PROMPT_VERSION,
         )
 
+        # Retried on rate limits and provider hiccups alike. This had no retry at all:
+        # a single 529/503 lost the order's AI columns, and on the segmentation path it
+        # dropped a whole paste to the regex fallback.
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=self.config.max_tokens,
-                temperature=self.config.temperature,
-                system=SYSTEM,
-                tools=[{
-                    "name": TOOL_NAME,
-                    "description": TOOL_DESCRIPTION,
-                    "input_schema": self.schema.json_schema(),
-                }],
-                tool_choice={"type": "tool", "name": TOOL_NAME},
-                messages=[{
-                    "role": "user",
-                    "content": build_user_prompt(
-                        conv, self.schema,
-                        max_chars=self.config.max_transcript_chars,
-                        display_timezone=self.config.display_timezone,
-                    ),
-                }],
-            )
+            response = retry_call(
+                lambda: self.client.messages.create(
+                    model=self.model,
+                    max_tokens=self.config.max_tokens,
+                    temperature=self.config.temperature,
+                    system=SYSTEM,
+                    tools=[{
+                        "name": TOOL_NAME,
+                        "description": TOOL_DESCRIPTION,
+                        "input_schema": self.schema.json_schema(),
+                    }],
+                    tool_choice={"type": "tool", "name": TOOL_NAME},
+                    messages=[{
+                        "role": "user",
+                        "content": build_user_prompt(
+                            conv, self.schema,
+                            max_chars=self.config.max_transcript_chars,
+                            display_timezone=self.config.display_timezone,
+                        ),
+                    }],
+                ),
+                what=f"extract {conv.conversation_id}")
         except Exception as exc:
             log.error("extraction failed for %s: %s", conv.conversation_id, exc)
             result.error = f"{type(exc).__name__}: {exc}"
@@ -118,19 +127,21 @@ class AnthropicExtractor(Extractor):
         from ..segment import Completion
 
         tool_name = "record_segmentation"
-        response = self.client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens or self.config.max_tokens,
-            temperature=self.config.temperature,
-            system=system,
-            tools=[{
-                "name": tool_name,
-                "description": "Record the orders found in this chat.",
-                "input_schema": schema,
-            }],
-            tool_choice={"type": "tool", "name": tool_name},
-            messages=[{"role": "user", "content": user}],
-        )
+        response = retry_call(
+            lambda: self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens or self.config.max_tokens,
+                temperature=self.config.temperature,
+                system=system,
+                tools=[{
+                    "name": tool_name,
+                    "description": "Record the orders found in this chat.",
+                    "input_schema": schema,
+                }],
+                tool_choice={"type": "tool", "name": tool_name},
+                messages=[{"role": "user", "content": user}],
+            ),
+            what="segmentation", deadline_seconds=SEGMENT_DEADLINE_SECONDS)
         for block in response.content:
             if block.type == "tool_use" and block.name == tool_name:
                 return Completion(block.input,

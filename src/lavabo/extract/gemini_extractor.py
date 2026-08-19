@@ -9,22 +9,17 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 
 from ..models import Conversation, ExtractionResult
-from .base import Extractor
+from .base import Extractor, retry_call
 from .prompt import PROMPT_VERSION, SYSTEM, build_user_prompt
 
 log = logging.getLogger(__name__)
 
-MAX_RETRIES = 5
-RETRY_BASE_SECONDS = 20     # free-tier quotas are per-minute, so waits need to be long
-
-
-def _is_rate_limit(exc: Exception) -> bool:
-    text = f"{type(exc).__name__} {exc}".lower()
-    return any(m in text for m in ("429", "resource_exhausted", "resourceexhausted",
-                                   "rate limit", "quota"))
+# Segmentation runs while somebody waits for "Lưu đơn" to come back, so it is bounded far
+# more tightly than extraction, which runs in a batch nobody is watching. The paste is
+# already on disk, so giving up here costs a re-run and never the text.
+SEGMENT_DEADLINE_SECONDS = 90
 
 
 def _is_unknown_model(exc: Exception) -> bool:
@@ -144,7 +139,7 @@ class GeminiExtractor(Extractor):
         )
 
         try:
-            response = self._generate(request)
+            response = self._generate(request, what=f"extract {conv.conversation_id}")
         except Exception as exc:
             log.error("extraction failed for %s: %s", conv.conversation_id, exc)
             result.error = f"{type(exc).__name__}: {exc}"
@@ -165,24 +160,16 @@ class GeminiExtractor(Extractor):
 
         return result
 
-    def _generate(self, request: dict):
-        """One call, waiting out rate limits. Raises on anything it cannot retry.
+    def _generate(self, request: dict, *, what: str = "gemini",
+                  deadline_seconds: float | None = None):
+        """One call, waiting out rate limits and provider hiccups.
 
-        The free tier allows only a handful of requests per minute, so a 429 is an
-        expected part of normal operation rather than a failure.
+        Both happen in normal operation here: the free tier allows only a handful of
+        requests per minute, and 503 "the model is overloaded" arrives under no load at
+        all. Neither is a reason to lose a capture.
         """
-        for attempt in range(MAX_RETRIES):
-            try:
-                return self.client.models.generate_content(**request)
-            except Exception as exc:
-                if _is_rate_limit(exc) and attempt < MAX_RETRIES - 1:
-                    wait = RETRY_BASE_SECONDS * (2 ** attempt)
-                    log.warning("rate limited (free tier?), retrying in %ss [%d/%d]",
-                                wait, attempt + 1, MAX_RETRIES - 1)
-                    time.sleep(wait)
-                    continue
-                raise
-        raise RuntimeError("no response after retries")
+        return retry_call(lambda: self.client.models.generate_content(**request),
+                          what=what, deadline_seconds=deadline_seconds)
 
     def complete_json(self, system: str, user: str, schema: dict,
                       *, max_tokens: int = 0):
@@ -205,7 +192,7 @@ class GeminiExtractor(Extractor):
                 "response_mime_type": "application/json",
                 "response_schema": _to_gemini_schema(schema),
             },
-        ))
+        ), what="segmentation", deadline_seconds=SEGMENT_DEADLINE_SECONDS)
         usage = getattr(response, "usage_metadata", None)
         candidates = getattr(response, "candidates", None) or []
         finish = getattr(candidates[0], "finish_reason", "") if candidates else ""
