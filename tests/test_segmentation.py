@@ -145,6 +145,47 @@ class Sidecars(unittest.TestCase):
         self.assertNotIn(self.inbox, rawpaste.store_dir(self.inbox).parents)
 
 
+class SegmentationSetting(unittest.TestCase):
+    """The setting is chosen in the UI but lives in a YAML file people also hand-edit."""
+
+    def test_yaml_turns_bare_on_and_off_into_booleans(self):
+        """The trap this guards. If it ever stops being true, the coercion is dead code
+        rather than a silent bug waiting -- so assert the premise, not just the fix."""
+        import yaml
+        self.assertIs(yaml.safe_load("x: on")["x"], True)
+        self.assertIs(yaml.safe_load("x: off")["x"], False)
+
+    def test_a_hand_written_mode_survives_that(self):
+        from lavabo.config import _segmentation_mode
+        self.assertEqual(_segmentation_mode(True), "on")
+        self.assertEqual(_segmentation_mode(False), "off")
+        self.assertEqual(_segmentation_mode("shadow"), "shadow")
+        self.assertEqual(_segmentation_mode(" ON "), "on")
+
+    def test_an_unrecognised_value_does_not_read_as_deliberate(self):
+        from lavabo.config import _segmentation_mode
+        with self.assertLogs("lavabo.config", level="WARNING"):
+            self.assertEqual(_segmentation_mode("maybe"), "off")
+
+    def test_the_loader_and_the_settings_screen_agree(self):
+        """They read the same file by different paths, and a screen showing "off" while
+        capture runs the model would be worse than either being wrong alone."""
+        import lavabo.settings as settings_module
+        from lavabo.config import Config
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "config.yaml"
+            path.write_text("extract:\n  provider: gemini\n  ai_segmentation: on\n",
+                            encoding="utf-8")
+            original = settings_module.CONFIG_PATH
+            settings_module.CONFIG_PATH = path
+            try:
+                self.assertEqual(settings_module.read_settings()["segmentation"], "on")
+            finally:
+                settings_module.CONFIG_PATH = original
+            self.assertEqual(Config.load(path).extract.ai_segmentation, "on")
+
+
 class MoneyNeverMoves(unittest.TestCase):
     """The one invariant worth more than all the others: a revision is shown, never
     applied. The shop reconciles totals by hand against its own workbook."""

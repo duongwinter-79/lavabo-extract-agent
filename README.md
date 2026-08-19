@@ -247,6 +247,7 @@ python scripts/zalo_capture.py --debug     # explain what was accepted or reject
 
 ### Who splits the paste into orders
 
+Set it in the gear screen under **Ai tách tin nhắn thành đơn**, or as
 `extract.ai_segmentation` in `config/config.yaml`:
 
 | | |

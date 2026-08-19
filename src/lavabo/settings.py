@@ -25,7 +25,7 @@ from typing import Any
 
 import yaml
 
-from .config import REPO_ROOT, Config, _read_yaml
+from .config import REPO_ROOT, Config, _read_yaml, _segmentation_mode
 from .extract.base import extractor_class
 
 log = logging.getLogger(__name__)
@@ -34,6 +34,10 @@ CONFIG_PATH = REPO_ROOT / "config" / "config.yaml"
 ENV_PATH = REPO_ROOT / ".env"
 
 PROVIDERS = ("gemini", "anthropic")
+# Who splits a paste into orders -- see src/lavabo/segment.py. Exposed here because the
+# choice has a running cost the operator is the one to weigh: off is free and needs no
+# key, while shadow and on spend a call per paste and stop capture working offline.
+SEGMENTATION_MODES = ("off", "shadow", "on")
 HEADER = "# Written by the Lavabo settings screen. Safe to edit by hand.\n"
 
 
@@ -121,9 +125,15 @@ def read_settings() -> dict[str, Any]:
     extract = data.get("extract") or {}
     app = data.get("app") or {}
     cfg_defaults = Config()
+    # Through the same coercion the loader uses, so a hand-written `ai_segmentation: on`
+    # -- which YAML hands over as the boolean True -- shows on the screen as the mode the
+    # file plainly says, rather than silently reading as "off".
+    mode = (_segmentation_mode(extract["ai_segmentation"])
+            if "ai_segmentation" in extract else cfg_defaults.extract.ai_segmentation)
     return {
         "provider": str(extract.get("provider") or cfg_defaults.extract.provider),
         "model": str(extract.get("model") or cfg_defaults.extract.model),
+        "segmentation": mode,
         "workbook": str(app.get("workbook") or ""),
         "closer": str(app.get("closer") or ""),
         "keys": all_key_status(),
@@ -131,7 +141,7 @@ def read_settings() -> dict[str, Any]:
 
 
 def write_settings(*, provider: str, model: str, api_key: str,
-                   workbook: str, closer: str) -> list[str]:
+                   workbook: str, closer: str, segmentation: str = "") -> list[str]:
     """Persist the screen's fields. Returns warnings worth showing, never raises for
     a merely questionable value — the operator can save a path before creating the file."""
     if provider not in PROVIDERS:
@@ -146,6 +156,11 @@ def write_settings(*, provider: str, model: str, api_key: str,
         data["extract"]["model"] = model
     else:
         warnings.append("Chưa chọn model — giữ nguyên model cũ.")
+
+    if segmentation:
+        if segmentation not in SEGMENTATION_MODES:
+            raise ValueError(f"chế độ tách đơn không hợp lệ: {segmentation!r}")
+        data["extract"]["ai_segmentation"] = segmentation
 
     workbook = workbook.strip()
     if workbook and not Path(workbook).expanduser().exists():
@@ -170,6 +185,16 @@ def write_settings(*, provider: str, model: str, api_key: str,
         warnings.append(f"Chưa có API key cho {provider} — trích xuất sẽ báo lỗi.")
     elif status["problem"]:
         warnings.append(status["problem"])
+
+    # Worth saying at the moment of choosing rather than discovering a week later: these
+    # modes move an API call into the paste itself, which until now was local and free.
+    if segmentation in ("shadow", "on") and not status["ok"]:
+        warnings.append(
+            "Chế độ tách đơn cần API key hoạt động. Chưa có key thì lưu đơn vẫn chạy "
+            + ("bằng quy tắc cũ." if segmentation == "shadow"
+               else 'bằng quy tắc cũ và đơn sẽ bị đánh dấu "chưa qua AI".'))
+    elif segmentation == "on":
+        warnings.append("Từ giờ mỗi lần dán sẽ gọi AI một lần để tách đơn.")
 
     return warnings
 

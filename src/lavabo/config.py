@@ -38,6 +38,36 @@ def _read_yaml(path: Path) -> dict[str, Any]:
                     "  Use forward slashes — C:/Users/You/file.xlsx — or 'single quotes'.")
         raise ValueError(f"{path.name} is not valid YAML{where}.{hint}") from None
 
+SEGMENTATION_MODES = ("off", "shadow", "on")
+
+
+def _segmentation_mode(value: Any) -> str:
+    """Read ai_segmentation, surviving YAML's opinion about the words "on" and "off".
+
+    YAML 1.1 -- which PyYAML implements -- resolves bare `on` to True and `off` to False.
+    So a perfectly natural hand edit,
+
+        ai_segmentation: on
+
+    arrives here as the boolean True, matches none of the mode names, and would silently
+    leave segmentation switched off while the file plainly says it is on. That is the
+    exact failure this whole feature exists to stamp out, so the booleans are accepted as
+    the words they were written as. An unrecognised value warns rather than passing
+    through, since a typo must not read as a deliberate "off".
+    """
+    if isinstance(value, bool):
+        return "on" if value else "off"
+    text = str(value or "").strip().lower()
+    if text in SEGMENTATION_MODES:
+        return text
+    if text:
+        import logging
+        logging.getLogger(__name__).warning(
+            "ai_segmentation: %r is not one of %s — treating it as 'off'",
+            value, ", ".join(SEGMENTATION_MODES))
+    return "off"
+
+
 JSON_TYPES = {"string": "string", "number": "number", "integer": "integer",
               "boolean": "boolean", "date": "string", "array": "array"}
 
@@ -225,6 +255,9 @@ class Config:
                 z["inbox_dir"] = Path(z["inbox_dir"])
             cfg.zalo = ZaloConfig(**z)
         if e := data.get("extract"):
+            e = dict(e)
+            if "ai_segmentation" in e:
+                e["ai_segmentation"] = _segmentation_mode(e["ai_segmentation"])
             cfg.extract = ExtractConfig(**e)
         for key in ("db_path", "output_dir", "schema_path"):
             if key in data:

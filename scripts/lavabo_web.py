@@ -224,6 +224,7 @@ class Handler(BaseHTTPRequestHandler):
                     api_key=str(body.get("api_key") or ""),
                     workbook=str(body.get("workbook") or ""),
                     closer=str(body.get("closer") or ""),
+                    segmentation=str(body.get("segmentation") or ""),
                 )
                 self._reload()
         except Exception as exc:

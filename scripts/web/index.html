@@ -234,6 +234,22 @@
   </div>
 
   <div class="card">
+    <h2>Ai tách tin nhắn thành đơn</h2>
+    <p class="sub">Việc tìm ra chỗ bắt đầu và kết thúc của mỗi đơn, và tin nhắn sửa đơn
+      nào thuộc về đơn nào.</p>
+
+    <div class="field">
+      <label class="lbl" id="segLbl">Chế độ</label>
+      <div class="seg" role="group" aria-labelledby="segLbl">
+        <button type="button" data-seg="off">Quy tắc cũ</button>
+        <button type="button" data-seg="shadow">Chạy thử AI</button>
+        <button type="button" data-seg="on">Dùng AI</button>
+      </div>
+      <div class="hint" id="segHint"></div>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>File và tên mặc định</h2>
     <div class="field">
       <label class="lbl" for="workbook">File quản lý (.xlsx)</label>
@@ -537,6 +553,29 @@ function setProvider(name) {
 for (const b of document.querySelectorAll('.seg [data-provider]'))
   b.onclick = () => { setProvider(b.dataset.provider); refreshKeyState(); };
 
+/* Who splits a paste into orders. Worth its own control rather than a YAML edit: the
+   three modes differ in what they COST, not just in quality -- "Quy tắc cũ" needs no
+   key and works offline, the other two spend one API call on every paste. */
+let segmentation = 'off';
+const SEG_HINTS = {
+  off:    'Dùng quy tắc có sẵn. Nhanh, miễn phí, không cần key, không cần mạng.',
+  shadow: 'Chạy cả hai và ghi lại chỗ khác nhau vào data/inbox/raw/zalo/shadow.log — '
+        + 'nhưng vẫn LƯU THEO QUY TẮC CŨ. Dùng để xem AI có tốt hơn không trước khi giao '
+        + 'việc cho nó. Mỗi lần dán tốn 1 lượt gọi AI.',
+  on:     'AI quyết định. Quy tắc cũ vẫn chạy để đối chiếu, và thay thế khi gọi AI lỗi — '
+        + 'những đơn đó bị đánh dấu "chưa qua AI" cho tới khi dán lại thành công. '
+        + 'Mỗi lần dán tốn 1 lượt gọi AI.',
+};
+
+function setSegmentation(mode) {
+  segmentation = SEG_HINTS[mode] ? mode : 'off';
+  for (const b of document.querySelectorAll('.seg [data-seg]'))
+    b.setAttribute('aria-pressed', String(b.dataset.seg === segmentation));
+  $('segHint').textContent = SEG_HINTS[segmentation];
+}
+for (const b of document.querySelectorAll('.seg [data-seg]'))
+  b.onclick = () => setSegmentation(b.dataset.seg);
+
 $('keyToggle').onclick = () => {
   const f = $('apiKey');
   f.type = f.type === 'password' ? 'text' : 'password';
@@ -561,6 +600,7 @@ async function loadSettings() {
     const s = await api('/api/settings');
     keyStatus = s.keys;
     setProvider(s.provider);
+    setSegmentation(s.segmentation);
     $('model').value = s.model;
     $('workbook').value = s.workbook;
     $('defCloser').value = s.closer;
@@ -616,6 +656,7 @@ $('settingsSave').onclick = async () => {
         api_key: $('apiKey').value,          // blank means "leave the stored key alone"
         workbook: $('workbook').value.trim(),
         closer: $('defCloser').value.trim(),
+        segmentation,
       }),
     });
     $('apiKey').value = '';
