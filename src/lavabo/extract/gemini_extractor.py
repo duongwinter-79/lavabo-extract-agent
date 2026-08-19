@@ -21,6 +21,11 @@ log = logging.getLogger(__name__)
 # already on disk, so giving up here costs a re-run and never the text.
 SEGMENT_DEADLINE_SECONDS = 90
 
+# Reading a month of frames is a batch job started from a laptop, not something anybody
+# waits on with a phone in their hand, and it is far too expensive to abandon over one
+# rate limit.
+VIDEO_DEADLINE_SECONDS = 600
+
 
 def _is_unknown_model(exc: Exception) -> bool:
     text = str(exc).lower()
@@ -193,6 +198,41 @@ class GeminiExtractor(Extractor):
                 "response_schema": _to_gemini_schema(schema),
             },
         ), what="segmentation", deadline_seconds=SEGMENT_DEADLINE_SECONDS)
+        usage = getattr(response, "usage_metadata", None)
+        candidates = getattr(response, "candidates", None) or []
+        finish = getattr(candidates[0], "finish_reason", "") if candidates else ""
+        return Completion(
+            json.loads(response.text),
+            getattr(usage, "prompt_token_count", 0) or 0,
+            getattr(usage, "candidates_token_count", 0) or 0,
+            str(getattr(finish, "name", finish) or ""),
+        )
+
+    def complete_json_images(self, system: str, user: str, images: list[bytes],
+                             schema: dict, *, max_tokens: int = 0,
+                             mime_type: str = "image/png"):
+        """Structured JSON from a prompt plus a series of images.
+
+        Frames are sent as inline parts in order, because their ORDER is information: the
+        prompt tells the model frame 1 is earliest, and an order clipped at a frame edge is
+        whole in the next one.
+        """
+        from ..segment import Completion
+
+        parts = [{"text": user}]
+        parts += [{"inline_data": {"mime_type": mime_type, "data": image}}
+                  for image in images]
+        response = self._generate(dict(
+            model=self.model,
+            contents=[{"role": "user", "parts": parts}],
+            config={
+                "system_instruction": system,
+                "temperature": self.config.temperature,
+                "max_output_tokens": max_tokens or self.config.max_tokens,
+                "response_mime_type": "application/json",
+                "response_schema": _to_gemini_schema(schema),
+            },
+        ), what="video segmentation", deadline_seconds=VIDEO_DEADLINE_SECONDS)
         usage = getattr(response, "usage_metadata", None)
         candidates = getattr(response, "candidates", None) or []
         finish = getattr(candidates[0], "finish_reason", "") if candidates else ""

@@ -667,6 +667,25 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
     if not blocks:
         return CaptureResult(0, 0, 0, [], 0, 0)
 
+    return save_blocks(blocks, cfg, month, year, all_months=all_months, trim=trim,
+                       closer=closer, fallback=fallback)
+
+
+def save_blocks(blocks: list[OrderBlock], cfg, month: int, year: int, *,
+                all_months: bool, trim: bool = True, closer: str | None = None,
+                fallback: bool = False,
+                extra_flags: tuple[str, ...] = ()) -> CaptureResult:
+    """Save order blocks, wherever they came from.
+
+    Split out of handle_orders so a screen recording reaches exactly this code. The
+    blocks arrive differently -- pasted text split by regex or by model, or transcribed
+    off video frames -- but what happens to them afterwards must not differ at all:
+    the same dedupe on (day, month, số đơn), the same merge that prefers a fuller
+    capture, the same closer and revision sidecars, the same month filter.
+
+    `extra_flags` marks every order this batch produced, for a source that needs
+    declaring -- video-read orders carry a transcription risk that pasted text does not.
+    """
     wanted = blocks if all_months else [b for b in blocks if in_month(b, month, year)]
     skipped_month = len(blocks) - len(wanted)
     date_swaps = [f"{b.original_header} → {b.day}/{b.month}" for b in blocks if b.date_swapped]
@@ -677,11 +696,14 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
     saved = duplicates = trimmed_lines = versions = updates = 0
 
     inbox = cfg.zalo.inbox_dir
+    mode = getattr(cfg.extract, "ai_segmentation", "off")
 
     def note_order(path: Path, revisions: list[tuple[str, str]]) -> int:
         """Record everything held beside an order rather than inside it. Returns how
         many revisions were new, so the counts stay honest across both save paths."""
         closers.record(inbox, path.name, closer)
+        for flag in extra_flags:
+            flags.record(inbox, path.name, flag)
         if fallback:
             flags.record(inbox, path.name, flags.NO_AI)
         elif mode == "on":

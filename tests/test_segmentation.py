@@ -294,6 +294,93 @@ class SegmentationSetting(unittest.TestCase):
             self.assertEqual(Config.load(path).extract.ai_segmentation, "on")
 
 
+class OneBodyOfKnowledge(unittest.TestCase):
+    """Text and video are two ways in for the same shop. What an order looks like must be
+    stated once: two copies means fixing every future discovery twice, and finding out
+    later that one copy was missed."""
+
+    def test_both_prompts_carry_the_same_shop_context(self):
+        from lavabo.extract.prompt import ORDER_CONTEXT, build_segment_prompt, build_video_prompt
+
+        shared = ORDER_CONTEXT.format(month=7, year=2026)
+        text_system = build_segment_prompt("13/7 đơn 5", 7, 2026)[0]
+        video_system = build_video_prompt(12, 7, 2026)[0]
+        self.assertIn(shared, text_system)
+        self.assertIn(shared, video_system)
+
+    def test_the_hard_won_details_reach_the_video_path(self):
+        """Each of these cost a real bug on the text path."""
+        from lavabo.extract.prompt import build_video_prompt
+
+        system = build_video_prompt(12, 7, 2026)[0]
+        for detail in ("gương cộc",             # a mirror, not a deposit
+                       "(Trần Thị Liên)",        # bracketed header form
+                       "8th of March",           # day-first dates
+                       "1tr8"):                  # money as written, never converted
+            with self.subTest(detail):
+                self.assertIn(detail, system)
+
+    def test_only_the_answer_contract_differs(self):
+        from lavabo.extract.prompt import build_segment_prompt, build_video_prompt
+
+        text_system = build_segment_prompt("13/7 đơn 5", 7, 2026)[0]
+        video_system = build_video_prompt(12, 7, 2026)[0]
+        self.assertIn("ONLY in line numbers", text_system)
+        self.assertNotIn("ONLY in line numbers", video_system)
+        self.assertIn("TRANSCRIBE", video_system)
+        self.assertNotIn("TRANSCRIBE", text_system)
+
+
+class ReadingFromVideo(unittest.TestCase):
+    def _order(self, frame, day, number, body, partial=False):
+        return {"frame": frame, "header": body.splitlines()[0], "day": day, "month": 8,
+                "order_number": number, "body": body, "partial": partial}
+
+    def test_the_same_order_filmed_repeatedly_is_one_order(self):
+        """Consecutive frames overlap by design, so the model is told to report an order
+        every time it sees it. Reconciling that is arithmetic, not judgement."""
+        body = "15/8 đơn 1 - Meloxicam\n1 tủ BC52\nTổng 29tr"
+        result = segment.parse_video_response({"orders": [
+            self._order(1, 15, 1, body), self._order(2, 15, 1, body),
+            self._order(3, 15, 1, body)]})
+        self.assertEqual(len(result.orders), 1)
+
+    def test_an_order_clipped_by_a_frame_edge_loses_to_the_whole_one(self):
+        clipped = "15/8 đơn 1 - Meloxicam\n1 tủ BC52"
+        whole = "15/8 đơn 1 - Meloxicam\n1 tủ BC52\nTổng 29tr\nĐã cọc 500k"
+        for order in ([self._order(1, 15, 1, clipped, partial=True),
+                       self._order(2, 15, 1, whole)],
+                      [self._order(1, 15, 1, whole),
+                       self._order(2, 15, 1, clipped, partial=True)]):
+            with self.subTest(first=order[0]["partial"]):
+                result = segment.parse_video_response({"orders": order})
+                self.assertEqual(len(result.orders), 1)
+                self.assertEqual(result.orders[0].body, whole)
+
+    def test_a_clipped_order_is_kept_when_nothing_better_exists(self):
+        """Half an order is worth reviewing; it just must not beat the whole one."""
+        clipped = "15/8 đơn 1 - Meloxicam\n1 tủ BC52"
+        result = segment.parse_video_response(
+            {"orders": [self._order(1, 15, 1, clipped, partial=True)]})
+        self.assertEqual(len(result.orders), 1)
+
+    def test_an_unusable_row_costs_one_order_not_the_recording(self):
+        result = segment.parse_video_response({"orders": [
+            self._order(1, 15, 1, "15/8 đơn 1\nTổng 2tr"), {"frame": 2}]})
+        self.assertEqual(len(result.orders), 1)
+        self.assertEqual(result.rejected, 1)
+
+    def test_a_failed_call_never_raises(self):
+        class Boom:
+            def complete_json_images(self, *a, **k):
+                raise RuntimeError("503 unavailable")
+        result = segment.segment_video(Boom(), [b"x"], 8, 2026)
+        self.assertFalse(result.ok)
+
+    def test_no_frames_is_an_error_not_a_call(self):
+        self.assertFalse(segment.segment_video(None, [], 8, 2026).ok)
+
+
 class Retrying(unittest.TestCase):
     """A 503 matched none of the rate-limit patterns and was not retried at all, and the
     Anthropic path had no retry of any kind. Either way a momentary provider hiccup

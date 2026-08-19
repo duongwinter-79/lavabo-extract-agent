@@ -26,6 +26,14 @@ VERSION = 1
 # closed-phrase weaknesses the model exists to fix were in play for this one.
 NO_AI = "chưa qua AI"
 
+# Read off a phone screen recording rather than from copied text. The text path can hand
+# the model line numbers and slice the words out of the paste itself, so what is saved is
+# the shop's own characters by construction. A photograph has no line numbers, so the model
+# transcribes -- and a transcription can be subtly wrong in the one place it matters, since
+# "5.800" and "5.800.000" differ by a dot. Not an error, and not a reason to refuse the
+# order; a reason for somebody to compare the total against the message once.
+FROM_VIDEO = "từ video — cần đối chiếu"
+
 
 def sidecar_path(inbox: Path) -> Path:
     return inbox / SIDECAR

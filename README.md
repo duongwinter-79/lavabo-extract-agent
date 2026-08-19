@@ -255,6 +255,11 @@ all, and whether any stretch scrolled further than a screen between frames — w
 lose orders with nothing to show they were missed. Bad stretches are reported as
 timestamps to re-record.
 
+Reading uses the same instructions as the paste box — one description of what an order
+looks like, two ways of answering. Orders read from video are marked
+`từ video — cần đối chiếu`, because a photograph has to be transcribed while pasted text
+is sliced out exactly.
+
 Set up a fixed-distance swipe first (AssistiveTouch or Switch Control on iPhone) — see
 [docs/10-setup-guide.md](docs/10-setup-guide.md#capturing-on-a-phone--screen-recording).
 Swipe half a screen, pause a second, repeat.

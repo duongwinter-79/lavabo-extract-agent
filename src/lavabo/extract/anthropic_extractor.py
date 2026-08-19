@@ -19,6 +19,9 @@ log = logging.getLogger(__name__)
 # batch nobody is watching. See base.retry_call.
 SEGMENT_DEADLINE_SECONDS = 90
 
+# A batch job on a laptop, not something anyone waits on. See the Gemini one.
+VIDEO_DEADLINE_SECONDS = 600
+
 
 class AnthropicExtractor(Extractor):
     API_KEY_VARS = ("ANTHROPIC_API_KEY",)
@@ -149,6 +152,43 @@ class AnthropicExtractor(Extractor):
                                   response.usage.output_tokens,
                                   # Named to match Gemini's, so the caller's truncation
                                   # check does not need to know which provider answered.
+                                  "MAX_TOKENS" if response.stop_reason == "max_tokens"
+                                  else str(response.stop_reason or ""))
+        raise RuntimeError(
+            f"model returned no {tool_name} tool call (stop_reason={response.stop_reason})")
+
+    def complete_json_images(self, system: str, user: str, images: list[bytes],
+                             schema: dict, *, max_tokens: int = 0,
+                             mime_type: str = "image/png"):
+        """Structured JSON from a prompt plus a series of images, via a forced tool call."""
+        import base64
+
+        from ..segment import Completion
+
+        tool_name = "record_segmentation"
+        content: list[dict] = [{"type": "text", "text": user}]
+        content += [{"type": "image",
+                     "source": {"type": "base64", "media_type": mime_type,
+                                "data": base64.b64encode(image).decode("ascii")}}
+                    for image in images]
+        response = retry_call(
+            lambda: self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens or self.config.max_tokens,
+                temperature=self.config.temperature,
+                system=system,
+                tools=[{"name": tool_name,
+                        "description": "Record the orders visible in these frames.",
+                        "input_schema": schema}],
+                tool_choice={"type": "tool", "name": tool_name},
+                messages=[{"role": "user", "content": content}],
+            ),
+            what="video segmentation", deadline_seconds=VIDEO_DEADLINE_SECONDS)
+        for block in response.content:
+            if block.type == "tool_use" and block.name == tool_name:
+                return Completion(block.input,
+                                  response.usage.input_tokens,
+                                  response.usage.output_tokens,
                                   "MAX_TOKENS" if response.stop_reason == "max_tokens"
                                   else str(response.stop_reason or ""))
         raise RuntimeError(

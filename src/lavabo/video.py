@@ -411,3 +411,34 @@ def estimated_tokens(report: Report, *, tokens_per_tile: int = 258,
     tiles = 1 if (width <= 384 and height <= 384) else (
         math.ceil(width / tile) * math.ceil(height / tile))
     return len(report.kept) * tiles * tokens_per_tile
+
+
+def frame_at(path: Path, seconds: float, out: Path) -> Path | None:
+    """One full-size frame, seeked to directly. None if ffmpeg produced nothing."""
+    subprocess.run(
+        [ffmpeg_path(), "-loglevel", "error", "-ss", f"{seconds:.3f}", "-i", str(path),
+         "-frames:v", "1", "-y", str(out)],
+        check=False, capture_output=True)
+    return out if out.exists() and out.stat().st_size else None
+
+
+def kept_frames(path: Path, report: Report) -> list[bytes]:
+    """The chosen frames, full size, as PNG bytes in time order.
+
+    Seeked one at a time rather than dumping every frame at full size first: a two-minute
+    recording at the sampling rate is over a thousand frames, and writing them all to reach
+    the hundred that were chosen would put a third of a gigabyte through a shop laptop's
+    disk for nothing.
+
+    Full size on purpose -- the shrunken copies exist to be measured, and reading small
+    text off them is exactly what must not happen.
+    """
+    out: list[bytes] = []
+    with tempfile.TemporaryDirectory(prefix="lavabo-frames-") as tmp:
+        for index, seconds in enumerate(report.kept_seconds):
+            target = Path(tmp) / f"k{index:05d}.png"
+            if frame_at(path, seconds, target):
+                out.append(target.read_bytes())
+            else:
+                log.warning("could not read the frame at %.1fs", seconds)
+    return out

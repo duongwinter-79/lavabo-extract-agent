@@ -207,6 +207,9 @@
     </div>
     <button id="videoCheck" class="ghost">Kiểm tra video</button>
     <div id="m4" role="status" aria-live="polite"></div>
+    <button id="videoRead" hidden>Đọc đơn từ video</button>
+    <div class="hint" id="videoReadHint" hidden></div>
+    <div id="m5" role="status" aria-live="polite"></div>
   </div>
 
 <!-- ======================================================== settings view -->
@@ -570,10 +573,46 @@ $('videoCheck').onclick = async () => {
     // needs streaming to disk rather than decoding in memory anyway.
     const s = await api('/api/video/check', { method: 'POST', body: file });
     const tone = s.blank ? 'err' : (s.ok ? 'ok' : 'warn');
-    const lines = s.messages.slice();
-    if (s.ok) lines.push(`Đọc video này sẽ tốn khoảng ${s.tokens.toLocaleString()} token.`);
-    show($('m4'), tone, lines.join('\n'));
+    show($('m4'), tone, s.messages.join('\n'));
+    // Reading is offered only after a check, and never for a blank recording: it costs
+    // tokens and minutes, and a recording that skipped half a month is not worth either.
+    checked = s.blank ? null : s.file;
+    $('videoRead').hidden = !checked;
+    $('videoReadHint').hidden = !checked;
+    if (checked) {
+      $('videoReadHint').textContent =
+        `Sẽ đọc ${s.kept} khung hình, tốn khoảng ${s.tokens.toLocaleString()} token.`
+        + (s.ok ? '' : ' Video còn đoạn cuộn quá nhanh — đơn ở đó sẽ thiếu.');
+    }
   } catch (e) { show($('m4'), 'err', e.message); }
+  btn.disabled = false;
+};
+
+let checked = null;
+
+$('videoRead').onclick = async () => {
+  const closer = remembered();
+  if (!closer) {
+    show($('m5'), 'warn', 'Chọn người chốt đơn trước đã.');
+    $('closerChips').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return;
+  }
+  const btn = $('videoRead');
+  btn.disabled = true;
+  show($('m5'), 'busy', 'Đang đọc đơn từ video… việc này mất vài phút.', true);
+  try {
+    const s = await api('/api/video/read?file=' + encodeURIComponent(checked)
+                        + '&closer=' + encodeURIComponent(closer), { method: 'POST' });
+    let t = `Đọc ${s.frames} khung hình, thấy ${s.found} đơn — lưu mới ${s.saved}`;
+    if (s.duplicates) t += `, đã có ${s.duplicates}`;
+    if (s.other_month) t += `, ${s.other_month} khác tháng`;
+    if (s.updates) t += `\n${s.updates} đơn có bổ sung`;
+    t += `\nĐơn đọc từ video được đánh dấu "từ video — cần đối chiếu" — hãy so lại tổng`
+       + ` tiền với tin nhắn khi xuất file.`;
+    t += `\n(${s.input_tokens.toLocaleString()} + ${s.output_tokens.toLocaleString()} token)`;
+    show($('m5'), 'ok', t);
+    refresh();
+  } catch (e) { show($('m5'), 'err', e.message); }
   btn.disabled = false;
 };
 

@@ -240,6 +240,10 @@ def _header_agrees(header: str, day: int, month: int, number: int) -> bool:
 # is a few unused tokens while the cost of undershooting is a truncated answer, and a
 # truncated answer is what returned 1 order out of 69.
 TOKENS_PER_LINE = 12
+# A frame holds a couple of orders and the answer quotes them in full, so this is
+# sized per FRAME and generously: running out mid-answer is the failure that
+# returned 1 order out of 69 on the text path.
+TOKENS_PER_VIDEO_FRAME = 900
 MIN_OUTPUT_TOKENS = 4096
 MAX_OUTPUT_TOKENS = 64_000
 
@@ -457,3 +461,162 @@ def log_shadow(inbox, lines: list[str]) -> None:
             fh.write("\n".join(lines) + "\n")
     except OSError as exc:
         log.warning("could not write the shadow log (%s)", exc)
+
+
+# ------------------------------------------------------------------ from video
+
+# The video path cannot use line numbers -- there are none in a photograph -- so the model
+# transcribes, and every order read this way is flagged for a human to check against the
+# total. `partial` and `frame` are what let this program clean up after the medium: an
+# order clipped by a frame edge is replaced by the fuller copy from a neighbouring frame,
+# by the same merge_into that has always preferred a fuller capture.
+VIDEO_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "orders": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "frame": {"type": "integer",
+                              "description": "Which frame this order was read from, 1-based."},
+                    "header": {"type": "string",
+                               "description": "The header line, transcribed exactly."},
+                    "day": {"type": "integer"},
+                    "month": {"type": "integer"},
+                    "order_number": {"type": "integer"},
+                    "customer": {"type": "string",
+                                 "description": "Name from the header, or null if it states none."},
+                    "date_swapped": {"type": "boolean"},
+                    "repeats_header": {"type": "boolean"},
+                    "partial": {"type": "boolean",
+                                "description": "True if a frame edge cut this order off."},
+                    "body": {"type": "string",
+                             "description": "The whole order, transcribed exactly, header included."},
+                    "updates": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string"},
+                                "confidence": {"type": "string", "enum": ["high", "low"]},
+                            },
+                            "required": ["text", "confidence"],
+                        },
+                    },
+                },
+                "required": ["frame", "header", "day", "month", "order_number", "body"],
+            },
+        },
+    },
+    "required": ["orders"],
+}
+
+
+def parse_video_response(data: dict[str, Any]) -> SegmentResult:
+    """Model JSON -> SegmentResult, for text the model transcribed rather than pointed at.
+
+    Partial reads are dropped when a whole read of the same order exists, and kept when it
+    does not -- half an order is worth reviewing, but not in preference to the whole one
+    sitting in the next frame.
+    """
+    result = SegmentResult()
+    best: dict[tuple[int, int, int], tuple[bool, SegmentedOrder]] = {}
+
+    for raw in data.get("orders") or []:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            day, month = int(raw["day"]), int(raw["month"])
+            number = int(raw["order_number"])
+        except (KeyError, TypeError, ValueError):
+            log.warning("video segmenter returned an order without a usable key: %r", raw)
+            result.rejected += 1
+            continue
+        body = str(raw.get("body") or "").strip()
+        header = str(raw.get("header") or "").strip()
+        if not body and not header:
+            result.rejected += 1
+            continue
+
+        updates: list[Update] = []
+        for item in raw.get("updates") or []:
+            if isinstance(item, dict) and str(item.get("text") or "").strip():
+                confidence = str(item.get("confidence") or "high")
+                updates.append(Update(str(item["text"]).strip(),
+                                      confidence if confidence in ("high", "low") else "high"))
+
+        order = SegmentedOrder(
+            header=header or body.splitlines()[0],
+            day=day, month=month, order_number=number,
+            body=body or header,
+            customer=(str(raw.get("customer") or "").strip() or None),
+            date_swapped=bool(raw.get("date_swapped")),
+            repeats_header=bool(raw.get("repeats_header")),
+            updates=updates,
+        )
+        partial = bool(raw.get("partial"))
+        key = order.key
+        if key not in best:
+            best[key] = (partial, order)
+            continue
+        # Same order, filmed again. Prefer a whole read over a clipped one, then the
+        # longer text -- the same rule merge_into applies, applied early so the frames
+        # never reach disk as competing versions of one order.
+        was_partial, kept = best[key]
+        better = (was_partial and not partial) or (
+            was_partial == partial and len(order.body) > len(kept.body))
+        if better:
+            best[key] = (partial, order)
+
+    result.orders = [order for _, order in best.values()]
+    return result
+
+
+def segment_video(completer: JsonCompleter, images: list[bytes], month: int, year: int,
+                  *, mime_type: str = "image/png") -> SegmentResult:
+    """One segmentation call over screen-recording frames. Never raises."""
+    from .extract.prompt import build_video_prompt
+
+    if not images:
+        return SegmentResult(error="no frames to read")
+
+    system, user = build_video_prompt(len(images), month, year)
+    budget = max(MIN_OUTPUT_TOKENS,
+                 min(MAX_OUTPUT_TOKENS, len(images) * TOKENS_PER_VIDEO_FRAME))
+    try:
+        answer = completer.complete_json_images(system, user, images,
+                                                VIDEO_RESPONSE_SCHEMA,
+                                                max_tokens=budget, mime_type=mime_type)
+    except Exception as exc:
+        log.error("video segmentation failed: %s", exc)
+        return SegmentResult(error=f"{type(exc).__name__}: {exc}")
+
+    data = answer.data
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except ValueError as exc:
+            return SegmentResult(error=f"unparseable response: {exc}",
+                                 finish_reason=answer.finish_reason)
+    if not isinstance(data, dict):
+        return SegmentResult(error=f"unexpected response type {type(data).__name__}",
+                             finish_reason=answer.finish_reason)
+
+    result = parse_video_response(data)
+    result.input_tokens = answer.input_tokens
+    result.output_tokens = answer.output_tokens
+    result.finish_reason = answer.finish_reason
+    return result
+
+
+def run_video(cfg, images: list[bytes], month: int, year: int) -> SegmentResult | None:
+    """Read orders off screen-recording frames with the configured provider.
+
+    None means the provider could not be used at all -- no key, no SDK, misconfigured --
+    which the caller reports differently from a call that was made and failed.
+    """
+    completer = completer_for(cfg)
+    if completer is None:
+        return None
+    return segment_video(completer, images, month, year)

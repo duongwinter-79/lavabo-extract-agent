@@ -379,9 +379,27 @@ It reports one of three things:
 
 It also says how many frames it kept and roughly what reading them would cost in tokens.
 
-Nothing is read out of the video yet — this step only tells you whether the recording is
-worth reading. Do it while the phone is still in your hand and the chat is still where you
-left it.
+Do this while the phone is still in your hand and the chat is still where you left it.
+
+### 4. Read the orders
+
+Once the check has run, **Đọc đơn từ video** appears, with the number of frames and the
+token cost stated before you spend anything. Pick **Người chốt đơn** first — it refuses
+without one, same as pasting.
+
+It uses **the same instructions as the paste box**: the same header shapes, the same
+day-first date rule, the same knowledge that `gương cộc` is a mirror, the same four things
+a trailing message can mean. Only the way it answers differs — pasted text is answered in
+line numbers, frames have to be transcribed.
+
+That difference is why **every order read from video is marked `từ video — cần đối chiếu`**
+and tinted in the export. With pasted text the app slices the shop's own characters out of
+the paste, so what is stored is exact by construction. A photograph has no line numbers, so
+the model reads the characters — and `5.800` differs from `5.800.000` by one dot. The order
+is fine to keep; the total is worth one glance against the message.
+
+Overlap is not your problem. The same order appears in several frames, and gets saved once;
+an order cut off by a frame edge is replaced by the whole copy from the next frame.
 
 ---
 

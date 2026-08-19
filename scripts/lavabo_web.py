@@ -199,6 +199,8 @@ class Handler(BaseHTTPRequestHandler):
             self._list_models()
         elif path == "/api/video/check":
             self._check_video()
+        elif path == "/api/video/read":
+            self._read_video()
         else:
             self._json({"error": "not found"}, 404)
 
@@ -408,6 +410,63 @@ class Handler(BaseHTTPRequestHandler):
                     # paste, and the orders needing a human decision are never mentioned.
                     "versions": result.versions,
                     "updates": result.updates})
+
+    def _read_video(self) -> None:
+        """Read orders out of a recording already checked by /api/video/check.
+
+        Separate from the check on purpose: checking is free and instant, reading costs
+        tokens and minutes, and nobody should spend those on a recording that skipped half
+        a month. The check runs first and its verdict is shown before this is offered.
+        """
+        import zalo_capture as zc
+        from lavabo import flags, rawpaste, segment, video
+
+        query = parse_qs(urlparse(self.path).query)
+        name = (query.get("file", [""])[0] or "").strip()
+        closer = (query.get("closer", [""])[0] or self.closer or "").strip()
+        if not closer:
+            self._json({"error": "Chọn người chốt đơn trước đã."}, 400)
+            return
+
+        stored = rawpaste.store_dir(self.cfg.zalo.inbox_dir) / "video" / Path(name).name
+        if not name or not stored.exists():
+            self._json({"error": "Không tìm thấy video đã tải lên. Kiểm tra lại trước."}, 404)
+            return
+
+        try:
+            report = video.analyse(stored)
+            frames = video.kept_frames(stored, report)
+        except video.VideoToolsMissing as exc:
+            self._json({"error": str(exc)}, 501)
+            return
+        except Exception as exc:
+            self._json({"error": f"Không đọc được video: {exc}"}, 400)
+            return
+
+        result = segment.run_video(self.cfg, frames, self.month, self.year)
+        if result is None:
+            self._json({"error": "Chưa có API key dùng được — vào Cài đặt để thêm."}, 400)
+            return
+        if not result.ok:
+            self._json({"error": f"Đọc video lỗi: {result.error}"}, 502)
+            return
+
+        blocks = zc.blocks_from_segments(result, target_month=self.month)
+        with io.StringIO() as sink, redirect_stdout(sink):
+            saved = zc.save_blocks(blocks, self.cfg, self.month, self.year,
+                                   all_months=False, trim=False, closer=closer,
+                                   extra_flags=(flags.FROM_VIDEO,))
+
+        self._json({
+            "found": len(result.orders),
+            "saved": saved.saved,
+            "duplicates": saved.duplicates,
+            "other_month": saved.out_of_month,
+            "updates": saved.updates,
+            "frames": len(frames),
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+        })
 
     def _start_export(self) -> None:
         mode = parse_qs(urlparse(self.path).query).get("mode", ["new"])[0]
