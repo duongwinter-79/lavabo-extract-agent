@@ -347,6 +347,15 @@ def cmd_check(args, cfg: Config) -> int:
             print(f"{'OK  ' if good else 'FAIL'} {msg}")
             ok &= good
 
+        # Not a pass/fail condition -- an empty store is normal before the first paste.
+        # Reported so it is visible that the pastes are being kept, since the whole value
+        # of keeping them is that they are there on the day something needs re-reading.
+        from . import rawpaste
+        if pastes := rawpaste.load_index(cfg.zalo.inbox_dir):
+            periods = {(e.get("year"), e.get("month")) for e in pastes}
+            print(f"raw pastes: {len(pastes)} kept across {len(periods)} month(s) "
+                  f"in {rawpaste.store_dir(cfg.zalo.inbox_dir)}")
+
         try:
             for _, conn in _meta_connectors(cfg, store, full=True):
                 good, msg = conn.check()

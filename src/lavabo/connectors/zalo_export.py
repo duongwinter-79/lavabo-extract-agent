@@ -94,6 +94,17 @@ ATTACHMENT_MARKERS = {
 }
 
 
+def _is_bookkeeping(relative: Path) -> bool:
+    """True for anything under a leading-underscore name.
+
+    The walk above is recursive, so a directory left inside the inbox is read as
+    transcripts and extracted -- at real cost, and producing conversations that are not
+    conversations. Underscore already marks the sidecars, so it marks directories too, and
+    a new one cannot silently become input by being put in the wrong place.
+    """
+    return any(part.startswith("_") for part in relative.parts)
+
+
 class ZaloExportConnector:
     source = Source.ZALO
 
@@ -121,7 +132,8 @@ class ZaloExportConnector:
         sidecars = {closers.SIDECAR, extras.SIDECAR}   # bookkeeping, not transcripts
         return sorted(p for p in self.config.inbox_dir.rglob("*")
                       if p.is_file() and p.suffix.lower() in allowed
-                      and p.name not in sidecars)
+                      and p.name not in sidecars
+                      and not _is_bookkeeping(p.relative_to(self.config.inbox_dir)))
 
     def fetch(self) -> Iterator[Conversation]:
         for path in self._files():

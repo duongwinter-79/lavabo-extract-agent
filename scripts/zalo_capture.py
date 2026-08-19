@@ -53,7 +53,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from lavabo import closers, extras  # noqa: E402
+from lavabo import closers, extras, rawpaste  # noqa: E402
 from lavabo.config import Config  # noqa: E402
 from lavabo.connectors.zalo_export import (  # noqa: E402
     DEFAULT_PATTERNS, ORDER_HEADER, header_customer)  # noqa: E402
@@ -586,6 +586,12 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
     "8/3" during an August capture is excluded here as "outside 08/2026" and never even
     reaches disk) and is otherwise invisible: it changes what gets filed, silently.
     """
+    # Before anything tries to understand the text. Splitting, extraction and the
+    # workbook are all derived and can be recomputed; the paste itself cannot, short of
+    # scrolling Zalo again by hand. Stored even when no order is recognised, since "the
+    # splitter found nothing" is exactly the case a better segmenter would revisit.
+    rawpaste.store(cfg.zalo.inbox_dir, text, month=month, year=year, closer=closer)
+
     blocks = split_orders(text, target_month=month)
     if not blocks:
         return CaptureResult(0, 0, 0, [], 0, 0)

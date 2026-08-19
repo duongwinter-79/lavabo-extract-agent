@@ -310,6 +310,12 @@ class Handler(BaseHTTPRequestHandler):
         # in the stats and the date-span check computed from these blocks.
         blocks = zc.split_orders(text, target_month=self.month)
         if not blocks:
+            # Kept even though nothing was recognised. Unlike the clipboard watchers,
+            # which see every copy the user makes, this text was deliberately pasted and
+            # submitted -- so "the splitter found no order in it" is a finding worth
+            # being able to re-examine, not noise. handle_orders stores the other case.
+            zc.rawpaste.store(self.cfg.zalo.inbox_dir, text,
+                              month=self.month, year=self.year, closer=closer)
             self._json({"found": 0, "saved": 0, "duplicates": 0, "other_month": 0})
             return
         try:
