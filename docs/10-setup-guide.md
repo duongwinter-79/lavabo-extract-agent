@@ -178,7 +178,13 @@ A sleeping computer serves nothing, so this step is not optional if staff rely o
 
 ---
 
-## Step 6 — Tailscale, for access from anywhere
+## Step 6 — Reaching it from anywhere
+
+Two ways, and you only need one. **Tailscale** keeps the page private to your own
+devices but needs its app installed on each. **ngrok** gives a public link that any
+browser opens with nothing installed.
+
+### Tailscale — private to your devices
 
 Steps 4 and 5 give you a URL that works on the shop wifi. Tailscale makes it work from 4G,
 from a customer's house, from anywhere — as a private network between **your own devices**.
@@ -198,18 +204,87 @@ Nothing is published and no router port is opened.
 
 That is the URL to give your staff. It keeps working as they move between networks.
 
-Prefer a public URL your staff can open with **nothing installed**? Use a tunnel instead —
-ngrok's free static domain or Cloudflare Tunnel, both with a login in front. See
-[docs/08-tailscale.md](08-tailscale.md) §Route C — a tunnel needs no app on the phone, but
-because the URL is public the login is not optional.
-
-For a proper HTTPS name on Tailscale — `https://your-pc.tailnet-name.ts.net` — see §Route B
-there. It is a little more setup and lets you drop `--lan`, which also stops the page being
-reachable from the shop wifi at all.
+For a proper HTTPS name — `https://your-pc.tailnet-name.ts.net` — see
+[docs/08-tailscale.md](08-tailscale.md) §Route B. It is a little more setup and lets you
+drop `--lan`, which also stops the page being reachable from the shop wifi at all.
 
 **Do not use `tailscale funnel`.** It looks similar and publishes the page to the entire
 internet. The app has no password, and *Thêm vào file quản lý* writes into your real
 workbook.
+
+### ngrok — a public link, nothing to install on the phone
+
+ngrok gives an ordinary `https://…` address any browser opens. The computer still has
+to be awake with the app running; the tunnel only carries traffic to it.
+
+**Once, to get a fixed address.** The free plan includes one static domain, and a fixed
+name is what makes autostart worth doing. It is claimed in the dashboard — there is no
+command that generates one:
+
+1. Sign up at [dashboard.ngrok.com](https://dashboard.ngrok.com) (free, no card)
+2. **Universal Edge → Domains → + New Domain** — you get something like
+   `untremendous-lita-unwasted.ngrok-free.dev`. Copy it exactly.
+3. Save your token from the dashboard's *Your Authtoken* page:
+   ```powershell
+   ngrok config add-authtoken <your-token>
+   ```
+
+**Then, to run it — all on one line:**
+
+```powershell
+ngrok http 8765 --url untremendous-lita-unwasted.ngrok-free.dev
+```
+
+> **Do not break the line with `\`.** That is a Unix shell continuation; PowerShell does
+> not use it and reports `Missing expression after unary operator '--'`. Keep it on one
+> line, or continue with a backtick `` ` ``.
+>
+> On ngrok older than v3.19 the flag is `--domain=` instead of `--url`. `ngrok --version`
+> tells you which you have; if one is rejected, use the other.
+
+**Nobody has to log in to open it.** That command puts no authentication in front of the
+page — your staff just open the link. They will see ngrok's free-tier warning page once and
+click through; that is a notice, not a login, and it is not asking for anyone's email.
+
+The trade is that the address is public. A random-looking hostname is not a password: links
+leak through chat previews, browser sync and anyone who forwards them, and this app has no
+login of its own, holds an API key on its settings screen, and writes into your real
+workbook. If you want a login later, add it to the same command without changing anything
+else:
+
+```powershell
+ngrok http 8765 --url <name>.ngrok-free.dev --oauth google --oauth-allow-email you@gmail.com
+```
+
+Repeat `--oauth-allow-email` per person, or use `--basic-auth "user:password"` for one
+shared password instead.
+
+**Shorter to type, and what autostart runs.** Put the settings in ngrok's config file
+(`ngrok config check` prints its path):
+
+```yaml
+version: "2"
+authtoken: <your-token>
+tunnels:
+  lavabo:
+    proto: http
+    addr: 8765
+    domain: <name>.ngrok-free.dev
+```
+
+Then it is just `ngrok start lavabo`, and the tunnel can start itself alongside the app:
+
+```powershell
+schtasks /Create /TN "Lavabo Tunnel" /TR "ngrok start lavabo" /SC ONLOGON /RL LIMITED /F
+```
+
+With the tunnel running you can **drop `--lan`** — ngrok reaches the app on `127.0.0.1:8765`,
+so the page stops being reachable from the shop wifi at all.
+
+Watch the free-tier ceiling: **20,000 HTTP requests a month**. The app is built to fit —
+about 14k for one tab open eight hours a day — but several tabs left open on several phones
+will exceed it. Full detail, and the Cloudflare alternative, in
+[docs/08-tailscale.md](08-tailscale.md) §Route C.
 
 ---
 

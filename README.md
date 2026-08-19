@@ -120,9 +120,12 @@ open on a phone connected to the same wifi. Double-clicking cannot pass `--lan`,
 it from a terminal when you want the phone to reach it.
 
 For a phone that is **not** on the shop wifi — on 4G, at a customer's house — see
-[docs/08-tailscale.md](docs/08-tailscale.md): Tailscale keeps it private to your own devices,
-or a tunnel (ngrok / Cloudflare) gives a public URL that needs nothing installed, with a
-login in front.
+[docs/10-setup-guide.md](docs/10-setup-guide.md) §6 for the commands: **Tailscale** keeps it
+private to your own devices but needs its app on each one, and **ngrok** gives a public
+`https://…` link that any browser opens with nothing installed. A public link is a public
+link — a random hostname is not a password — so the ngrok section shows how to add a login
+if you want one. [docs/08-tailscale.md](docs/08-tailscale.md) has the fuller treatment and
+the Cloudflare alternative.
 
 The gear icon opens **Cài đặt**: AI provider, API key (with a *Kiểm tra key* button that
 asks the provider before you commit to it), model, the workbook path and the default
