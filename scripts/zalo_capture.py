@@ -615,7 +615,8 @@ class CaptureResult(NamedTuple):
 
 def handle_orders(text: str, cfg, month: int, year: int, *,
                   all_months: bool, trim: bool = True,
-                  closer: str | None = None) -> CaptureResult:
+                  closer: str | None = None,
+                  store_raw: bool = True) -> CaptureResult:
     """Split a chat chunk into orders and save the wanted ones.
 
     `closer` is who chốt these orders. Recorded per order in a sidecar rather than in
@@ -632,7 +633,10 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
     # workbook are all derived and can be recomputed; the paste itself cannot, short of
     # scrolling Zalo again by hand. Stored even when no order is recognised, since "the
     # splitter found nothing" is exactly the case a better segmenter would revisit.
-    rawpaste.store(cfg.zalo.inbox_dir, text, month=month, year=year, closer=closer)
+    # store_raw is off only when this IS the replay of a stored paste (see resegment):
+    # re-storing what came out of the store would inflate its own bookkeeping.
+    if store_raw:
+        rawpaste.store(cfg.zalo.inbox_dir, text, month=month, year=year, closer=closer)
 
     blocks = split_orders(text, target_month=month)
     mode = getattr(cfg.extract, "ai_segmentation", "off")

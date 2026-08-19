@@ -488,7 +488,20 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 macOS / Linux: `git pull && bash scripts/setup.sh`.
 
 Re-running setup installs anything newly required and leaves `config/config.yaml`, `.env`
-and everything under `data/` alone. Stop the app first (or `schtasks /End /TN "Lavabo Web"`),
+and everything under `data/` alone.
+
+**If the update fixed how orders are read**, the orders already captured were produced by
+the old code and will not correct themselves. Every paste is kept, so they can be replayed:
+
+```powershell
+.venv\Scripts\lavabo resegment            # show what would change
+.venv\Scripts\lavabo resegment --apply    # keep the corrections
+```
+
+It reports each order it would correct or add, copies the inbox aside before writing, never
+removes an order it cannot rebuild from a stored paste, and never changes a
+**Người chốt đơn** you typed. Extraction sorts itself out afterwards — a changed order
+re-extracts automatically, because that cache is keyed on the text. Stop the app first (or `schtasks /End /TN "Lavabo Web"`),
 then start it again afterwards.
 
 ---

@@ -504,6 +504,52 @@ def cmd_inspect(args, cfg: Config) -> int:
     return 0
 
 
+def cmd_resegment(args, cfg: Config) -> int:
+    """Replay stored pastes through today's capture code.
+
+    The counterpart to what the extraction cache already does. Bumping PROMPT_VERSION or
+    editing schema.yaml re-extracts every order, because the cache is keyed on both --
+    but an order's .txt is the output of whatever SPLITTING code ran the day it was
+    captured, and no key covers that. Fixing a header pattern or a trim leaves the orders
+    already on disk exactly as the old code left them, and re-pasting does not correct
+    them either: a corrected body that is SHORTER loses to the stored one, by the same
+    rule that rescues an order from a scroll that was cut short.
+    """
+    from . import resegment
+
+    # Taken BEFORE the replay writes anything, and only when it is going to write. These
+    # are the shop's orders; a maintenance command should not be the reason any go missing.
+    if args.apply and not args.no_backup and cfg.zalo.inbox_dir.exists():
+        print(f"inbox copied to {resegment.backup(cfg.zalo.inbox_dir)}")
+
+    result = resegment.run(cfg, month=args.month, year=args.year, apply=args.apply)
+    if not result.pastes:
+        print("no stored pastes to replay"
+              + (f" for {args.month:02d}/{args.year}" if args.month and args.year else "")
+              + f" (looked in {rawpaste_dir(cfg)})")
+        return 0
+
+    for change in result.changes:
+        print(f"  {change}")
+    print(result.summary())
+
+    if not args.apply:
+        if result.of("added") or result.of("changed"):
+            print("\nNothing was written. Re-run with --apply to keep these corrections;"
+                  "\nthe inbox is copied aside first unless you pass --no-backup.")
+        return 0
+
+    print("corrections written. Run `lavabo ingest --source zalo` and `lavabo extract` "
+          "to carry them through — a changed order re-extracts by itself, since the "
+          "cache is keyed on the text.")
+    return 0
+
+
+def rawpaste_dir(cfg: Config):
+    from . import rawpaste
+    return rawpaste.store_dir(cfg.zalo.inbox_dir)
+
+
 def cmd_config(args, cfg: Config) -> int:
     """Show the effective settings and where they drift from the shipped example.
 
@@ -727,6 +773,17 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--values", action="store_true", help="print the extracted values too")
     add_llm_args(p)
 
+    p = sub.add_parser(
+        "resegment",
+        help="re-capture the stored pastes with today's code, after fixing capture logic")
+    p.add_argument("--month", type=int, help="only pastes captured for this month")
+    p.add_argument("--year", type=int)
+    p.add_argument("--apply", action="store_true",
+                   help="write the corrections (default is to only report them)")
+    p.add_argument("--no-backup", action="store_true",
+                   help="skip copying the inbox aside before writing")
+    add_llm_args(p)
+
     p = sub.add_parser("config", help="show effective settings and drift from the example")
     add_llm_args(p)
 
@@ -764,7 +821,8 @@ def main(argv: list[str] | None = None) -> int:
     handlers = {"check": cmd_check, "ingest": cmd_ingest, "extract": cmd_extract,
                 "load": cmd_load, "verify": cmd_verify, "run": cmd_run,
                 "models": cmd_models, "config": cmd_config,
-                "inspect": cmd_inspect, "append": cmd_append}
+                "inspect": cmd_inspect, "append": cmd_append,
+                "resegment": cmd_resegment}
     try:
         return handlers[args.command](args, cfg)
     except KeyboardInterrupt:

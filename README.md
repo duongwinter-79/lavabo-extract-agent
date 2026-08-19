@@ -234,6 +234,7 @@ lavabo inspect     # what is stored per order, including failures
 
 lavabo ingest --source zalo
 lavabo extract
+lavabo resegment    # re-capture stored pastes after fixing capture logic
 lavabo load --layout senkahomes --out data/out/report.xlsx --month 8 --year 2026
 lavabo append --into "QUẢN LÝ ĐƠN SENKAHOMES.xlsx" --month 8 --year 2026 --dry-run
 lavabo verify
@@ -266,6 +267,31 @@ is sliced out exactly.
 Set up a fixed-distance swipe first (AssistiveTouch or Switch Control on iPhone) — see
 [docs/10-setup-guide.md](docs/10-setup-guide.md#capturing-on-a-phone--screen-recording).
 Swipe half a screen, pause a second, repeat.
+
+### After you change the code
+
+Two caches, and they behave differently.
+
+**Extraction re-runs by itself.** The cache is keyed on the order's text, the schema
+fingerprint, the prompt version and the model — so bumping `PROMPT_VERSION`, editing
+`schema.yaml` or switching model correctly re-extracts everything. Nothing to do.
+
+**Capture does not.** An order's `.txt` is whatever the splitting and trimming code
+produced the day it was captured. Fix a header pattern that was dropping orders, or a trim
+that was keeping chatter, and the orders already on disk stay as the old code left them —
+and re-pasting will not fix it, because a corrected body that is *shorter* loses to the
+stored one, by the same rule that rescues an order from a scroll that was cut short.
+
+That is what every paste is kept for:
+
+```bash
+lavabo resegment            # report what today's code would change
+lavabo resegment --apply    # keep the corrections (backs the inbox up first)
+```
+
+It replays the stored pastes through the current code. It never deletes an order it cannot
+reproduce — anything captured before pastes were kept is reported and left alone — and it
+never overwrites a **Người chốt đơn**, which is typed by a person and splits your revenue.
 
 ### Who splits the paste into orders
 
@@ -322,6 +348,8 @@ src/lavabo/
                excel.py                generic layout
   closers.py   who chốt each order, stored beside them
   video.py     checks a phone screen recording before its orders are read
+  rawpaste.py  every pasted chunk, kept verbatim before anything parses it
+  resegment.py replays those pastes when the capture code changes
   pipeline.py  the steps behind the buttons, shared by both front ends
   settings.py  reads/writes config.yaml and .env for the settings screen
   money.py     Vietnamese amounts -> VND
