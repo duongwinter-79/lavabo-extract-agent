@@ -193,6 +193,22 @@
   </div>
 </div>
 
+  <div class="card">
+    <h2>Quay màn hình (điện thoại)</h2>
+    <p class="sub">Điện thoại không bôi đen được cả đoạn chat, nên cách khác là quay màn
+      hình trong lúc cuộn Zalo. Kiểm tra video ở đây trước — nếu cuộn quá nhanh thì có
+      đoạn không lọt vào khung hình nào, và đơn ở đó sẽ mất mà không ai biết.</p>
+
+    <div class="field">
+      <input type="file" id="videoFile" accept="video/*">
+      <div class="hint">Vuốt khoảng nửa màn hình rồi dừng 1 giây, lặp lại — đừng vuốt
+        liên tục. Xem <code>docs/10-setup-guide.md</code> để bật nút cuộn tự động trên
+        iPhone.</div>
+    </div>
+    <button id="videoCheck" class="ghost">Kiểm tra video</button>
+    <div id="m4" role="status" aria-live="polite"></div>
+  </div>
+
 <!-- ======================================================== settings view -->
 <div id="viewSettings" hidden>
 
@@ -535,6 +551,30 @@ $('export').onclick = () => runJob('new');
 $('append').onclick = () => {
   if (!confirm('Thêm các đơn của tháng này vào file quản lý?\n\nFile sẽ được sao lưu trước khi ghi.')) return;
   runJob('append');
+};
+
+/* ----------------------------------------------------------------- video */
+
+// Checks the recording; it does not read orders out of it yet. Worth having on its own:
+// a recording that skipped half a month is better found now, while the phone is still in
+// somebody's hand and the chat is still where they left it.
+$('videoCheck').onclick = async () => {
+  const file = $('videoFile').files[0];
+  if (!file) { show($('m4'), 'warn', 'Chưa chọn video nào.'); return; }
+  const btn = $('videoCheck');
+  btn.disabled = true;
+  show($('m4'), 'busy',
+       `Đang kiểm tra ${(file.size / 1e6).toFixed(0)} MB…`, true);
+  try {
+    // Sent as the raw body: the built-in server has no multipart parser, and a video
+    // needs streaming to disk rather than decoding in memory anyway.
+    const s = await api('/api/video/check', { method: 'POST', body: file });
+    const tone = s.blank ? 'err' : (s.ok ? 'ok' : 'warn');
+    const lines = s.messages.slice();
+    if (s.ok) lines.push(`Đọc video này sẽ tốn khoảng ${s.tokens.toLocaleString()} token.`);
+    show($('m4'), tone, lines.join('\n'));
+  } catch (e) { show($('m4'), 'err', e.message); }
+  btn.disabled = false;
 };
 
 /* -------------------------------------------------------------- settings */

@@ -245,6 +245,20 @@ python scripts/zalo_capture.py --retrim    # re-trim files captured earlier
 python scripts/zalo_capture.py --debug     # explain what was accepted or rejected
 ```
 
+### Capturing on a phone
+
+A phone cannot select-all a Zalo conversation, so the phone route is to record the screen
+while scrolling and hand the video to **Quay màn hình (điện thoại)** in the app.
+
+It checks the recording before anything is read out of it: whether the screen recorded at
+all, and whether any stretch scrolled further than a screen between frames — which would
+lose orders with nothing to show they were missed. Bad stretches are reported as
+timestamps to re-record.
+
+Set up a fixed-distance swipe first (AssistiveTouch or Switch Control on iPhone) — see
+[docs/10-setup-guide.md](docs/10-setup-guide.md#capturing-on-a-phone--screen-recording).
+Swipe half a screen, pause a second, repeat.
+
 ### Who splits the paste into orders
 
 Set it in the gear screen under **Ai tách tin nhắn thành đơn**, or as
@@ -299,6 +313,7 @@ src/lavabo/
   load/        senkahomes.py           the 12-column layout
                excel.py                generic layout
   closers.py   who chốt each order, stored beside them
+  video.py     checks a phone screen recording before its orders are read
   pipeline.py  the steps behind the buttons, shared by both front ends
   settings.py  reads/writes config.yaml and .env for the settings screen
   money.py     Vietnamese amounts -> VND

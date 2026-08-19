@@ -21,7 +21,7 @@ import socket
 import sys
 import threading
 from contextlib import redirect_stdout
-from datetime import date
+from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -197,8 +197,74 @@ class Handler(BaseHTTPRequestHandler):
             self._verify_key()
         elif path == "/api/settings/models":
             self._list_models()
+        elif path == "/api/video/check":
+            self._check_video()
         else:
             self._json({"error": "not found"}, 404)
+
+    # ------------------------------------------------------------------- video
+
+    # A phone cannot select-all a Zalo conversation, so a month is captured by recording
+    # the screen while scrolling. Streamed to disk in chunks rather than read whole: a
+    # two-minute screen recording is tens of megabytes, and this server also has to stay
+    # responsive on a laptop.
+    VIDEO_MAX_BYTES = 512 * 1024 * 1024
+    VIDEO_CHUNK = 1024 * 1024
+
+    def _check_video(self) -> None:
+        from lavabo import rawpaste, video
+
+        length = int(self.headers.get("Content-Length") or 0)
+        if not length:
+            self._json({"error": "Chưa chọn video."}, 400)
+            return
+        if length > self.VIDEO_MAX_BYTES:
+            self._json({"error": f"Video quá lớn ({length / 1e6:.0f} MB). "
+                                 "Quay từng đoạn ngắn hơn."}, 413)
+            return
+
+        # Kept beside the pastes, and for the same reason: the recording is the one thing
+        # here a human cannot cheaply make again.
+        target = rawpaste.store_dir(self.cfg.zalo.inbox_dir) / "video"
+        target.mkdir(parents=True, exist_ok=True)
+        path = target / f"{datetime.now():%Y%m%d-%H%M%S}.mp4"
+
+        remaining = length
+        try:
+            with path.open("wb") as handle:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(self.VIDEO_CHUNK, remaining))
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    remaining -= len(chunk)
+        except OSError as exc:
+            self._json({"error": f"Không lưu được video: {exc}"}, 500)
+            return
+
+        try:
+            report = video.analyse(path)
+        except video.VideoToolsMissing as exc:
+            self._json({"error": str(exc)}, 501)
+            return
+        except Exception as exc:
+            self._json({"error": f"Không đọc được video: {exc}"}, 400)
+            return
+
+        self._json({
+            "ok": report.ok,
+            "blank": report.blank,
+            "duration": round(report.duration_seconds, 1),
+            "sampled": report.sampled,
+            "kept": len(report.kept),
+            "screens": round(report.screens_covered, 1),
+            "blurred": report.blurred,
+            "gaps": [{"from": round(g.start_seconds, 1), "to": round(g.end_seconds, 1)}
+                     for g in report.merged_gaps()],
+            "tokens": video.estimated_tokens(report),
+            "messages": report.messages(),
+            "file": path.name,
+        })
 
     # ---------------------------------------------------------------- settings
 

@@ -305,6 +305,86 @@ your workbook.
 
 ---
 
+## Capturing on a phone — screen recording
+
+A phone cannot select-all a Zalo conversation. There is no `Ctrl+A` on a touch screen, and
+Zalo only lets you copy one message at a time. So the phone route is to **record the screen
+while scrolling**, then hand the video to the app.
+
+The failure mode is the same one `Ctrl+A` has, in a new costume: scroll too fast and a
+screenful of orders is never on any frame, and nothing downstream can tell that apart from
+a day with no orders. So the app checks the recording before anything is read out of it.
+
+### 1. Set up a fixed-distance scroll (iPhone)
+
+Do not try to scroll at a constant *speed* — what matters is a constant *distance*, so that
+every swipe overlaps the last by the same amount. iOS can replay one recorded gesture
+exactly, which gives you that for free.
+
+**AssistiveTouch — one tap per swipe, simplest**
+
+1. **Settings → Accessibility → Touch → AssistiveTouch → On**
+2. **Create New Gesture**
+3. Swipe up about **half the screen**, at a comfortable speed, then **Save** as `Cuộn`
+4. In Zalo: tap the AssistiveTouch button → **Custom** → `Cuộn`
+
+Every replay is the identical distance and speed, so timing stops mattering — tap fast or
+slow, the overlap is the same.
+
+**Switch Control — repeats on its own**
+
+More setup, but it repeats the gesture without you tapping each time.
+
+1. **Settings → Accessibility → Switch Control → Switches → Add New Switch → Screen →
+   Full Screen**, and assign it an action
+2. **Settings → Accessibility → Switch Control → Recipes → Create New Recipe**
+   - name it `Cuộn Zalo`
+   - **Assign a Switch → Full Screen → Custom Gesture**, and record the same half-screen
+     swipe up
+3. Back in **Recipes → Launch Recipe**, pick `Cuộn Zalo`
+4. Turn **Switch Control** on (or triple-click the side button if you set that shortcut)
+5. Tapping anywhere now replays the swipe. Under **Switch Control → Timing → Auto Tap** and
+   **Hold Duration** you can tune how it repeats
+
+Turn Switch Control **off** when you are done — while it is on, ordinary tapping behaves
+differently and it is confusing if you forget.
+
+> **Android**: accessibility auto-scroll apps do this properly, and are much easier. If
+> anyone at the shop has an Android phone with Zalo, use that for the recording.
+
+### 2. Record
+
+1. Add **Screen Recording** to Control Centre if it is not there
+   (Settings → Control Centre → Screen Recording)
+2. Open the group chat, scroll to the **start of the month**
+3. Start recording, then scroll: **swipe about half a screen, pause one second, repeat**
+
+The pause matters as much as the distance. A frame captured mid-swipe is smeared, and small
+text — which is where the money is — smears first. The pause gives the app a sharp frame to
+choose.
+
+About **two minutes** covers a month at that pace.
+
+### 3. Check it before trusting it
+
+In the app, **Quay màn hình (điện thoại)** → choose the video → **Kiểm tra video**.
+
+It reports one of three things:
+
+| Result | Meaning |
+|---|---|
+| `Không có đoạn nào cuộn quá nhanh` | every part of the scroll was captured |
+| `Cuộn quá nhanh ở N đoạn` + timestamps | those seconds moved further than a screen; **re-record those parts** |
+| `Video trống` | the screen was not recorded at all — check permissions |
+
+It also says how many frames it kept and roughly what reading them would cost in tokens.
+
+Nothing is read out of the video yet — this step only tells you whether the recording is
+worth reading. Do it while the phone is still in your hand and the chat is still where you
+left it.
+
+---
+
 ## Step 8 — Keeping it updated
 
 ```powershell

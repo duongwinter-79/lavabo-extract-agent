@@ -8,3 +8,9 @@ pyperclip>=1.8          # scripts/zalo_capture.py; falls back to tkinter
 # Extraction providers -- install whichever you configure in config.yaml.
 anthropic>=0.40
 google-genai>=0.3
+
+# Phone capture: checking a screen recording before its orders are read out of it.
+# Only needed for the "Quay màn hình" card; the app runs without them and says so.
+numpy>=1.26
+pillow>=10.0
+imageio-ffmpeg>=0.4.9   # bundles a static ffmpeg, so nobody has to install one by hand
