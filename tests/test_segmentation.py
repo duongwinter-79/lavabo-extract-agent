@@ -381,6 +381,108 @@ class ReadingFromVideo(unittest.TestCase):
         self.assertFalse(segment.segment_video(None, [], 8, 2026).ok)
 
 
+class NotPayingTwice(unittest.TestCase):
+    """Segmentation was the only AI call with no cache, and it sat on the path people are
+    told to use freely: capture a month in OVERLAPPING chunks, re-paste when unsure. Every
+    one of those was a fresh call over text already segmented."""
+
+    ANSWER = {"orders": [{"header_line": 1, "end_line": 3, "day": 13, "month": 7,
+                          "order_number": 5}]}
+    PASTE = "13/7 đơn 5\n1 tủ BC52\nTổng 5.800"
+
+    def setUp(self):
+        from lavabo.config import Config
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg = Config()
+        self.cfg.zalo.inbox_dir = Path(self.tmp.name) / "zalo"
+        self.cfg.zalo.inbox_dir.mkdir(parents=True)
+        self.cfg.extract.model = "gemini-3.1-flash-lite"
+        self.calls = 0
+        self._real = segment.completer_for
+        segment.completer_for = lambda cfg: self._completer()
+
+    def tearDown(self):
+        segment.completer_for = self._real
+        self.tmp.cleanup()
+
+    def _completer(self, answer=None, finish="STOP", error=None):
+        outer = self
+
+        class Fake:
+            def complete_json(self, system, user, schema, *, max_tokens=0):
+                outer.calls += 1
+                if error:
+                    raise error
+                return segment.Completion(answer or outer.ANSWER, 100, 20, finish)
+        return Fake()
+
+    def test_an_identical_paste_costs_nothing(self):
+        for _ in range(3):
+            result = segment.run(self.cfg, self.PASTE, 7, 2026)
+        self.assertEqual(self.calls, 1)
+        self.assertTrue(result.cached)
+        self.assertEqual(len(result.orders), 1, "a cached answer must still be usable")
+
+    def test_a_changed_paste_is_not_served_the_old_answer(self):
+        segment.run(self.cfg, self.PASTE, 7, 2026)
+        segment.run(self.cfg, self.PASTE + " ", 7, 2026)
+        self.assertEqual(self.calls, 2)
+
+    def test_a_different_month_is_a_different_question(self):
+        """The target month is written into the prompt and the day/month transposition
+        rule turns on it, so the same paste has different right answers per month."""
+        segment.run(self.cfg, self.PASTE, 7, 2026)
+        segment.run(self.cfg, self.PASTE, 8, 2026)
+        self.assertEqual(self.calls, 2)
+
+    def test_switching_model_is_a_different_question(self):
+        segment.run(self.cfg, self.PASTE, 7, 2026)
+        self.cfg.extract.model = "claude-sonnet-5"
+        segment.run(self.cfg, self.PASTE, 7, 2026)
+        self.assertEqual(self.calls, 2)
+
+    def test_a_new_prompt_version_misses_the_cache(self):
+        import lavabo.extract.prompt as prompt
+
+        segment.run(self.cfg, self.PASTE, 7, 2026)
+        prompt.SEGMENT_PROMPT_VERSION += 1
+        try:
+            segment.run(self.cfg, self.PASTE, 7, 2026)
+        finally:
+            prompt.SEGMENT_PROMPT_VERSION -= 1
+        self.assertEqual(self.calls, 2)
+
+    def test_a_failed_call_is_never_remembered(self):
+        """Otherwise one bad minute at the provider becomes a permanent wrong answer."""
+        segment.completer_for = lambda cfg: self._completer(error=RuntimeError("503"))
+        segment.run(self.cfg, self.PASTE, 7, 2026)
+        self.assertEqual(segment.load_cache(self.cfg.zalo.inbox_dir), {})
+
+    def test_a_truncated_answer_is_never_remembered(self):
+        segment.completer_for = lambda cfg: self._completer(
+            answer={"orders": []}, finish="MAX_TOKENS")
+        segment.run(self.cfg, self.PASTE, 7, 2026)
+        self.assertEqual(segment.load_cache(self.cfg.zalo.inbox_dir), {})
+
+    def test_a_damaged_cache_never_stops_a_capture(self):
+        segment.run(self.cfg, self.PASTE, 7, 2026)
+        segment._cache_path(self.cfg.zalo.inbox_dir).write_text("{ broken", encoding="utf-8")
+        self.assertEqual(segment.load_cache(self.cfg.zalo.inbox_dir), {})
+        self.assertTrue(segment.run(self.cfg, self.PASTE, 7, 2026).ok)
+
+    def test_the_cache_stores_what_was_said_not_what_was_understood(self):
+        """A parser fix then reaches every cached answer for free."""
+        segment.run(self.cfg, self.PASTE, 7, 2026)
+        stored = list(segment.load_cache(self.cfg.zalo.inbox_dir).values())[0]
+        self.assertEqual(stored, self.ANSWER)
+
+    def test_a_free_answer_does_not_report_a_cost(self):
+        segment.run(self.cfg, self.PASTE, 7, 2026)
+        cached = segment.run(self.cfg, self.PASTE, 7, 2026)
+        self.assertIn("không tốn token", segment.summarise(cached, [], []))
+
+
 class Retrying(unittest.TestCase):
     """A 503 matched none of the rate-limit patterns and was not retried at all, and the
     Anthropic path had no retry of any kind. Either way a momentary provider hiccup

@@ -122,6 +122,39 @@ class Replaying(unittest.TestCase):
         self.assertEqual(resegment.run(self.cfg, month=7, year=2026).pastes, 1)
         self.assertEqual(resegment.run(self.cfg, month=8, year=2026).pastes, 0)
 
+    def test_the_replay_uses_the_configured_segmenter(self):
+        """A fresh Config() here would default ai_segmentation to off, so a shop that
+        segments with the model would have its orders replayed by the regex splitter and
+        then "corrected" to that answer -- the command undoing what it was told to keep."""
+        from lavabo import segment
+
+        self.cfg.extract.ai_segmentation = "on"
+        payload = {"orders": [{"header_line": 1, "end_line": 5, "day": 13, "month": 7,
+                               "order_number": 5, "customer": "Chị Hương"}]}
+        calls = []
+
+        class Fake:
+            def complete_json(self, system, user, schema, *, max_tokens=0):
+                calls.append(1)
+                return segment.Completion(payload, 100, 20, "STOP")
+
+        real = segment.completer_for
+        segment.completer_for = lambda cfg: Fake()
+        try:
+            # The model keeps a Note line the regex trim would cut.
+            zc.handle_orders(
+                "13/7 đơn 5 (Chị Hương)\n1 tủ BC52\nTổng 5.800\nĐã cọc 500k\nNote: giao sáng",
+                self.cfg, 7, 2026, all_months=False, trim=True, closer="Trà My")
+            during = len(calls)
+            resegment.run(self.cfg, apply=True)
+            body = (self.inbox / "13-7 đơn 5 (Chị Hương).txt").read_text(encoding="utf-8")
+        finally:
+            segment.completer_for = real
+
+        self.assertIn("Note: giao sáng", body, "the replay must not fall back to regex")
+        self.assertEqual(len(calls), during,
+                         "the replay must reuse the cached answer, not buy it again")
+
     def test_backup_copies_the_inbox_aside(self):
         self._capture_with_old_code()
         target = resegment.backup(self.inbox)

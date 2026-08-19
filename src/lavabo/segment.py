@@ -24,6 +24,7 @@ model wrong on our own data" from a guess into a number, before anything depends
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -119,6 +120,14 @@ class SegmentResult:
     # that found nine tenths of the orders.
     rejected: int = 0
     miscounted: int = 0
+    # Answered from the cache, so nothing was sent and nothing was billed. Reported,
+    # because a token count that looks the same whether or not money changed hands is a
+    # token count nobody can use to decide anything.
+    cached: bool = False
+    # The model's answer before this module made sense of it. Kept so the cache can store
+    # what was SAID rather than what was understood: a parser fix then reaches every
+    # cached answer for free, while a prompt change correctly misses the cache instead.
+    raw: Any = None
 
     @property
     def ok(self) -> bool:
@@ -289,6 +298,7 @@ def segment(completer: JsonCompleter, text: str, month: int, year: int) -> Segme
                              finish_reason=answer.finish_reason)
 
     result = parse_response(data, lines)
+    result.raw = data
     result.input_tokens = answer.input_tokens
     result.output_tokens = answer.output_tokens
     result.finish_reason = answer.finish_reason
@@ -375,9 +385,11 @@ def summarise(ai: SegmentResult, regex_blocks: list[Any],
     for d in disagreements:
         counts[d.kind] = counts.get(d.kind, 0) + 1
     detail = ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items())) or "no disagreement"
+    cost = ("đã có sẵn, không tốn token" if ai.cached
+            else f"{ai.input_tokens}+{ai.output_tokens} tokens"
+                 + (f", stopped: {ai.finish_reason}" if ai.finish_reason else ""))
     line = (f"shadow: model {len(ai.orders)} order(s), splitter {len(regex_blocks)} — "
-            f"{detail} ({ai.input_tokens}+{ai.output_tokens} tokens"
-            + (f", stopped: {ai.finish_reason}" if ai.finish_reason else "") + ")")
+            f"{detail} ({cost})")
 
     # Said plainly rather than left to be inferred from two counts. The first live run
     # returned 1 order against 69 and the log stated it in a way that read like an
@@ -425,16 +437,34 @@ def completer_for(cfg) -> JsonCompleter | None:
 
 
 def run(cfg, text: str, month: int, year: int) -> SegmentResult | None:
-    """Segment one paste with the configured provider.
+    """Segment one paste with the configured provider, or from the cache.
 
     None means the provider could not be used at all -- no key, no SDK, misconfigured --
     which is different from a call that was made and failed, and the caller reports them
     differently. Never raises: capture must survive anything that happens out here.
+
+    The cache is checked BEFORE the provider is even built, so a repeat paste costs
+    nothing at all -- not a call, not a key check, not the import of an SDK.
     """
+    from .extract.prompt import number_lines
+
+    inbox = cfg.zalo.inbox_dir
+    key = cache_key(text.encode("utf-8"), month, year, cfg.extract.model)
+    if (cached := load_cache(inbox).get(key)) is not None:
+        result = parse_response(cached, number_lines(text)[1])
+        result.cached = True
+        return result
+
     completer = completer_for(cfg)
     if completer is None:
         return None
-    return segment(completer, text, month, year)
+    result = segment(completer, text, month, year)
+    # Only a complete answer is worth keeping. A failure, or one cut off at max_tokens,
+    # would otherwise be served back forever -- turning a bad minute at the provider into
+    # a permanent wrong answer for that paste.
+    if result.ok and not result.truncated and result.raw is not None:
+        remember(inbox, key, result.raw)
+    return result
 
 
 SHADOW_LOG = "shadow.log"
@@ -604,6 +634,7 @@ def segment_video(completer: JsonCompleter, images: list[bytes], month: int, yea
                              finish_reason=answer.finish_reason)
 
     result = parse_video_response(data)
+    result.raw = data
     result.input_tokens = answer.input_tokens
     result.output_tokens = answer.output_tokens
     result.finish_reason = answer.finish_reason
@@ -611,12 +642,89 @@ def segment_video(completer: JsonCompleter, images: list[bytes], month: int, yea
 
 
 def run_video(cfg, images: list[bytes], month: int, year: int) -> SegmentResult | None:
-    """Read orders off screen-recording frames with the configured provider.
+    """Read orders off screen-recording frames, or from the cache.
 
-    None means the provider could not be used at all -- no key, no SDK, misconfigured --
-    which the caller reports differently from a call that was made and failed.
+    Cached for the same reason as the text path and more urgently: a month of frames is
+    the most expensive call this app makes, and pressing the button twice is an easy
+    mistake to make while waiting for the first one.
     """
+    inbox = cfg.zalo.inbox_dir
+    key = cache_key(b"".join(images), month, year, cfg.extract.model)
+    if (cached := load_cache(inbox).get(key)) is not None:
+        result = parse_video_response(cached)
+        result.cached = True
+        return result
+
     completer = completer_for(cfg)
     if completer is None:
         return None
-    return segment_video(completer, images, month, year)
+    result = segment_video(completer, images, month, year)
+    if result.ok and not result.truncated and result.raw is not None:
+        remember(inbox, key, result.raw)
+    return result
+
+
+# ------------------------------------------------------------------- caching
+
+# Segmentation is the only AI call this app makes that had no cache, and it sits on the
+# path people are told to use freely: capture a month in OVERLAPPING chunks, re-paste
+# whenever you are unsure. Every one of those pastes was a fresh call over text already
+# segmented -- three identical pastes cost three calls, and a month captured in ten
+# overlapping sweeps paid for most of its content several times.
+#
+# Keyed on what could change the answer and nothing else: the text, the prompt version,
+# the model, and the month being captured -- the last because the target month is written
+# into the prompt and the day/month transposition rule turns on it, so the same paste
+# genuinely has different right answers for July and August.
+#
+# The RAW model response is stored rather than the parsed orders. A parser fix then
+# reaches old answers for free, while a prompt change correctly misses the cache.
+SEGMENT_CACHE = "segments.json"
+CACHE_VERSION = 1
+KEEP_CACHED = 500
+
+
+def _cache_path(inbox):
+    from .rawpaste import store_dir
+    return store_dir(inbox) / SEGMENT_CACHE
+
+
+def cache_key(payload: bytes, month: int, year: int, model: str) -> str:
+    from .extract.prompt import SEGMENT_PROMPT_VERSION
+
+    digest = hashlib.sha256(payload).hexdigest()[:32]
+    return f"{digest}:{SEGMENT_PROMPT_VERSION}:{model}:{month:02d}{year}"
+
+
+def load_cache(inbox) -> dict[str, Any]:
+    path = _cache_path(inbox)
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        answers = data.get("answers") if isinstance(data, dict) else None
+        return answers if isinstance(answers, dict) else {}
+    except (OSError, ValueError, AttributeError) as exc:
+        log.warning("could not read %s (%s) — treating as empty", path.name, exc)
+        return {}
+
+
+def save_cache(inbox, answers: dict[str, Any]) -> None:
+    # Oldest entries drop first. Python dicts keep insertion order, and every write
+    # re-inserts the key it just used, so this is a least-recently-used bound.
+    if len(answers) > KEEP_CACHED:
+        answers = dict(list(answers.items())[-KEEP_CACHED:])
+    path = _cache_path(inbox)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"version": CACHE_VERSION, "answers": answers},
+                                   ensure_ascii=False), encoding="utf-8")
+    except OSError as exc:
+        log.warning("could not write the segmentation cache (%s)", exc)
+
+
+def remember(inbox, key: str, payload: Any) -> None:
+    answers = load_cache(inbox)
+    answers.pop(key, None)                 # re-insert, so it counts as recently used
+    answers[key] = payload
+    save_cache(inbox, answers)

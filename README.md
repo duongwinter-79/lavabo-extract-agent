@@ -268,6 +268,21 @@ Set up a fixed-distance swipe first (AssistiveTouch or Switch Control on iPhone)
 [docs/10-setup-guide.md](docs/10-setup-guide.md#capturing-on-a-phone--screen-recording).
 Swipe half a screen, pause a second, repeat.
 
+### What costs money, and when
+
+Nothing is ever asked of the model twice for the same question.
+
+| Step | Cached on | Repeat costs |
+|---|---|---|
+| Segmentation (splitting a paste into orders) | the text + prompt version + model + month | nothing |
+| Extraction (filling the columns) | the order's text + schema + prompt version + model | nothing |
+| Reading a screen recording | the frames + prompt version + model + month | nothing |
+
+So pasting the same chunk three times is one call, not three — which matters, because the
+capture workflow is to paste **overlapping** chunks freely. Only a failed or truncated
+answer is left uncached, so one bad minute at the provider never becomes a permanent wrong
+answer.
+
 ### After you change the code
 
 Two caches, and they behave differently.

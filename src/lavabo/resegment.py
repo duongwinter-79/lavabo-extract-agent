@@ -68,13 +68,24 @@ class Result:
         return "; ".join(bits)
 
 
-def _capture_into(inbox: Path, pastes: list[dict[str, Any]], source_inbox: Path) -> None:
+def _capture_into(inbox: Path, pastes: list[dict[str, Any]], source_inbox: Path,
+                  base_cfg) -> None:
     """Replay pastes into an empty inbox, oldest first.
 
     Oldest first because the merge rules are order-dependent -- a fuller capture replaces a
     shorter one, a differing one becomes a version -- so replaying in capture order is what
     reproduces the state today's code would have reached.
+
+    Runs under the REAL configuration with only the inbox redirected. A fresh Config() here
+    would default ai_segmentation to off, so a shop that segments with the model would have
+    its orders replayed by the regex splitter and then "corrected" to that splitter's
+    answer -- a maintenance command quietly undoing the thing it was told to keep.
+
+    The segmentation cache is carried in and out with it. Without that the replay asks the
+    provider again for every paste, which for a month is the whole month's cost to fix a
+    trimming rule.
     """
+    import copy
     import io
     import sys
     from contextlib import redirect_stdout
@@ -82,10 +93,12 @@ def _capture_into(inbox: Path, pastes: list[dict[str, Any]], source_inbox: Path)
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
     import zalo_capture as zc                                   # noqa: E402
 
-    from .config import Config
+    from . import segment
 
-    cfg = Config()
+    cfg = copy.deepcopy(base_cfg)
     cfg.zalo.inbox_dir = inbox
+    if answers := segment.load_cache(source_inbox):
+        segment.save_cache(inbox, dict(answers))
     # Swallowed on purpose. The replay narrates itself as "saved 2 orders", which is true
     # of the staging directory and false of anything the operator can see -- and a dry run
     # that prints "saved" is worse than one that prints nothing.
@@ -97,6 +110,13 @@ def _capture_into(inbox: Path, pastes: list[dict[str, Any]], source_inbox: Path)
             zc.handle_orders(text, cfg, int(entry.get("month") or 0),
                              int(entry.get("year") or 0), all_months=True, trim=True,
                              closer=entry.get("closer"), store_raw=False)
+
+    # Anything the replay had to ask for is worth keeping, so a dry run followed by an
+    # --apply does not pay twice for the same answers.
+    merged = segment.load_cache(source_inbox)
+    merged.update(segment.load_cache(inbox))
+    if merged:
+        segment.save_cache(source_inbox, merged)
 
 
 def run(cfg, *, month: int | None = None, year: int | None = None,
@@ -117,7 +137,7 @@ def run(cfg, *, month: int | None = None, year: int | None = None,
     with tempfile.TemporaryDirectory(prefix="lavabo-resegment-") as tmp:
         staging = Path(tmp) / "zalo"
         staging.mkdir(parents=True)
-        _capture_into(staging, pastes, inbox)
+        _capture_into(staging, pastes, inbox, cfg)
 
         rebuilt = {p.name: p.read_text(encoding="utf-8") for p in staging.glob("*.txt")}
         result.rebuilt = len(rebuilt)
