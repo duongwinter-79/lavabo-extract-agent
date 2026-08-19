@@ -184,22 +184,34 @@ class GeminiExtractor(Extractor):
                 raise
         raise RuntimeError("no response after retries")
 
-    def complete_json(self, system: str, user: str,
-                      schema: dict) -> tuple[dict, int, int]:
+    def complete_json(self, system: str, user: str, schema: dict,
+                      *, max_tokens: int = 0):
         """Structured JSON from one prompt. Used by segmentation, which is not an
-        extraction: it has its own prompt, its own schema and no Conversation."""
+        extraction: its own prompt, its own schema, no Conversation.
+
+        max_tokens is passed per call rather than taken from config, because the config
+        value is sized for one order's fields while a segmentation answer covers a whole
+        month of them. Sharing it truncated the first live run.
+        """
+        from ..segment import Completion
+
         response = self._generate(dict(
             model=self.model,
             contents=user,
             config={
                 "system_instruction": system,
                 "temperature": self.config.temperature,
-                "max_output_tokens": self.config.max_tokens,
+                "max_output_tokens": max_tokens or self.config.max_tokens,
                 "response_mime_type": "application/json",
                 "response_schema": _to_gemini_schema(schema),
             },
         ))
         usage = getattr(response, "usage_metadata", None)
-        return (json.loads(response.text),
-                getattr(usage, "prompt_token_count", 0) or 0,
-                getattr(usage, "candidates_token_count", 0) or 0)
+        candidates = getattr(response, "candidates", None) or []
+        finish = getattr(candidates[0], "finish_reason", "") if candidates else ""
+        return Completion(
+            json.loads(response.text),
+            getattr(usage, "prompt_token_count", 0) or 0,
+            getattr(usage, "candidates_token_count", 0) or 0,
+            str(getattr(finish, "name", finish) or ""),
+        )

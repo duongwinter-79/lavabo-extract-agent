@@ -260,6 +260,21 @@ Tìm thấy 69 đơn — lưu mới 37, đã có 1, 31 khác tháng
 An amber box reading **Có thể sót đơn — số thứ tự bị nhảy cách** means a `đơn N` is missing
 between two you captured. Scroll up to that day and paste it again.
 
+### Reading shadow.log
+
+In *Chạy thử AI*, each paste appends a block to `data/inbox/raw/zalo/shadow.log`. Lines
+beginning `!!` are the ones that matter — anything else is a difference of opinion worth
+reading, while `!!` means the model did not do the job:
+
+| Line | Meaning |
+|---|---|
+| `INCOMPLETE: the model returned N of M orders` | a failed segmentation, not a disagreement. **Do not** switch to *Dùng AI* |
+| `ANSWER CUT OFF at max_tokens` | the model was interrupted; nothing in that run is a judgement |
+| `order(s) pointed at a line that is not their header` | the model miscounted line numbers |
+| `only_regex` | the model missed an order the old rules found — the result that should stop the switch |
+| `only_ai` | the model found one the old rules missed — the reason for doing this at all |
+| `extra_updates` | a later message attached to an order |
+
 ### The three review columns
 
 The exported file carries three columns your own workbook does not have: **Bổ sung** (a

@@ -107,18 +107,20 @@ class AnthropicExtractor(Extractor):
         log.error("%s: %s", conv.conversation_id, result.error)
         return result
 
-    def complete_json(self, system: str, user: str,
-                      schema: dict) -> tuple[dict, int, int]:
+    def complete_json(self, system: str, user: str, schema: dict,
+                      *, max_tokens: int = 0):
         """Structured JSON from one prompt, via a forced tool call.
 
         Used by segmentation, which is not an extraction: its own prompt, its own schema,
         no Conversation. Forcing the tool is what makes the shape guaranteed rather than
         merely likely, which matters when the caller is deciding how many orders exist.
         """
+        from ..segment import Completion
+
         tool_name = "record_segmentation"
         response = self.client.messages.create(
             model=self.model,
-            max_tokens=self.config.max_tokens,
+            max_tokens=max_tokens or self.config.max_tokens,
             temperature=self.config.temperature,
             system=system,
             tools=[{
@@ -131,7 +133,12 @@ class AnthropicExtractor(Extractor):
         )
         for block in response.content:
             if block.type == "tool_use" and block.name == tool_name:
-                return (block.input,
-                        response.usage.input_tokens, response.usage.output_tokens)
+                return Completion(block.input,
+                                  response.usage.input_tokens,
+                                  response.usage.output_tokens,
+                                  # Named to match Gemini's, so the caller's truncation
+                                  # check does not need to know which provider answered.
+                                  "MAX_TOKENS" if response.stop_reason == "max_tokens"
+                                  else str(response.stop_reason or ""))
         raise RuntimeError(
             f"model returned no {tool_name} tool call (stop_reason={response.stop_reason})")

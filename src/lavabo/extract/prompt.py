@@ -130,7 +130,7 @@ def build_user_prompt(
 
 # Bumped independently of PROMPT_VERSION: this prompt drives a different call, with its
 # own cache key, and a wording change here must not invalidate every field extraction.
-SEGMENT_PROMPT_VERSION = 1
+SEGMENT_PROMPT_VERSION = 2
 
 # Everything scripts/zalo_capture.py knows about the shape of this shop's messages, said
 # in words instead of regular expressions.
@@ -142,20 +142,35 @@ SEGMENT_PROMPT_VERSION = 1
 # outside a nine-phrase list vanished with no counter and no log. A model reads intent, so
 # an unanticipated phrasing is a judgement call rather than a miss.
 #
-# What it must NOT do is convert money or invent structure. Those stay deterministic, for
-# the same reason config/schema.senkahomes.yaml already forbids converting money in the
-# field extraction: this shop reconciles totals against its own workbook by hand, and a
-# figure that can differ between two runs of the same input cannot be reconciled at all.
+# THE MODEL RETURNS LINE NUMBERS, NEVER TEXT. Version 1 asked for each order's body
+# verbatim, which was wrong twice over. It made the answer as long as the question -- a
+# real month is ~12k tokens of chat, so a complete reply could not fit in any sane output
+# budget, and the first live run returned 1 order out of 69. And it put the order's own
+# words through a model that could paraphrase them. Line numbers are ~15 tokens per order
+# instead of ~180, and the text is then sliced out of the paste by this program, so
+# "verbatim" is arithmetic rather than a request the model may decline.
+#
+# What it must NOT do is convert money. That stays deterministic, for the same reason
+# config/schema.senkahomes.yaml already forbids converting money in the field extraction:
+# this shop reconciles totals against its own workbook by hand, and a figure that can
+# differ between two runs of the same input cannot be reconciled at all.
 SEGMENT_SYSTEM = """\
 You segment a raw copy-paste of a Vietnamese group chat into individual ORDERS.
 
 The chat belongs to a bathroom-fittings shop. Staff post orders as single messages, and \
-everyone else talks around them. Your job is to find the orders, mark where each one \
-starts and ends, and attach any later message that changes an order to the order it \
-changes.
+everyone else talks around them. Your job is to find every order, say which lines it \
+spans, and attach any later message that changes an order to the order it changes.
 
-You do NOT convert money, compute totals, or decide which version of an order is correct. \
-You report what is written and what it belongs to.
+Every line of the chat is given to you with a number. You answer ONLY in line numbers. \
+Never copy the text back -- this program slices it out itself.
+
+You do NOT convert money, compute totals, or decide which version of an order is correct.
+
+## Report EVERY order
+
+The chat may contain a hundred orders. Report all of them. A partial answer is a failure: \
+an order you leave out is money missing from a spreadsheet, with nothing to show it was \
+ever there. Work through the chat from the first line to the last.
 
 ## An order starts with a header line
 
@@ -165,11 +180,13 @@ real headers from this chat:
     15/8 đơn 1 - Meloxicam
     2/7 đơn 2 (Trần Thị Liên)
     13/07 don 5  Chị Hương
+    17/7 đơn 1: Thảo Nguyên
+    29/6 đơn 4- Bùi Đức Hạnh
     5/8 đơn 3
 
-Report the header VERBATIM, plus the day, month, order number and customer name read out \
-of it. If a header states no customer name, return null for it -- never take a name from \
-elsewhere in the message.
+Give `header_line` for that line, and the day, month, order number and customer name read \
+out of it. If a header states no customer name, return null for it -- never take a name \
+from elsewhere in the message.
 
 ## Dates are day-first
 
@@ -178,12 +195,14 @@ Vietnamese convention is day/month, so "8/3" is the 8th of March.
 This capture is for month {month} of {year}. When a header's month is not {month} but its \
 DAY is, the two may have been typed the wrong way round -- but only treat it that way when \
 the orders immediately before and after it in the paste are literally month {month}. A \
-single order belonging to another month is normal; this chat routinely covers several. \
-Set date_swapped when you swap, and report day and month AFTER swapping.
+single order belonging to another month is normal; this chat routinely covers several, and \
+you must report those too. Set date_swapped when you swap, and report day and month AFTER \
+swapping.
 
 ## An order's body ends at its money
 
-After the header come, in this order and each of them optional:
+`end_line` is the last line belonging to the order. After the header come, in this order \
+and each of them optional:
   - product lines, ALWAYS beginning with a quantity
   - a delivery address, sometimes prefixed "Đc:" or "Địa chỉ:"
   - a phone number, on its own line or inside the address
@@ -196,54 +215,68 @@ that happens to contain the word "cọc" is a product line.
 
 ## Everything after the body is one of four things
 
-Classify each line between the end of one order and the next header:
+For the lines between one order's end_line and the next header:
 
-  body     -- still part of the order above: a late address, a second phone number
+  body     -- still part of the order above: a late address, a second phone number.
+              Include it by extending end_line.
   update   -- a message CHANGING that order, carrying no header of its own:
                 "Đơn này lấy thêm 1 cây sen / Thu thêm 2.900"
                 "THAY ĐỔI - Lan Anh"
                 "Tổng 12.000"
                 "đã cọc thêm 1tr"
               Anything stating a different amount, an added or removed product, or a \
-              corrected name or address for the order above.
+              corrected name or address for the order above. Report it in `updates` as a \
+              start_line and end_line.
   version  -- a SECOND FULL ORDER repeating a header already seen in this paste, with \
               different contents. Report it as its own order and set repeats_header.
   chatter  -- ordinary group conversation: "ok chị", "vâng ạ", "đơn này đi chưa ạ?", \
-              greetings, @mentions, delivery questions stating no new figure.
+              greetings, @mentions, delivery questions stating no new figure. Leave it out.
 
-When you cannot tell an update from chatter, choose update and set confidence to "low". \
+When you cannot tell an update from chatter, report it as an update with confidence "low". \
 These errors are not equal: a revision wrongly kept costs the reader one glance, while a \
-revision wrongly dropped is money missing from a spreadsheet with nothing left to show it \
-was ever there.
-
-## Report money exactly as written
-
-Never convert it. "29tr", "2tr5", "500k", "5.800", "13.800" -- copy the characters as \
-they appear. A later deterministic step converts them and already knows this shop's \
-conventions; if you return a number instead, you will be wrong about "1tr8".
+revision wrongly dropped is money missing with nothing left to show it was ever there.
 
 ## Rules
 
-1. Report only what is written. Never invent an order, a name, or a figure.
+1. Report only what is written. Never invent an order.
 2. Never merge two orders and never split one. The header count is the order count.
-3. Copy text verbatim: no tidying, no translating, no normalising case.
-4. An order stating no total is still an order. Report it with total_text null.
-5. If the paste begins part-way through an order, with no header above the first lines, \
-   discard those lines and report them in leading_fragment."""
+3. Line numbers only. Never return the chat's text.
+4. An order stating no total is still an order.
+5. Lines before the first header are a fragment of an earlier order; ignore them."""
 
 SEGMENT_USER_TEMPLATE = """\
-Segment the chat below into orders for month {month}/{year}.
+Segment the chat below into orders. The capture is for month {month}/{year}, but report \
+orders from every month you find.
+
+Each line is numbered. Answer in those numbers.
 
 <chat>
 {text}
-</chat>"""
+</chat>
+
+The chat has {count} lines. Report every order in it."""
 
 
-def build_segment_prompt(text: str, month: int, year: int) -> tuple[str, str]:
-    """(system, user) for one segmentation call.
+def number_lines(text: str) -> tuple[str, list[str]]:
+    """(numbered text for the prompt, the original lines).
+
+    1-based, because the model is told "line 1" and an off-by-one here would shift every
+    order's body by a line -- silently, since a body missing its first product still looks
+    like a body.
+    """
+    lines = text.splitlines()
+    numbered = "\n".join(f"{i}|{line}" for i, line in enumerate(lines, start=1))
+    return numbered, lines
+
+
+def build_segment_prompt(text: str, month: int, year: int) -> tuple[str, str, list[str]]:
+    """(system, user, source lines) for one segmentation call.
 
     The target month lands in the SYSTEM half because the day/month rule is stated there
     and reads as nonsense without it.
     """
+    numbered, lines = number_lines(text)
     return (SEGMENT_SYSTEM.format(month=month, year=year),
-            SEGMENT_USER_TEMPLATE.format(month=month, year=year, text=text))
+            SEGMENT_USER_TEMPLATE.format(month=month, year=year,
+                                         text=numbered, count=len(lines)),
+            lines)

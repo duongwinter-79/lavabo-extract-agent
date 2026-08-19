@@ -26,8 +26,9 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 log = logging.getLogger(__name__)
 
@@ -42,8 +43,10 @@ RESPONSE_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "header": {"type": "string",
-                               "description": "The header line, verbatim, exactly as typed."},
+                    "header_line": {"type": "integer",
+                                    "description": "Line number of the order's header."},
+                    "end_line": {"type": "integer",
+                                 "description": "Line number of the order's last line."},
                     "day": {"type": "integer"},
                     "month": {"type": "integer"},
                     "order_number": {"type": "integer"},
@@ -53,27 +56,22 @@ RESPONSE_SCHEMA: dict[str, Any] = {
                                      "description": "True if day and month were typed the wrong way round."},
                     "repeats_header": {"type": "boolean",
                                        "description": "True if this header already appeared in this paste."},
-                    "body": {"type": "string",
-                             "description": "The order's own lines, verbatim, header included."},
                     "updates": {
                         "type": "array",
                         "description": "Later headerless messages changing THIS order.",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "text": {"type": "string"},
+                                "start_line": {"type": "integer"},
+                                "end_line": {"type": "integer"},
                                 "confidence": {"type": "string", "enum": ["high", "low"]},
                             },
-                            "required": ["text", "confidence"],
+                            "required": ["start_line", "end_line", "confidence"],
                         },
                     },
                 },
-                "required": ["header", "day", "month", "order_number", "body"],
+                "required": ["header_line", "end_line", "day", "month", "order_number"],
             },
-        },
-        "leading_fragment": {
-            "type": "string",
-            "description": "Lines before the first header, when the paste starts mid-order.",
         },
     },
     "required": ["orders"],
@@ -107,31 +105,73 @@ class SegmentedOrder:
 @dataclass
 class SegmentResult:
     orders: list[SegmentedOrder] = field(default_factory=list)
-    leading_fragment: str | None = None
     error: str | None = None
     input_tokens: int = 0
     output_tokens: int = 0
+    # Why the model stopped. "MAX_TOKENS" means the answer was cut off mid-thought, which
+    # is the difference between "the model found 1 order" and "the model was interrupted
+    # after 1 order" -- indistinguishable in the output, and the first live run cost a day
+    # to that ambiguity.
+    finish_reason: str = ""
+    # Orders thrown away here rather than by the model: an unusable key or line range, and
+    # a header line that does not carry the order it was said to. Counted because a
+    # segmenter that quietly discards a tenth of its own answer must not look like one
+    # that found nine tenths of the orders.
+    rejected: int = 0
+    miscounted: int = 0
 
     @property
     def ok(self) -> bool:
         return self.error is None
+
+    @property
+    def truncated(self) -> bool:
+        return self.finish_reason.upper().endswith("MAX_TOKENS")
+
+
+class Completion(NamedTuple):
+    """A provider's answer. A named tuple because this has already grown once -- see
+    CaptureResult, where growing a plain tuple silently broke callers by arity."""
+    data: Any
+    input_tokens: int = 0
+    output_tokens: int = 0
+    finish_reason: str = ""
 
 
 class JsonCompleter(Protocol):
     """The one provider capability this needs: a system+user prompt in, JSON out."""
 
     def complete_json(self, system: str, user: str,
-                      schema: dict[str, Any]) -> tuple[dict[str, Any], int, int]: ...
+                      schema: dict[str, Any], *, max_tokens: int = 0) -> Completion: ...
 
 
-def parse_response(data: dict[str, Any]) -> SegmentResult:
-    """Model JSON -> SegmentResult, tolerating every shape it might get wrong.
+def _slice(lines: list[str], first: Any, last: Any) -> tuple[str, int, int] | None:
+    """Text of lines[first..last], 1-based and inclusive, or None if the range is unusable.
 
-    Kept separate from the call so the parsing is testable without a key, and so a
-    malformed field costs one order rather than the whole paste: a segmentation that
-    drops silently is the exact failure this work exists to remove.
+    Clamped rather than rejected at the upper end: a model that overshoots the last line by
+    one has still identified the order correctly, and dropping it over that would trade a
+    whole order for a rounding error.
     """
-    result = SegmentResult(leading_fragment=(data.get("leading_fragment") or "").strip() or None)
+    try:
+        start_index, end_index = int(first), int(last)
+    except (TypeError, ValueError):
+        return None
+    if start_index < 1 or start_index > len(lines):
+        return None
+    end_index = max(start_index, min(end_index, len(lines)))
+    return "\n".join(lines[start_index - 1:end_index]).strip(), start_index, end_index
+
+
+def parse_response(data: dict[str, Any], lines: list[str]) -> SegmentResult:
+    """Model JSON -> SegmentResult, slicing every piece of text out of `lines`.
+
+    The model returns line numbers only, so the words in the result are the words in the
+    paste by construction. What has to be checked instead is that it counted correctly:
+    an order whose header line does not actually carry the day, month and order number it
+    reported is a miscount, and is dropped with a warning rather than silently filing a
+    real order's lines under a wrong key.
+    """
+    result = SegmentResult()
 
     for raw in data.get("orders") or []:
         if not isinstance(raw, dict):
@@ -142,31 +182,77 @@ def parse_response(data: dict[str, Any]) -> SegmentResult:
             number = int(raw["order_number"])
         except (KeyError, TypeError, ValueError):
             log.warning("segmenter returned an order without a usable key: %r", raw)
+            result.rejected += 1
             continue
-        body = str(raw.get("body") or "").strip()
-        header = str(raw.get("header") or "").strip()
-        if not body and not header:
+
+        span = _slice(lines, raw.get("header_line"), raw.get("end_line"))
+        if span is None:
+            log.warning("segmenter gave an unusable line range for %s/%s đơn %s: %r",
+                        day, month, number, raw)
+            result.rejected += 1
+            continue
+        body, header_index, _ = span
+        header = lines[header_index - 1].strip()
+
+        if not _header_agrees(header, day, month, number):
+            log.warning("segmenter miscounted: line %d is %r, which is not %d/%d đơn %d",
+                        header_index, header, day, month, number)
+            result.miscounted += 1
             continue
 
         updates: list[Update] = []
         for item in raw.get("updates") or []:
-            if isinstance(item, dict) and str(item.get("text") or "").strip():
-                confidence = str(item.get("confidence") or "high")
-                updates.append(Update(str(item["text"]).strip(),
-                                      confidence if confidence in ("high", "low") else "high"))
-            elif isinstance(item, str) and item.strip():
-                updates.append(Update(item.strip()))
+            if not isinstance(item, dict):
+                continue
+            piece = _slice(lines, item.get("start_line"), item.get("end_line"))
+            if piece is None or not piece[0]:
+                continue
+            confidence = str(item.get("confidence") or "high")
+            updates.append(Update(piece[0], confidence if confidence in ("high", "low") else "high"))
 
         result.orders.append(SegmentedOrder(
-            header=header or body.splitlines()[0],
+            header=header,
             day=day, month=month, order_number=number,
-            body=body or header,
+            body=body,
             customer=(str(raw.get("customer") or "").strip() or None),
             date_swapped=bool(raw.get("date_swapped")),
             repeats_header=bool(raw.get("repeats_header")),
             updates=updates,
         ))
     return result
+
+
+# Does the line the model pointed at really carry the order it claims? Deliberately loose
+# about separators and spacing -- the header shapes vary wildly, and this is checking the
+# NUMBERS, not re-parsing the header.
+def _header_agrees(header: str, day: int, month: int, number: int) -> bool:
+    digits = re.findall(r"\d+", header)
+    if len(digits) < 3:
+        return False
+    values = [int(d) for d in digits[:4]]
+    # A swapped date is reported after swapping, so accept either order for the pair.
+    return (number in values
+            and ((day in values and month in values) or day == month))
+
+
+# Roughly what one order costs to describe in line numbers, measured from the schema:
+# two line numbers, three integers, a name and a couple of flags. Generous on purpose --
+# running out of output budget is the failure this exists to prevent.
+TOKENS_PER_ORDER = 60
+MIN_OUTPUT_TOKENS = 4096
+MAX_OUTPUT_TOKENS = 64_000
+
+
+def output_budget(lines: int) -> int:
+    """How much room to give the answer, from the size of the question.
+
+    A month of this shop's chat is ~900 lines and ~70 orders. The configured max_tokens is
+    shared with field extraction, where 4096 is ample for one order -- and it silently is
+    not, here, for a whole month at once. Sizing it from the input is the only way this
+    scales with a chat that keeps growing.
+    """
+    orders = max(1, lines // 8)                 # ~8 lines per order in this chat
+    return max(MIN_OUTPUT_TOKENS, min(MAX_OUTPUT_TOKENS, orders * TOKENS_PER_ORDER))
 
 
 def segment(completer: JsonCompleter, text: str, month: int, year: int) -> SegmentResult:
@@ -177,23 +263,32 @@ def segment(completer: JsonCompleter, text: str, month: int, year: int) -> Segme
     """
     from .extract.prompt import build_segment_prompt
 
-    system, user = build_segment_prompt(text, month, year)
+    system, user, lines = build_segment_prompt(text, month, year)
     try:
-        data, input_tokens, output_tokens = completer.complete_json(system, user, RESPONSE_SCHEMA)
+        answer = completer.complete_json(system, user, RESPONSE_SCHEMA,
+                                         max_tokens=output_budget(len(lines)))
     except Exception as exc:
         log.error("segmentation failed: %s", exc)
         return SegmentResult(error=f"{type(exc).__name__}: {exc}")
 
+    data = answer.data
     if isinstance(data, str):                      # provider handed back raw text
         try:
             data = json.loads(data)
         except ValueError as exc:
-            return SegmentResult(error=f"unparseable response: {exc}")
+            return SegmentResult(
+                error=f"unparseable response: {exc}"
+                      + (" (answer was cut off at max_tokens)" if
+                         answer.finish_reason.upper().endswith("MAX_TOKENS") else ""),
+                finish_reason=answer.finish_reason)
     if not isinstance(data, dict):
-        return SegmentResult(error=f"unexpected response type {type(data).__name__}")
+        return SegmentResult(error=f"unexpected response type {type(data).__name__}",
+                             finish_reason=answer.finish_reason)
 
-    result = parse_response(data)
-    result.input_tokens, result.output_tokens = input_tokens, output_tokens
+    result = parse_response(data, lines)
+    result.input_tokens = answer.input_tokens
+    result.output_tokens = answer.output_tokens
+    result.finish_reason = answer.finish_reason
     return result
 
 
@@ -249,6 +344,12 @@ def compare(ai: SegmentResult, regex_blocks: list[Any]) -> list[Disagreement]:
     return out
 
 
+# Below this share of the splitter's orders, the model has not disagreed about a few
+# orders -- it has failed to do the job, and the difference matters because the first is
+# worth reading and the second is worth stopping for.
+INCOMPLETE_RATIO = 0.9
+
+
 def summarise(ai: SegmentResult, regex_blocks: list[Any],
               disagreements: list[Disagreement]) -> str:
     """One line for the log. Counts first, so a quiet run is quiet."""
@@ -258,8 +359,28 @@ def summarise(ai: SegmentResult, regex_blocks: list[Any],
     for d in disagreements:
         counts[d.kind] = counts.get(d.kind, 0) + 1
     detail = ", ".join(f"{n} {kind}" for kind, n in sorted(counts.items())) or "no disagreement"
-    return (f"shadow: model {len(ai.orders)} order(s), splitter {len(regex_blocks)} — {detail} "
-            f"({ai.input_tokens}+{ai.output_tokens} tokens)")
+    line = (f"shadow: model {len(ai.orders)} order(s), splitter {len(regex_blocks)} — "
+            f"{detail} ({ai.input_tokens}+{ai.output_tokens} tokens"
+            + (f", stopped: {ai.finish_reason}" if ai.finish_reason else "") + ")")
+
+    # Said plainly rather than left to be inferred from two counts. The first live run
+    # returned 1 order against 69 and the log stated it in a way that read like an
+    # ordinary disagreement, which is how it survived a whole capture.
+    problems = []
+    if ai.truncated:
+        problems.append("ANSWER CUT OFF at max_tokens — the model was interrupted, not "
+                        "finished. Nothing here is a judgement about those orders.")
+    if regex_blocks and len(ai.orders) < len(regex_blocks) * INCOMPLETE_RATIO:
+        problems.append(
+            f"INCOMPLETE: the model returned {len(ai.orders)} of {len(regex_blocks)} "
+            "orders. This is a failed segmentation, not a disagreement — do NOT switch "
+            "to 'Dùng AI' on the strength of it.")
+    if ai.rejected:
+        problems.append(f"{ai.rejected} order(s) unusable (bad key or line range)")
+    if ai.miscounted:
+        problems.append(f"{ai.miscounted} order(s) pointed at a line that is not their "
+                        "header — the model miscounted line numbers")
+    return "\n".join([line, *(f"  !! {p}" for p in problems)])
 
 
 MODES = ("off", "shadow", "on")

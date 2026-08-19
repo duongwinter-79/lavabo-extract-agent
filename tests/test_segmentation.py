@@ -24,30 +24,73 @@ from lavabo import extras, flags, rawpaste, segment                # noqa: E402
 
 
 class FakeCompleter:
-    def __init__(self, payload=None, error=None):
-        self.payload, self.error = payload, error
+    def __init__(self, payload=None, error=None, finish=""):
+        self.payload, self.error, self.finish = payload, error, finish
+        self.max_tokens = None
 
-    def complete_json(self, system, user, schema):
+    def complete_json(self, system, user, schema, *, max_tokens=0):
+        self.max_tokens = max_tokens
         if self.error:
             raise self.error
-        return self.payload, 100, 20
+        return segment.Completion(self.payload, 100, 20, self.finish)
 
 
-ORDER = {"header": "13/7 đơn 5 (Chị Hương)", "day": 13, "month": 7, "order_number": 5,
-         "customer": "Chị Hương",
-         "body": "13/7 đơn 5 (Chị Hương)\n1 tủ BC52\nTổng 5.800\nĐã cọc 500k",
-         "updates": []}
+CHAT = """13/7 đơn 5 (Chị Hương)
+1 tủ BC52
+Tổng 5.800
+Đã cọc 500k
+ok chị
+Thu thêm 2.900"""
+LINES = CHAT.splitlines()
+
+# The model answers in line numbers only: 1-4 is the order, 6 is a revision of it.
+ORDER = {"header_line": 1, "end_line": 4, "day": 13, "month": 7, "order_number": 5,
+         "customer": "Chị Hương", "updates": []}
 
 
 class SegmentParsing(unittest.TestCase):
+    def test_text_is_sliced_from_the_paste_not_taken_from_the_model(self):
+        """The model cannot paraphrase an order, because it never sends one back."""
+        order = segment.parse_response({"orders": [ORDER]}, LINES).orders[0]
+        self.assertEqual(order.body, "13/7 đơn 5 (Chị Hương)\n1 tủ BC52\n"
+                                     "Tổng 5.800\nĐã cọc 500k")
+        self.assertEqual(order.header, "13/7 đơn 5 (Chị Hương)")
+
     def test_a_bad_entry_costs_one_order_not_the_paste(self):
-        result = segment.parse_response({"orders": [ORDER, {"header": "no key at all"}]})
+        result = segment.parse_response({"orders": [ORDER, {"header_line": 1}]}, LINES)
         self.assertEqual(len(result.orders), 1)
-        self.assertEqual(result.orders[0].key, (13, 7, 5))
+        self.assertEqual(result.rejected, 1)
 
     def test_numeric_strings_are_accepted(self):
         raw = dict(ORDER, day="13", month="7", order_number="5")
-        self.assertEqual(segment.parse_response({"orders": [raw]}).orders[0].key, (13, 7, 5))
+        self.assertEqual(
+            segment.parse_response({"orders": [raw]}, LINES).orders[0].key, (13, 7, 5))
+
+    def test_a_line_range_past_the_end_is_clamped_not_dropped(self):
+        raw = dict(ORDER, end_line=9999)
+        result = segment.parse_response({"orders": [raw]}, LINES)
+        self.assertEqual(len(result.orders), 1)
+        self.assertTrue(result.orders[0].body.endswith("Thu thêm 2.900"))
+
+    def test_a_miscounted_header_line_is_refused(self):
+        """Pointing at line 2 while claiming 13/7 đơn 5 would file a real order's lines
+        under a key they do not belong to -- worse than not finding it at all."""
+        raw = dict(ORDER, header_line=2)
+        result = segment.parse_response({"orders": [raw]}, LINES)
+        self.assertEqual(result.orders, [])
+        self.assertEqual(result.miscounted, 1)
+
+    def test_an_update_is_sliced_by_its_own_range(self):
+        raw = dict(ORDER, updates=[{"start_line": 6, "end_line": 6, "confidence": "low"}])
+        update = segment.parse_response({"orders": [raw]}, LINES).orders[0].updates[0]
+        self.assertEqual(update.text, "Thu thêm 2.900")
+        self.assertEqual(update.confidence, "low")
+
+    def test_confidence_is_normalised(self):
+        raw = dict(ORDER, updates=[{"start_line": 6, "end_line": 6,
+                                    "confidence": "wildly wrong"}])
+        update = segment.parse_response({"orders": [raw]}, LINES).orders[0].updates[0]
+        self.assertEqual(update.confidence, "high")
 
     def test_provider_failure_never_raises(self):
         result = segment.segment(FakeCompleter(error=RuntimeError("429 quota")), "x", 7, 2026)
@@ -58,10 +101,55 @@ class SegmentParsing(unittest.TestCase):
         result = segment.segment(FakeCompleter(payload="not json"), "x", 7, 2026)
         self.assertFalse(result.ok)
 
-    def test_confidence_is_normalised(self):
-        raw = dict(ORDER, updates=[{"text": "Tổng 12.000", "confidence": "wildly wrong"}])
-        update = segment.parse_response({"orders": [raw]}).orders[0].updates[0]
-        self.assertEqual(update.confidence, "high")
+    def test_a_truncated_answer_says_so(self):
+        result = segment.segment(
+            FakeCompleter(payload="{trunc", finish="MAX_TOKENS"), CHAT, 7, 2026)
+        self.assertTrue(result.truncated)
+        self.assertIn("cut off", result.error)
+
+
+class OutputBudget(unittest.TestCase):
+    """The first live run returned 1 order out of 69, having been given field
+    extraction's 4096-token budget for a whole month of orders."""
+
+    def test_the_budget_grows_with_the_paste(self):
+        small = segment.output_budget(20)
+        month = segment.output_budget(900)
+        self.assertGreater(month, small)
+        self.assertGreaterEqual(small, segment.MIN_OUTPUT_TOKENS)
+
+    def test_a_real_month_gets_room_for_every_order(self):
+        """~900 lines and ~70 orders: the answer must fit, with margin."""
+        self.assertGreaterEqual(segment.output_budget(900), 70 * segment.TOKENS_PER_ORDER)
+
+    def test_the_call_is_given_the_sized_budget_not_the_config_one(self):
+        completer = FakeCompleter(payload={"orders": []})
+        segment.segment(completer, "\n".join(["line"] * 900), 7, 2026)
+        self.assertGreaterEqual(completer.max_tokens, segment.MIN_OUTPUT_TOKENS)
+
+
+class IncompleteAnswers(unittest.TestCase):
+    """A model that returns a tenth of the orders has failed, not disagreed. The log has
+    to say which, because the first live run read like an ordinary disagreement."""
+
+    def test_a_short_answer_is_called_a_failure(self):
+        blocks = zc.split_orders("\n".join(
+            f"{d}/7 đơn 1 - K{d}\n1 tủ\nTổng 5.800" for d in range(1, 21)), target_month=7)
+        ai = segment.parse_response({"orders": [ORDER]}, LINES)
+        text = segment.summarise(ai, blocks, segment.compare(ai, blocks))
+        self.assertIn("INCOMPLETE", text)
+        self.assertIn("do NOT switch", text)
+
+    def test_a_matching_answer_says_nothing_alarming(self):
+        blocks = zc.split_orders(CHAT, target_month=7)
+        ai = segment.parse_response({"orders": [ORDER]}, LINES)
+        text = segment.summarise(ai, blocks, segment.compare(ai, blocks))
+        self.assertNotIn("INCOMPLETE", text)
+
+    def test_truncation_is_reported_as_interruption(self):
+        ai = segment.parse_response({"orders": [ORDER]}, LINES)
+        ai.finish_reason = "MAX_TOKENS"
+        self.assertIn("CUT OFF", segment.summarise(ai, [], []))
 
 
 class BlockConversion(unittest.TestCase):
@@ -69,30 +157,27 @@ class BlockConversion(unittest.TestCase):
     the month filter and the save path all run on those objects unchanged."""
 
     def test_key_matches_the_regex_splitter(self):
-        text = "13/7 đơn 5 (Chị Hương)\n1 tủ BC52\nTổng 5.800\nĐã cọc 500k\n"
-        by_regex = zc.split_orders(text, target_month=7)
+        by_regex = zc.split_orders(CHAT, target_month=7)
         by_model = zc.blocks_from_segments(
-            segment.parse_response({"orders": [ORDER]}), target_month=7)
+            segment.parse_response({"orders": [ORDER]}, LINES), target_month=7)
         self.assertEqual([b.key for b in by_regex], [b.key for b in by_model])
         self.assertEqual(by_regex[0].customer, by_model[0].customer)
 
-    def test_duplicate_header_line_is_not_repeated_in_the_body(self):
-        block = zc.blocks_from_segments(segment.parse_response({"orders": [ORDER]}))[0]
+    def test_the_header_is_not_repeated_inside_the_body(self):
+        block = zc.blocks_from_segments(
+            segment.parse_response({"orders": [ORDER]}, LINES))[0]
         self.assertNotIn(block.header, block.lines)
-        self.assertIn("1 tủ BC52", block.lines)
-
-    def test_a_body_without_its_header_keeps_every_product_line(self):
-        raw = dict(ORDER, body="1 tủ BC52\nTổng 5.800")
-        block = zc.blocks_from_segments(segment.parse_response({"orders": [raw]}))[0]
         self.assertIn("1 tủ BC52", block.lines)
 
 
 class Comparison(unittest.TestCase):
     def test_orders_only_one_side_found_are_reported(self):
-        text = "13/7 đơn 5 (Chị Hương)\n1 tủ BC52\nTổng 5.800\n"
-        blocks = zc.split_orders(text, target_month=7)
-        extra = dict(ORDER, day=16, order_number=2, header="16/7 đơn 2")
-        found = segment.compare(segment.parse_response({"orders": [ORDER, extra]}), blocks)
+        blocks = zc.split_orders(CHAT, target_month=7)
+        lines = LINES + ["16/7 đơn 2", "1 lavabo", "Tổng 2tr"]
+        extra = {"header_line": 7, "end_line": 9, "day": 16, "month": 7,
+                 "order_number": 2}
+        found = segment.compare(
+            segment.parse_response({"orders": [ORDER, extra]}, lines), blocks)
         self.assertEqual([d.kind for d in found], ["only_ai"])
 
     def test_a_failed_segmentation_reports_as_error(self):
