@@ -190,6 +190,15 @@ class ExtractConfig:
     # Transcripts are stored in UTC but shown to the model in this zone, so extracted
     # times match what a human sees in Zalo / Business Suite.
     display_timezone: str = "Asia/Ho_Chi_Minh"
+    # off | shadow | on -- see src/lavabo/segment.py.
+    #   off     the regexes in scripts/zalo_capture.py decide, alone. Capture stays
+    #           local, instant and free, and needs no API key.
+    #   shadow  both run, the REGEX RESULT IS STILL USED, and differences are reported.
+    #           Costs one call per paste and changes no output, so it answers "how often
+    #           does the model disagree with us, on our own chat" before anything relies
+    #           on the answer.
+    #   on      the model decides, with the regexes kept as a fallback and a cross-check.
+    ai_segmentation: str = "off"
 
 
 @dataclass(slots=True)

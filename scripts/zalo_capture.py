@@ -53,7 +53,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from lavabo import closers, extras, rawpaste  # noqa: E402
+from lavabo import closers, extras, rawpaste, segment  # noqa: E402
 from lavabo.config import Config  # noqa: E402
 from lavabo.connectors.zalo_export import (  # noqa: E402
     DEFAULT_PATTERNS, ORDER_HEADER, header_customer)  # noqa: E402
@@ -595,6 +595,15 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
     blocks = split_orders(text, target_month=month)
     if not blocks:
         return CaptureResult(0, 0, 0, [], 0, 0)
+
+    # Shadow mode: segment the same text with the model, report where the two disagree,
+    # and change nothing. Off by default -- it costs a call per paste and needs a key,
+    # while capture is otherwise local, instant and free.
+    if getattr(cfg.extract, "ai_segmentation", "off") == "shadow":
+        findings = segment.run_shadow(cfg, text, blocks, month, year)
+        segment.log_shadow(cfg.zalo.inbox_dir, findings)
+        for line in findings:
+            print(f"  {line}")
 
     wanted = blocks if all_months else [b for b in blocks if in_month(b, month, year)]
     skipped_month = len(blocks) - len(wanted)

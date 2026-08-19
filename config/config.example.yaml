@@ -46,6 +46,20 @@ extract:
   temperature: 0.0               # deterministic: this is extraction, not writing
   max_transcript_chars: 120000
 
+  # Who decides where one order ends and the next begins, and which later message
+  # belongs to which order.
+  #
+  #   off     the regexes in scripts/zalo_capture.py, alone. Capture stays local,
+  #           instant and free, and works with no API key at all.
+  #   shadow  both run, THE REGEX RESULT IS STILL USED, and every difference is written
+  #           to data/inbox/raw/zalo/shadow.log. Costs one call per paste and changes
+  #           nothing, so you can find out how often the model disagrees with us on
+  #           your own chat before letting it decide anything.
+  #   on      the model decides, regexes kept as fallback and cross-check.
+  #
+  # Leave it off until you have read a week of shadow.log.
+  ai_segmentation: "off"
+
 # Read by the terminal app and the web page only — the pipeline ignores this block.
 app:
   # Default Người chốt đơn. Both front ends ask per capture and remember the answer;

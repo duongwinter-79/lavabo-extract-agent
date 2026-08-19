@@ -143,29 +143,14 @@ class GeminiExtractor(Extractor):
             },
         )
 
-        # The free tier allows only a handful of requests per minute, so a 429 is an
-        # expected part of normal operation rather than a failure. Wait it out.
-        response = None
-        for attempt in range(MAX_RETRIES):
-            try:
-                response = self.client.models.generate_content(**request)
-                break
-            except Exception as exc:
-                if _is_rate_limit(exc) and attempt < MAX_RETRIES - 1:
-                    wait = RETRY_BASE_SECONDS * (2 ** attempt)
-                    log.warning("rate limited (free tier?), retrying in %ss [%d/%d]",
-                                wait, attempt + 1, MAX_RETRIES - 1)
-                    time.sleep(wait)
-                    continue
-                log.error("extraction failed for %s: %s", conv.conversation_id, exc)
-                result.error = f"{type(exc).__name__}: {exc}"
-                if _is_unknown_model(exc):
-                    result.error += (f"  [model {self.model!r} was not accepted — "
-                                     "run `lavabo models` to see what this key can use]")
-                return result
-
-        if response is None:
-            result.error = "no response after retries"
+        try:
+            response = self._generate(request)
+        except Exception as exc:
+            log.error("extraction failed for %s: %s", conv.conversation_id, exc)
+            result.error = f"{type(exc).__name__}: {exc}"
+            if _is_unknown_model(exc):
+                result.error += (f"  [model {self.model!r} was not accepted — "
+                                 "run `lavabo models` to see what this key can use]")
             return result
 
         if usage := getattr(response, "usage_metadata", None):
@@ -179,3 +164,42 @@ class GeminiExtractor(Extractor):
             log.error("%s: %s", conv.conversation_id, result.error)
 
         return result
+
+    def _generate(self, request: dict):
+        """One call, waiting out rate limits. Raises on anything it cannot retry.
+
+        The free tier allows only a handful of requests per minute, so a 429 is an
+        expected part of normal operation rather than a failure.
+        """
+        for attempt in range(MAX_RETRIES):
+            try:
+                return self.client.models.generate_content(**request)
+            except Exception as exc:
+                if _is_rate_limit(exc) and attempt < MAX_RETRIES - 1:
+                    wait = RETRY_BASE_SECONDS * (2 ** attempt)
+                    log.warning("rate limited (free tier?), retrying in %ss [%d/%d]",
+                                wait, attempt + 1, MAX_RETRIES - 1)
+                    time.sleep(wait)
+                    continue
+                raise
+        raise RuntimeError("no response after retries")
+
+    def complete_json(self, system: str, user: str,
+                      schema: dict) -> tuple[dict, int, int]:
+        """Structured JSON from one prompt. Used by segmentation, which is not an
+        extraction: it has its own prompt, its own schema and no Conversation."""
+        response = self._generate(dict(
+            model=self.model,
+            contents=user,
+            config={
+                "system_instruction": system,
+                "temperature": self.config.temperature,
+                "max_output_tokens": self.config.max_tokens,
+                "response_mime_type": "application/json",
+                "response_schema": _to_gemini_schema(schema),
+            },
+        ))
+        usage = getattr(response, "usage_metadata", None)
+        return (json.loads(response.text),
+                getattr(usage, "prompt_token_count", 0) or 0,
+                getattr(usage, "candidates_token_count", 0) or 0)
