@@ -108,12 +108,18 @@ def _is_bookkeeping(relative: Path) -> bool:
 class ZaloExportConnector:
     source = Source.ZALO
 
-    def __init__(self, config: ZaloConfig, *, processed: set[str] | None = None) -> None:
+    def __init__(self, config: ZaloConfig, *, processed: set[str] | None = None,
+                 staged: set[str] | None = None) -> None:
         self.config = config
         self.tz = tz_zone(config.timezone)
         self.patterns = [re.compile(p) for p in (config.line_patterns or []) + DEFAULT_PATTERNS]
         self.own = {n.strip().casefold() for n in config.own_names if n.strip()}
         self.processed = processed or set()
+        # Conversation ids already in the staging database. A file is skipped only if it
+        # is BOTH already ingested and still staged: "processed" is an optimisation, and
+        # it must never be the reason a file on disk has no row behind it. Leaving that
+        # out is how a bad prune emptied a month and a plain ingest could not put it back.
+        self.staged = staged
         self.seen_hashes: set[str] = set()
         # Read once per run: fetch() touches every file, and these are small maps.
         self._closers = closers.load(config.inbox_dir)
@@ -127,6 +133,24 @@ class ZaloExportConnector:
         if not self.own:
             return True, f"zalo: {n} file(s) found — WARNING: zalo.own_names is empty, every message will be read as inbound"
         return True, f"zalo: {n} file(s) in {self.config.inbox_dir}"
+
+    @staticmethod
+    def file_stem(conversation_id: str) -> str:
+        """The file a conversation id refers to, whichever id scheme wrote it.
+
+        Compared on this rather than on the whole id, so a row an older version wrote as
+        "zalo:{file}:{digest}" is still recognised as belonging to a file that exists.
+        Comparing whole ids treated every one of them as orphaned.
+        """
+        body = conversation_id[len("zalo:"):] if conversation_id.startswith("zalo:") else conversation_id
+        head, sep, tail = body.rpartition(":")
+        if sep and len(tail) == 16 and all(c in "0123456789abcdef" for c in tail):
+            return head
+        return body
+
+    def current_stems(self) -> set[str]:
+        """Filenames in the inbox right now, ingested or not."""
+        return {path.stem for path in self._files()}
 
     def current_ids(self) -> set[str]:
         """Conversation ids for every file in the inbox right now, ingested or not.
@@ -148,7 +172,8 @@ class ZaloExportConnector:
     def fetch(self) -> Iterator[Conversation]:
         for path in self._files():
             digest = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
-            if digest in self.processed:
+            if digest in self.processed and (self.staged is None
+                                             or f"zalo:{path.stem}" in self.staged):
                 log.info("skip %s (already ingested)", path.name)
                 continue
             self.seen_hashes.add(digest)

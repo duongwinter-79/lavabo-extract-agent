@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -104,8 +105,45 @@ class Store:
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
         self._migrate()
+        self._migrate_zalo_ids()
         self.conn.executescript(INDEXES)
         self.conn.commit()
+
+    ZALO_DIGEST_ID = re.compile(r"^(zalo:.+):[0-9a-f]{16}$")
+
+    def _migrate_zalo_ids(self) -> None:
+        """Rewrite Zalo conversation ids that still carry a content digest.
+
+        The id used to be "zalo:{filename}:{digest}", so rewriting a file minted a second
+        conversation and the export wrote both. The digest is gone from the id now, and
+        these rows are MIGRATED rather than dropped: the extractions hang off the
+        conversation id, and deleting them would charge for a whole month of re-extraction
+        to fix a bookkeeping mistake. Which is exactly what an earlier version of this fix
+        did, by pruning them instead.
+        """
+        rows = [r[0] for r in self.conn.execute(
+            "SELECT conversation_id FROM conversations WHERE source='zalo'")]
+        moves = [(old, m.group(1)) for old in rows if (m := self.ZALO_DIGEST_ID.match(old))]
+        if not moves:
+            return
+
+        existing = set(rows)
+        with self.tx() as c:
+            for old_id, new_id in moves:
+                if new_id in existing:
+                    # A row under the stable id already exists, so this one is the older
+                    # copy of the same file. Its extractions cannot be better than the
+                    # ones already there.
+                    for table in ("messages", "extractions", "conversations"):
+                        c.execute(f"DELETE FROM {table} WHERE source='zalo' "
+                                  "AND conversation_id=?", (old_id,))
+                    continue
+                for table in ("conversations", "messages", "extractions"):
+                    c.execute(f"UPDATE {table} SET conversation_id=? "
+                              "WHERE source='zalo' AND conversation_id=?", (new_id, old_id))
+                existing.add(new_id)
+        log.warning("migrated %d Zalo conversation(s) to file-based ids, keeping their "
+                    "cached extractions", len(moves))
 
     def _migrate(self) -> None:
         """Bring a database created by an earlier version up to the current schema.
@@ -251,22 +289,22 @@ class Store:
 
         return after - before
 
-    def prune_conversations(self, source: Source, keep: set[str]) -> int:
-        """Drop conversations of `source` outside `keep`, with their messages.
+    def prune_conversations(self, source: Source, keep_stems: set[str],
+                            *, identify) -> int:
+        """Drop conversations of `source` whose file is gone, with their messages.
 
-        Called after an ingest that saw the whole inbox, so anything staged that no longer
-        has a file behind it goes -- including rows left by the older id scheme, which put
-        the content digest in the id and so minted a fresh conversation every time a file
-        was rewritten. Extractions are keyed on conversation_id too and go with them.
+        Compared by FILE, through `identify`, and not by whole conversation id. The first
+        version of this compared ids, so when the id scheme changed every existing row
+        looked orphaned and a single ingest deleted a staged month -- conversations,
+        messages and the cached extractions with them. Nothing about "this file is gone"
+        should depend on how its id happened to be spelled.
         """
-        if not keep:
+        if not keep_stems:
             return 0                    # never prune to nothing on an empty listing
-        placeholders = ",".join("?" * len(keep))
-        args = (source.value, *keep)
         with self.tx() as c:
             stale = [row[0] for row in c.execute(
-                f"SELECT conversation_id FROM conversations "
-                f"WHERE source=? AND conversation_id NOT IN ({placeholders})", args)]
+                "SELECT conversation_id FROM conversations WHERE source=?",
+                (source.value,)) if identify(row[0]) not in keep_stems]
             if not stale:
                 return 0
             marks = ",".join("?" * len(stale))

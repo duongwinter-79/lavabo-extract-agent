@@ -47,12 +47,15 @@ class OneFileOneConversation(unittest.TestCase):
         self.tmp.cleanup()
 
     def _ingest(self):
+        """The same sequence cmd_ingest runs."""
         done = set(json.loads(self.store.get_state("zalo:files") or "[]"))
-        conn = ZaloExportConnector(self.cfg.zalo, processed=done)
+        staged = {c.conversation_id for c in self.store.conversations(source=Source.ZALO)}
+        conn = ZaloExportConnector(self.cfg.zalo, processed=done, staged=staged)
         for conv in conn.fetch():
             self.store.upsert_conversation(conv, replace_messages=True)
         self.store.set_state("zalo:files", json.dumps(sorted(done | conn.seen_hashes)))
-        return self.store.prune_conversations(Source.ZALO, conn.current_ids())
+        return self.store.prune_conversations(Source.ZALO, conn.current_stems(),
+                                              identify=conn.file_stem)
 
     def test_rewriting_a_file_does_not_mint_a_second_conversation(self):
         self.order.write_text(FIRST, encoding="utf-8")
@@ -81,20 +84,69 @@ class OneFileOneConversation(unittest.TestCase):
         self.assertIn("phú quốc", staged)
         self.assertNotIn("thái thuỵ", staged)
 
-    def test_a_database_from_the_old_scheme_heals_on_the_next_ingest(self):
-        """The rows are already there in anybody's database. Nothing should have to be
-        deleted by hand for the duplicates to stop."""
-        self.order.write_text(REWRITTEN, encoding="utf-8")
-        with sqlite3.connect(self.store.conn.execute(
-                "PRAGMA database_list").fetchone()[2]) as raw:
-            for digest in ("906d8f178140e66a", "c52601397ea8deb3"):
+    def _db_path(self):
+        return self.store.conn.execute("PRAGMA database_list").fetchone()[2]
+
+    def _write_old_scheme_rows(self, digests, *, with_extraction=True):
+        """A database as an earlier version left it: ids carrying the content digest."""
+        path = self._db_path()
+        self.store.close()
+        with sqlite3.connect(path) as raw:
+            for digest in digests:
+                cid = f"zalo:15-8 đơn 1 - Meloxicam:{digest}"
                 raw.execute(
                     "INSERT INTO conversations (source, conversation_id, customer_name,"
                     " raw, ingested_at) VALUES (?,?,?,?,?)",
-                    ("zalo", f"zalo:15-8 đơn 1 - Meloxicam:{digest}", "Meloxicam",
-                     "{}", "now"))
-        self.assertEqual(self.store.stats()["conversations"], 2)
-        self.assertEqual(self._ingest(), 2)
+                    ("zalo", cid, "Meloxicam", "{}", "now"))
+                if with_extraction:
+                    raw.execute(
+                        "INSERT INTO extractions (source, conversation_id, content_hash,"
+                        " schema_version, schema_hash, prompt_version, model, values_json,"
+                        " extracted_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                        ("zalo", cid, "h", 1, "s", 3, "m", "{}", "now"))
+        self.store = Store(Path(path))          # reopening runs the migration
+        return path
+
+    def test_old_ids_are_migrated_and_keep_their_extractions(self):
+        """Dropping these instead charged a whole month of re-extraction to fix a
+        bookkeeping mistake. The cached answers must survive the rename."""
+        self.order.write_text(REWRITTEN, encoding="utf-8")
+        self._write_old_scheme_rows(["906d8f178140e66a"])
+        self.assertEqual(self.store.stats()["conversations"], 1)
+        self.assertEqual(self.store.stats()["extractions"], 1)
+        self.assertEqual(self.store.conversations(source=Source.ZALO)[0].conversation_id,
+                         "zalo:15-8 đơn 1 - Meloxicam")
+
+    def test_two_old_rows_for_one_file_collapse_to_one(self):
+        self.order.write_text(REWRITTEN, encoding="utf-8")
+        self._write_old_scheme_rows(["906d8f178140e66a", "c52601397ea8deb3"])
+        self.assertEqual(self.store.stats()["conversations"], 1)
+        self.assertEqual(self._ingest(), 0, "nothing should look orphaned afterwards")
+
+    def test_an_unmigrated_old_id_is_not_treated_as_orphaned(self):
+        """The defect that emptied a staged month: the prune compared whole ids, so when
+        the scheme changed every existing row looked like a file that had been deleted."""
+        self.order.write_text(REWRITTEN, encoding="utf-8")
+        stem = ZaloExportConnector.file_stem(
+            "zalo:15-8 đơn 1 - Meloxicam:906d8f178140e66a")
+        self.assertEqual(stem, "15-8 đơn 1 - Meloxicam")
+        self.assertEqual(
+            self.store.prune_conversations(Source.ZALO, {stem},
+                                           identify=ZaloExportConnector.file_stem), 0)
+
+    def test_a_file_with_no_row_is_re_staged_even_if_marked_ingested(self):
+        """Recovery path. "processed" is an optimisation and must never be the reason a
+        file on disk has nothing staged behind it."""
+        self.order.write_text(FIRST, encoding="utf-8")
+        self._ingest()
+        self.assertEqual(self.store.stats()["conversations"], 1)
+
+        # Wipe the staging table but leave the file marked as already ingested.
+        with self.store.tx() as c:
+            c.execute("DELETE FROM conversations WHERE source='zalo'")
+        self.assertEqual(self.store.stats()["conversations"], 0)
+
+        self._ingest()
         self.assertEqual(self.store.stats()["conversations"], 1)
 
     def test_a_deleted_file_stops_being_exported(self):
@@ -111,7 +163,9 @@ class OneFileOneConversation(unittest.TestCase):
         """A mistyped inbox_dir must not be how a month of orders disappears."""
         self.order.write_text(FIRST, encoding="utf-8")
         self._ingest()
-        self.assertEqual(self.store.prune_conversations(Source.ZALO, set()), 0)
+        self.assertEqual(
+            self.store.prune_conversations(Source.ZALO, set(),
+                                           identify=ZaloExportConnector.file_stem), 0)
         self.assertEqual(self.store.stats()["conversations"], 1)
 
     def test_meta_style_paging_is_left_alone(self):
