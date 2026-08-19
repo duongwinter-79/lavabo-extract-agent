@@ -287,20 +287,17 @@ def completer_for(cfg) -> JsonCompleter | None:
         return None
 
 
-def run_shadow(cfg, text: str, blocks: list[Any], month: int, year: int) -> list[str]:
-    """Segment with the model, compare against the regexes, and report. Changes nothing.
+def run(cfg, text: str, month: int, year: int) -> SegmentResult | None:
+    """Segment one paste with the configured provider.
 
-    Returns lines for the caller to log or print. Never raises, and never touches what
-    was captured -- that is the whole point of shadow mode.
+    None means the provider could not be used at all -- no key, no SDK, misconfigured --
+    which is different from a call that was made and failed, and the caller reports them
+    differently. Never raises: capture must survive anything that happens out here.
     """
     completer = completer_for(cfg)
     if completer is None:
-        return []
-    result = segment(completer, text, month, year)
-    disagreements = compare(result, blocks)
-    lines = [summarise(result, blocks, disagreements)]
-    lines.extend(f"  {d}" for d in disagreements)
-    return lines
+        return None
+    return segment(completer, text, month, year)
 
 
 SHADOW_LOG = "shadow.log"

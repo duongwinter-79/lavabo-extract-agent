@@ -55,9 +55,13 @@ extract:
   #           to data/inbox/raw/zalo/shadow.log. Costs one call per paste and changes
   #           nothing, so you can find out how often the model disagrees with us on
   #           your own chat before letting it decide anything.
-  #   on      the model decides, regexes kept as fallback and cross-check.
+  #   on      the model decides. The regexes still run as a cross-check, and become the
+  #           fallback if the call fails or the key stops working -- orders captured
+  #           that way are marked "chưa qua AI" in the review column, and a later paste
+  #           that does reach the model clears the mark.
   #
-  # Leave it off until you have read a week of shadow.log.
+  # Leave it off until you have read a week of shadow.log. In shadow and on, every paste
+  # costs one API call, and capture stops being usable without a working key.
   ai_segmentation: "off"
 
 # Read by the terminal app and the web page only — the pipeline ignores this block.

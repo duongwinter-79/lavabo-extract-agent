@@ -275,6 +275,14 @@ review. Three reasons appear:
   the date and the name but **no STT and no money**, so it cannot be counted twice.
 - **`trùng số đơn`** — the same day and số đơn arrived as two separate orders. This one
   *is* counted twice until you delete a row. Do that before using the file.
+- **`bổ sung — chưa chắc`** — a later message was attached to this order, but it might
+  have been ordinary chat rather than a change. Kept deliberately: a revision wrongly
+  dropped leaves money missing with nothing to show it was ever there, while one wrongly
+  kept costs you a glance.
+- **`chưa qua AI`** — only appears when `ai_segmentation` is on. The AI segmenter was
+  unavailable when this order was captured, so the older keyword rules found it. The
+  order and its money are fine; it simply missed the better reader. Pasting that stretch
+  again while the key works clears the mark.
 
 **Thêm vào file quản lý** writes only the original 12 columns, so none of this reaches
 your workbook.

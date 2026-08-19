@@ -180,7 +180,7 @@ them, so your own workbook is untouched:
 |---|---|
 | Bổ sung | a later message about this order, kept word for word |
 | Số tiền bổ sung | the money that message states — read out so you can see it, but **never added to Tổng** |
-| Cần xem lại | why a human should look: `có bổ sung`, `trùng số đơn`, `2 phiên bản` |
+| Cần xem lại | why a human should look: `có bổ sung`, `trùng số đơn`, `2 phiên bản`, `bổ sung — chưa chắc`, `chưa qua AI` |
 
 Rows with anything in **Cần xem lại** are tinted, the whole order, not just its first row.
 
@@ -244,6 +244,24 @@ python scripts/zalo_capture.py --month 7   # a different month
 python scripts/zalo_capture.py --retrim    # re-trim files captured earlier
 python scripts/zalo_capture.py --debug     # explain what was accepted or rejected
 ```
+
+### Who splits the paste into orders
+
+`extract.ai_segmentation` in `config/config.yaml`:
+
+| | |
+|---|---|
+| `off` (default) | the regexes in `scripts/zalo_capture.py`. Capture is local, instant, free, and needs no API key |
+| `shadow` | both run, **the regex result is still used**, differences land in `data/inbox/raw/zalo/shadow.log` |
+| `on` | the model decides; regexes stay as cross-check and fallback |
+
+Every paste is written to `data/inbox/raw/zalo/` before anything parses it, so a failed
+call costs a retry over stored text rather than another scroll through Zalo. In `on`,
+orders the fallback captured are marked `chưa qua AI` until a later paste reaches the
+model.
+
+`shadow` and `on` cost one API call per paste. Read a week of `shadow.log` before
+switching to `on`.
 
 ### Documentation
 

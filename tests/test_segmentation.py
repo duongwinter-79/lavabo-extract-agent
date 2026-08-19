@@ -1,0 +1,180 @@
+"""Invariants that must survive the move from regex segmentation to a model.
+
+Written with unittest rather than pytest so it runs on a clean install with nothing
+extra:  python -m unittest discover -s tests
+
+These are not exhaustive. They cover the things that, if they broke, would break quietly
+and be found by reconciling a spreadsheet weeks later -- which is the failure mode this
+whole change exists to remove.
+"""
+
+from __future__ import annotations
+
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import zalo_capture as zc                                          # noqa: E402
+from lavabo import extras, flags, rawpaste, segment                # noqa: E402
+
+
+class FakeCompleter:
+    def __init__(self, payload=None, error=None):
+        self.payload, self.error = payload, error
+
+    def complete_json(self, system, user, schema):
+        if self.error:
+            raise self.error
+        return self.payload, 100, 20
+
+
+ORDER = {"header": "13/7 đơn 5 (Chị Hương)", "day": 13, "month": 7, "order_number": 5,
+         "customer": "Chị Hương",
+         "body": "13/7 đơn 5 (Chị Hương)\n1 tủ BC52\nTổng 5.800\nĐã cọc 500k",
+         "updates": []}
+
+
+class SegmentParsing(unittest.TestCase):
+    def test_a_bad_entry_costs_one_order_not_the_paste(self):
+        result = segment.parse_response({"orders": [ORDER, {"header": "no key at all"}]})
+        self.assertEqual(len(result.orders), 1)
+        self.assertEqual(result.orders[0].key, (13, 7, 5))
+
+    def test_numeric_strings_are_accepted(self):
+        raw = dict(ORDER, day="13", month="7", order_number="5")
+        self.assertEqual(segment.parse_response({"orders": [raw]}).orders[0].key, (13, 7, 5))
+
+    def test_provider_failure_never_raises(self):
+        result = segment.segment(FakeCompleter(error=RuntimeError("429 quota")), "x", 7, 2026)
+        self.assertFalse(result.ok)
+        self.assertIn("429", result.error)
+
+    def test_unparseable_response_is_an_error_not_a_crash(self):
+        result = segment.segment(FakeCompleter(payload="not json"), "x", 7, 2026)
+        self.assertFalse(result.ok)
+
+    def test_confidence_is_normalised(self):
+        raw = dict(ORDER, updates=[{"text": "Tổng 12.000", "confidence": "wildly wrong"}])
+        update = segment.parse_response({"orders": [raw]}).orders[0].updates[0]
+        self.assertEqual(update.confidence, "high")
+
+
+class BlockConversion(unittest.TestCase):
+    """The model's output must become exactly what the regexes produce, because dedup,
+    the month filter and the save path all run on those objects unchanged."""
+
+    def test_key_matches_the_regex_splitter(self):
+        text = "13/7 đơn 5 (Chị Hương)\n1 tủ BC52\nTổng 5.800\nĐã cọc 500k\n"
+        by_regex = zc.split_orders(text, target_month=7)
+        by_model = zc.blocks_from_segments(
+            segment.parse_response({"orders": [ORDER]}), target_month=7)
+        self.assertEqual([b.key for b in by_regex], [b.key for b in by_model])
+        self.assertEqual(by_regex[0].customer, by_model[0].customer)
+
+    def test_duplicate_header_line_is_not_repeated_in_the_body(self):
+        block = zc.blocks_from_segments(segment.parse_response({"orders": [ORDER]}))[0]
+        self.assertNotIn(block.header, block.lines)
+        self.assertIn("1 tủ BC52", block.lines)
+
+    def test_a_body_without_its_header_keeps_every_product_line(self):
+        raw = dict(ORDER, body="1 tủ BC52\nTổng 5.800")
+        block = zc.blocks_from_segments(segment.parse_response({"orders": [raw]}))[0]
+        self.assertIn("1 tủ BC52", block.lines)
+
+
+class Comparison(unittest.TestCase):
+    def test_orders_only_one_side_found_are_reported(self):
+        text = "13/7 đơn 5 (Chị Hương)\n1 tủ BC52\nTổng 5.800\n"
+        blocks = zc.split_orders(text, target_month=7)
+        extra = dict(ORDER, day=16, order_number=2, header="16/7 đơn 2")
+        found = segment.compare(segment.parse_response({"orders": [ORDER, extra]}), blocks)
+        self.assertEqual([d.kind for d in found], ["only_ai"])
+
+    def test_a_failed_segmentation_reports_as_error(self):
+        self.assertEqual(
+            [d.kind for d in segment.compare(segment.SegmentResult(error="boom"), [])],
+            ["error"])
+
+
+class Sidecars(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.inbox = Path(self.tmp.name) / "zalo"
+        self.inbox.mkdir(parents=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_re_pasting_does_not_stack_the_same_revision(self):
+        for _ in range(3):
+            extras.record(self.inbox, "o.txt", "update", "Thu thêm 2.900")
+        self.assertEqual(len(extras.load(self.inbox)["o.txt"]), 1)
+
+    def test_a_confident_repeat_upgrades_an_uncertain_revision(self):
+        extras.record(self.inbox, "o.txt", "update", "Tổng 12.000", "low")
+        extras.record(self.inbox, "o.txt", "update", "Tổng 12.000", "high")
+        self.assertEqual(extras.load(self.inbox)["o.txt"][0]["confidence"], "high")
+
+    def test_flags_are_added_once_and_can_be_cleared(self):
+        self.assertTrue(flags.record(self.inbox, "o.txt", flags.NO_AI))
+        self.assertFalse(flags.record(self.inbox, "o.txt", flags.NO_AI))
+        self.assertTrue(flags.clear(self.inbox, "o.txt", flags.NO_AI))
+        self.assertEqual(flags.load(self.inbox), {})
+
+    def test_a_damaged_sidecar_reads_as_empty_rather_than_raising(self):
+        for module in (extras, flags):
+            module.sidecar_path(self.inbox).write_text("{ broken", encoding="utf-8")
+            self.assertEqual(module.load(self.inbox), {})
+
+    def test_the_paste_is_stored_byte_for_byte_and_only_once(self):
+        text = "13/7 đơn 5 (Chị Hương)\n1 tủ BC52\nTổng 5.800\nĐã cọc 500k\n"
+        first = rawpaste.store(self.inbox, text, month=7, year=2026)
+        again = rawpaste.store(self.inbox, text, month=7, year=2026)
+        self.assertEqual(first, again)
+        self.assertEqual(len(rawpaste.load_index(self.inbox)), 1)
+        self.assertEqual(first.read_text(encoding="utf-8"), text)
+
+    def test_the_raw_store_is_not_inside_the_inbox(self):
+        """Anything under the inbox is walked by the connector and extracted as a
+        transcript, so a paste left there would be ingested as a fake conversation."""
+        self.assertNotIn(self.inbox, rawpaste.store_dir(self.inbox).parents)
+
+
+class MoneyNeverMoves(unittest.TestCase):
+    """The one invariant worth more than all the others: a revision is shown, never
+    applied. The shop reconciles totals by hand against its own workbook."""
+
+    def test_a_revision_stays_out_of_the_total_columns(self):
+        from openpyxl import load_workbook
+
+        from lavabo.load.senkahomes import COL_AMOUNT, COL_REVIEW, write_orders_workbook
+        from lavabo.models import Conversation, ExtractionResult, Source
+
+        conv = Conversation(conversation_id="a", source=Source.ZALO,
+                            customer_name="Thảo Nguyễn", messages=[])
+        conv.raw = {"order_day": 14, "order_month": 7, "order_number": 1,
+                    "extras": [{"kind": "update", "text": "Tổng 12.000",
+                                "confidence": "low"}]}
+        result = ExtractionResult(conversation_id="a", source=Source.ZALO, values={
+            "items": [{"name": "tủ BC52", "quantity": 1}], "address": "TB",
+            "total_text": "5.800", "deposit_text": "500k"})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out.xlsx"
+            write_orders_workbook(out, [conv], {"a": result}, default_year=2026)
+            row = list(load_workbook(out).active.iter_rows(min_row=2, values_only=True))[0]
+
+        self.assertEqual(row[6], 5_800_000, "Tổng must be what the order said")
+        self.assertEqual(row[8], 500_000, "Cọc must be what the order said")
+        self.assertEqual(row[7], 5_300_000, "Xe thu hộ is Tổng - Cọc, unaffected")
+        self.assertEqual(row[COL_AMOUNT - 1], "Tổng 12.000.000", "shown, in its own column")
+        self.assertEqual(row[COL_REVIEW - 1], "bổ sung — chưa chắc")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

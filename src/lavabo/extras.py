@@ -64,7 +64,11 @@ def load(inbox: Path) -> dict[str, list[dict[str, str]]]:
             if not isinstance(items, list):
                 continue
             kept = [
-                {"kind": str(i.get("kind") or "update"), "text": str(i.get("text") or "")}
+                {"kind": str(i.get("kind") or "update"),
+                 "text": str(i.get("text") or ""),
+                 # Absent in sidecars written before the model attributed revisions.
+                 # Those came from a keyword match, which was certain by construction.
+                 "confidence": "low" if str(i.get("confidence")) == "low" else "high"}
                 for i in items
                 if isinstance(i, dict) and str(i.get("text") or "").strip()
             ]
@@ -84,20 +88,28 @@ def save(inbox: Path, orders: dict[str, list[dict[str, str]]]) -> None:
     )
 
 
-def record(inbox: Path, filename: str, kind: Kind, text: str) -> bool:
+def record(inbox: Path, filename: str, kind: Kind, text: str,
+           confidence: str = "high") -> bool:
     """Attach one later message to an order. Returns True if it was new.
 
     Exact-duplicate text is ignored, so re-pasting the same chunk -- the normal way this
     shop captures, in overlapping sweeps -- does not stack the same revision repeatedly.
+    A repeat DOES upgrade the confidence, so an item the model was unsure about once and
+    sure about later ends up marked sure.
     """
     text = (text or "").strip()
     if not text:
         return False
+    confidence = "low" if confidence == "low" else "high"
     orders = load(inbox)
     items = orders.setdefault(filename, [])
-    if any(i["text"].strip() == text for i in items):
-        return False
-    items.append({"kind": kind, "text": text})
+    for item in items:
+        if item["text"].strip() == text:
+            if item.get("confidence") == "low" and confidence == "high":
+                item["confidence"] = "high"
+                save(inbox, orders)
+            return False
+    items.append({"kind": kind, "text": text, "confidence": confidence})
     save(inbox, orders)
     return True
 
@@ -115,6 +127,17 @@ def summary(conv_raw: dict[str, Any]) -> tuple[list[str], list[str]]:
     updates = [i["text"] for i in items if i.get("kind") == "update"]
     versions = [i["text"] for i in items if i.get("kind") == "version"]
     return updates, versions
+
+
+def uncertain(conv_raw: dict[str, Any]) -> bool:
+    """True when any revision on this order was only a guess.
+
+    The segmenter is told to prefer keeping a revision it cannot classify, because a
+    revision wrongly kept costs one glance and a revision wrongly dropped is money missing
+    with nothing to show it was ever there. That trade only works if the reader can tell
+    the two apart, which is what this drives.
+    """
+    return any(i.get("confidence") == "low" for i in conv_raw.get("extras") or [])
 
 
 # Read against the diacritic-folded text, MOST SPECIFIC FIRST, because these overlap:

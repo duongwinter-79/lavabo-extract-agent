@@ -179,8 +179,13 @@ def write_orders_workbook(
         who = conv.raw.get("sender_name") or closer or None
         is_dupe = (conv.raw.get("order_day"), conv.raw.get("order_month"),
                    conv.raw.get("order_number")) in duplicate_keys
-        reasons = [r for r in ("trùng số đơn" if is_dupe else "",
-                               "có bổ sung" if updates else "") if r]
+        # "chưa chắc" is a weaker claim than "có bổ sung" and has to read as one: the
+        # segmenter is told to keep a revision it cannot classify rather than drop it,
+        # and that trade is only sound if the reader can tell a guess from a certainty.
+        revision = ("bổ sung — chưa chắc" if extras.uncertain(conv.raw)
+                    else "có bổ sung") if updates else ""
+        reasons = [r for r in ("trùng số đơn" if is_dupe else "", revision,
+                               *(conv.raw.get("flags") or [])) if r]
 
         for name, qty in items:
             if first:

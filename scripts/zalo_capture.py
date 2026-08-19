@@ -46,14 +46,14 @@ import sys
 import time
 import unicodedata
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import NamedTuple
 from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from lavabo import closers, extras, rawpaste, segment  # noqa: E402
+from lavabo import closers, extras, flags, rawpaste, segment  # noqa: E402
 from lavabo.config import Config  # noqa: E402
 from lavabo.connectors.zalo_export import (  # noqa: E402
     DEFAULT_PATTERNS, ORDER_HEADER, header_customer)  # noqa: E402
@@ -169,6 +169,9 @@ class OrderBlock:
     # carry the corrected date for the fix to survive past this capture session.
     date_swapped: bool = False
     original_header: str = ""
+    # Later messages the segmenter attributed to THIS order, as (text, confidence).
+    # Empty for regex-produced blocks, whose revisions come from trailing_update instead.
+    ai_updates: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def text(self) -> str:
@@ -413,6 +416,45 @@ def split_orders(text: str, target_month: int | None = None) -> list[OrderBlock]
     return blocks
 
 
+def blocks_from_segments(result, target_month: int | None = None) -> list[OrderBlock]:
+    """Model segmentation -> the same OrderBlock the regexes produce.
+
+    Converting rather than introducing a parallel type is the whole safety argument for
+    this change: dedup, the month filter, the closer sidecar, trimming and saving all keep
+    running on exactly the objects they already run on, so switching segmenter changes
+    where blocks come from and nothing about what happens to them. The order key stays
+    (day, month, số đơn) computed from integers, so re-pasting an overlapping chunk still
+    lands on the same file.
+
+    The model's own date_swapped is honoured, but resolve_swapped_dates still runs when a
+    target month is given: it is cheap, it is deterministic, and an order it would fix
+    that the model left alone is a fix either way.
+    """
+    blocks: list[OrderBlock] = []
+    for order in result.orders:
+        body = (order.body or "").strip()
+        lines = body.splitlines()
+        # The model is asked for the body with its header included; tolerate either, so a
+        # response that omits the header line does not lose the whole first product line.
+        if lines and lines[0].strip() == order.header.strip():
+            lines = lines[1:]
+        blocks.append(OrderBlock(
+            header=order.header,
+            day=order.day,
+            month=order.month,
+            year=None,                     # headers carry no year; in_month supplies it
+            order_no=order.order_number,
+            customer=order.customer,
+            lines=[ln.rstrip() for ln in lines],
+            date_swapped=order.date_swapped,
+            original_header=order.header,
+            ai_updates=[(u.text, u.confidence) for u in order.updates],
+        ))
+    if target_month is not None:
+        resolve_swapped_dates(blocks, target_month)
+    return blocks
+
+
 def in_month(block: OrderBlock, month: int, year: int) -> bool:
     """Headers usually omit the year, so an absent one is taken as the target year."""
     return block.month == month and (block.year or year) == year
@@ -593,17 +635,31 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
     rawpaste.store(cfg.zalo.inbox_dir, text, month=month, year=year, closer=closer)
 
     blocks = split_orders(text, target_month=month)
+    mode = getattr(cfg.extract, "ai_segmentation", "off")
+    fallback = False
+
+    if mode in ("shadow", "on"):
+        ai = segment.run(cfg, text, month, year)
+        findings = segment.compare(ai, blocks) if ai is not None else []
+        if ai is not None:
+            lines = [segment.summarise(ai, blocks, findings)] + [f"  {d}" for d in findings]
+            segment.log_shadow(cfg.zalo.inbox_dir, lines)
+            for line in lines:
+                print(f"  {line}")
+        if mode == "on":
+            # The model decides only when it actually answered. A failed call, a missing
+            # key, an empty answer -- any of these fall back to the regexes rather than
+            # losing the paste, and the orders that came out of the fallback are flagged
+            # so nobody has to remember which ones missed the better segmenter.
+            if ai is not None and ai.ok and ai.orders:
+                blocks = blocks_from_segments(ai, target_month=month)
+            else:
+                fallback = True
+                print("  segmentation unavailable — dùng regex, đánh dấu "
+                      f"{flags.NO_AI!r}")
+
     if not blocks:
         return CaptureResult(0, 0, 0, [], 0, 0)
-
-    # Shadow mode: segment the same text with the model, report where the two disagree,
-    # and change nothing. Off by default -- it costs a call per paste and needs a key,
-    # while capture is otherwise local, instant and free.
-    if getattr(cfg.extract, "ai_segmentation", "off") == "shadow":
-        findings = segment.run_shadow(cfg, text, blocks, month, year)
-        segment.log_shadow(cfg.zalo.inbox_dir, findings)
-        for line in findings:
-            print(f"  {line}")
 
     wanted = blocks if all_months else [b for b in blocks if in_month(b, month, year)]
     skipped_month = len(blocks) - len(wanted)
@@ -615,6 +671,20 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
     saved = duplicates = trimmed_lines = versions = updates = 0
 
     inbox = cfg.zalo.inbox_dir
+
+    def note_order(path: Path, revisions: list[tuple[str, str]]) -> int:
+        """Record everything held beside an order rather than inside it. Returns how
+        many revisions were new, so the counts stay honest across both save paths."""
+        closers.record(inbox, path.name, closer)
+        if fallback:
+            flags.record(inbox, path.name, flags.NO_AI)
+        elif mode == "on":
+            # A successful re-paste upgrades an order the fallback had captured: the
+            # better segmenter has now seen it, so the warning no longer applies.
+            flags.clear(inbox, path.name, flags.NO_AI)
+        return sum(1 for text, confidence in revisions
+                   if extras.record(inbox, path.name, "update", text, confidence))
+
     for block in wanted:
         update = ""
         if trim:
@@ -624,6 +694,11 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
             update = trailing_update(block.lines, kept)
             block.lines = kept
             trimmed_lines += dropped
+        # Both sources feed the same sidecar, which dedups on text: the trimmed tail from
+        # the regex path, and whatever the segmenter attributed to this order. In "on"
+        # mode the second is the real one; keeping the first costs nothing and covers a
+        # model that returned a body with the revision still attached to it.
+        revisions = ([(update, "high")] if update else []) + list(block.ai_updates)
         body = block.text
         if block.key in known:
             path, _ = known[block.key]
@@ -640,15 +715,11 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
                 known[block.key] = (path, path.stat().st_size)
                 print(f"  {action:7} {path.name}")
                 saved += 1
-            closers.record(inbox, path.name, closer)
-            if update and extras.record(inbox, path.name, "update", update):
-                updates += 1
+            updates += note_order(path, revisions)
             continue
 
         path = save(body, block.header, inbox)
-        closers.record(inbox, path.name, closer)
-        if update and extras.record(inbox, path.name, "update", update):
-            updates += 1
+        updates += note_order(path, revisions)
         known[block.key] = (path, len(body.encode("utf-8")))
         print(f"  saved   {path.name}  ({len(block.lines)} lines"
               + (f", {block.customer}" if block.customer else "") + ")")

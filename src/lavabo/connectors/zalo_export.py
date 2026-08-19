@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .. import closers, extras
+from .. import closers, extras, flags
 from ..config import ZaloConfig
 from ..models import Attachment, Conversation, Direction, Message, Source
 from ..tz import zone as tz_zone
@@ -118,6 +118,7 @@ class ZaloExportConnector:
         # Read once per run: fetch() touches every file, and these are small maps.
         self._closers = closers.load(config.inbox_dir)
         self._extras = extras.load(config.inbox_dir)
+        self._flags = flags.load(config.inbox_dir)
 
     def check(self) -> tuple[bool, str]:
         if not self.config.inbox_dir.exists():
@@ -129,7 +130,7 @@ class ZaloExportConnector:
 
     def _files(self) -> list[Path]:
         allowed = TEXT_SUFFIXES | JSON_SUFFIXES | HTML_SUFFIXES
-        sidecars = {closers.SIDECAR, extras.SIDECAR}   # bookkeeping, not transcripts
+        sidecars = {closers.SIDECAR, extras.SIDECAR, flags.SIDECAR}  # bookkeeping
         return sorted(p for p in self.config.inbox_dir.rglob("*")
                       if p.is_file() and p.suffix.lower() in allowed
                       and p.name not in sidecars
@@ -185,6 +186,8 @@ class ZaloExportConnector:
         # model reads, so a revision cannot silently move a total.
         if items := self._extras.get(path.name):
             conv.raw["extras"] = items
+        if marks := self._flags.get(path.name):
+            conv.raw["flags"] = marks
         return conv
 
     def _parse_plain(self, path: Path, digest: str, lines: list[str]) -> Conversation:
