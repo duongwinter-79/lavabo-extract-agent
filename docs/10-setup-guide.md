@@ -447,6 +447,20 @@ order. **Tên KH** in the sheet still shows only `Chị Hương`.
 The app learns the names as they are used, so once `Trà My` has appeared it is never
 mistaken for part of a customer's name.
 
+**When a name could be either.** `13/7 đơn 3 - Anh Tâm - Hà Nội` is one customer and a
+place — no rule can tell that from `Anh Tâm - Trà My`, since `Trà My` is also a district in
+Quảng Nam. With AI segmentation on (*Chạy thử AI* or *Dùng AI*), the app asks the model
+once per name and remembers the answer; every later header carrying it is settled without
+asking. It prints what it decided:
+
+```
+tên "Hà Nội": thuộc về tên khách
+tên "Bảo Ngọc": người báo đơn
+```
+
+If it gets one wrong, pick the name once in **Người chốt đơn** — a person's answer replaces
+the model's permanently.
+
 ### 2. Record
 
 1. Add **Screen Recording** to Control Centre if it is not there

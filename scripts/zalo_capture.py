@@ -54,10 +54,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from lavabo import (closers, extras, flags, rawpaste,  # noqa: E402
-                    reporters, segment)
+                    reporters, segment, staff)
 from lavabo.config import Config  # noqa: E402
 from lavabo.connectors.zalo_export import (  # noqa: E402
-    DEFAULT_PATTERNS, ORDER_HEADER, header_customer, header_parties)  # noqa: E402
+    DEFAULT_PATTERNS, ORDER_HEADER, header_customer, header_parties,  # noqa: E402
+    undecided_tail)
 
 POLL_SECONDS = 0.5
 MIN_TRANSCRIPT_CHARS = 40
@@ -468,17 +469,62 @@ def resolve_swapped_dates(blocks: list["OrderBlock"], target_month: int) -> None
         block.date_swapped = True
 
 
-def staff_names(inbox: Path | None) -> set[str]:
-    """Folded names the shop already uses, from both sidecars.
+def staff_names(inbox: Path | None) -> dict[str, bool]:
+    """Folded name -> is this the shop's own person, from everywhere one can be learned.
 
-    Used to decide whether the last field of "13/7 đơn 1 - Chị Hương - Trà My" is a
-    reporter or part of the customer's name. Exact where it can be; the shape test in
-    header_parties only stands in until a name has been seen once.
+    Decides whether the last field of "13/7 đơn 1 - Chị Hương - Trà My" is a reporter or
+    part of the customer's name. Exact where it can be; the shape test in header_parties
+    only stands in until a name has been ruled on once, either way.
     """
     if inbox is None:
-        return set()
-    names = list(closers.load(inbox).values()) + list(reporters.load(inbox).values())
-    return {fold(n.strip()) for n in names if n and n.strip()}
+        return {}
+    verdicts = staff.decided(inbox)
+    # A name somebody typed as a closer, or one already recorded as having reported an
+    # order, is the shop's by definition -- and outranks anything the model decided.
+    for name in list(closers.load(inbox).values()) + list(reporters.load(inbox).values()):
+        if name and name.strip():
+            verdicts[fold(name.strip())] = True
+    return verdicts
+
+
+def undecided_names(text: str, known: dict[str, bool]) -> dict[str, list[str]]:
+    """{trailing name: the headers it appeared in} for names no rule can settle."""
+    found: dict[str, list[str]] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        _, stripped = split_reporter(stripped) if stripped else (None, stripped)
+        if not (m := ORDER_HEADER.match(stripped.strip())):
+            continue
+        if tail := undecided_tail(m, known):
+            found.setdefault(tail, []).append(stripped.strip())
+    return found
+
+
+def settle_names(cfg, text: str) -> int:
+    """Ask the model which undecided trailing names are the shop's own people.
+
+    Runs BEFORE splitting, and writes what it learns into the staff list rather than into
+    the orders -- so the answer makes the deterministic reading exact instead of replacing
+    it, and every later header carrying that name is settled without another call. A name
+    the model calls a customer is recorded too: it is equally worth not asking twice.
+    """
+    inbox = cfg.zalo.inbox_dir
+    known = staff_names(inbox)
+    candidates = undecided_names(text, known)
+    if not candidates:
+        return 0
+
+    verdicts = segment.resolve_reporters(cfg, candidates)
+    learned = 0
+    for name, is_staff in verdicts.items():
+        # Both answers are recorded. "Not the shop's" is worth as much as "is": without it
+        # the shape test goes on splitting "Anh Tâm - Hà Nội" on every paste, and the same
+        # question is put to the model every time.
+        if staff.record(inbox, name, staff.AI if is_staff else staff.NOT_STAFF):
+            learned += 1
+            print(f"  tên \"{name}\": "
+                  + ("người báo đơn" if is_staff else "thuộc về tên khách"))
+    return learned
 
 
 def split_orders(text: str, target_month: int | None = None,
@@ -781,6 +827,11 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
     # re-storing what came out of the store would inflate its own bookkeeping.
     if store_raw:
         rawpaste.store(cfg.zalo.inbox_dir, text, month=month, year=year, closer=closer)
+
+    # Settle any ambiguous trailing name first: the split reads the staff list, so an
+    # answer arriving after it would be a turn too late.
+    if getattr(cfg.extract, "ai_segmentation", "off") in ("shadow", "on"):
+        settle_names(cfg, text)
 
     blocks = split_orders(text, target_month=month, inbox=cfg.zalo.inbox_dir)
     mode = getattr(cfg.extract, "ai_segmentation", "off")

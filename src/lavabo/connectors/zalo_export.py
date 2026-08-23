@@ -102,7 +102,8 @@ def _fold_name(value: str) -> str:
     return stripped.replace("đ", "d").replace("Đ", "D").lower()
 
 
-def header_parties(match: re.Match, known: set[str] | None = None) -> tuple[str, str | None]:
+def header_parties(match: re.Match,
+                   decided: dict[str, bool] | set[str] | None = None) -> tuple[str, str | None]:
     """(customer, reporter) from an order header.
 
     The shop writes the reporter into the header itself -- "13/7 đơn 1 - Chị Hương -
@@ -129,11 +130,48 @@ def header_parties(match: re.Match, known: set[str] | None = None) -> tuple[str,
 
     head, tail = NAME_SEPARATOR.split(raw, maxsplit=len(parts) - 2)[0], parts[-1]
     head = raw[: raw.rfind(tail)].rstrip(" -–—").strip()
-    if known and _fold_name(tail) in known:
+    verdict = _verdict(tail, decided)
+    if verdict is True:
         return head, tail.strip()
-    if not known and _looks_like_a_person(tail):
+    if verdict is False:
+        return raw, None                     # ruled part of the customer's entry
+    # Nobody has ruled on this name yet. The shape test stands in, and keeps standing in
+    # even once OTHER names are known -- otherwise the first order a new person reports
+    # has their name folded into the customer. segment.resolve_reporters settles it.
+    if _looks_like_a_person(tail):
         return head, tail.strip()
     return raw, None
+
+
+def _verdict(name: str, decided: dict[str, bool] | set[str] | None) -> bool | None:
+    """True/False when this name has been ruled on, None when it has not."""
+    if not decided:
+        return None
+    folded = _fold_name(name)
+    if isinstance(decided, dict):
+        return decided.get(folded)
+    return True if folded in decided else None
+
+
+def undecided_tail(match: re.Match,
+                   decided: dict[str, bool] | set[str] | None = None) -> str | None:
+    """The trailing name in a header that no rule can settle, or None.
+
+    "13/7 đơn 3 - Anh Tâm - Hà Nội" is either a customer and who reported the order, or a
+    customer and a place. A name already known to be the shop's is not undecided, and
+    neither is a trailing field too long or too numeric to be a person -- what is left is
+    the genuinely ambiguous middle, and only that is worth asking about.
+    """
+    if match["customer_paren"]:
+        return None                          # the bracket already separated the two
+    raw = (match["customer"] or "").strip()
+    parts = NAME_SEPARATOR.split(raw)
+    if len(parts) < 2:
+        return None
+    tail = parts[-1].strip()
+    if _verdict(tail, decided) is not None or not _looks_like_a_person(tail):
+        return None
+    return tail
 
 
 def header_customer(match: re.Match) -> str:

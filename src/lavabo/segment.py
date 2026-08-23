@@ -750,3 +750,76 @@ def remember(inbox, key: str, payload: Any) -> None:
     answers.pop(key, None)                 # re-insert, so it counts as recently used
     answers[key] = payload
     save_cache(inbox, answers)
+
+
+# ------------------------------------------------- adjudicating a trailing name
+
+NAMES_RESPONSE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "names": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "role": {"type": "string", "enum": ["staff", "customer"],
+                             "description": "staff = works at the shop and reports orders."},
+                },
+                "required": ["name", "role"],
+            },
+        },
+    },
+    "required": ["names"],
+}
+
+
+def resolve_reporters(cfg, candidates: dict[str, list[str]]) -> dict[str, bool]:
+    """{name: is_shop_staff} for trailing header names no rule can settle.
+
+    Never raises and never guesses on failure: an unanswerable name is simply absent from
+    the result, and the caller keeps whatever the deterministic reading said. The point is
+    to REPLACE a guess with knowledge, so failing to reach the model has to leave the guess
+    exactly as it was rather than invent a different one.
+
+    Cached with the segmentation answers, keyed on the names and the headers they appeared
+    in, so re-pasting the same chat asks nothing.
+    """
+    from .extract.prompt import NAMES_PROMPT_VERSION, build_names_prompt
+
+    if not candidates:
+        return {}
+
+    inbox = cfg.zalo.inbox_dir
+    payload = json.dumps({name: sorted(set(headers))
+                          for name, headers in sorted(candidates.items())},
+                         ensure_ascii=False).encode("utf-8")
+    key = cache_key(payload, NAMES_PROMPT_VERSION, 0, cfg.extract.model)
+
+    data = load_cache(inbox).get(key)
+    if data is None:
+        completer = completer_for(cfg)
+        if completer is None:
+            return {}
+        system, user = build_names_prompt(candidates)
+        try:
+            answer = completer.complete_json(system, user, NAMES_RESPONSE_SCHEMA,
+                                             max_tokens=MIN_OUTPUT_TOKENS)
+        except Exception as exc:
+            log.warning("could not settle header names (%s) — keeping the plain reading", exc)
+            return {}
+        data = answer.data
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except ValueError:
+                return {}
+        if not isinstance(data, dict) or answer.finish_reason.upper().endswith("MAX_TOKENS"):
+            return {}
+        remember(inbox, key, data)
+
+    out: dict[str, bool] = {}
+    for row in data.get("names") or []:
+        if isinstance(row, dict) and str(row.get("name") or "").strip():
+            out[str(row["name"]).strip()] = str(row.get("role")) == "staff"
+    return out

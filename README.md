@@ -68,6 +68,12 @@ into the header, last, tells them apart:
 the orders instead, which works unless two people use the same số đơn for the same
 customer on the same day.
 
+Where that gets ambiguous — `13/7 đơn 3 - Anh Tâm - Hà Nội` is a customer and a *place*,
+not a reporter — the AI is asked, once per name, and the answer is kept. `Trà My` is a
+person here and also a district in Quảng Nam, so no rule can settle it; after the first
+ruling every header carrying that name is exact without asking again. You can override it
+by picking the name in **Người chốt đơn** — a person's answer always wins.
+
 Everything else in the chat is ignored, and only the selected month is captured.
 
 > **`Ctrl+A` only copies what Zalo has loaded.** It is not a size limit you can raise —

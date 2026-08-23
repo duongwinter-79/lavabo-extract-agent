@@ -367,3 +367,66 @@ def build_video_prompt(frame_count: int, month: int, year: int) -> tuple[str, st
     system = ORDER_CONTEXT.format(month=month, year=year) + VIDEO_CONTRACT
     return (system,
             VIDEO_USER_TEMPLATE.format(count=frame_count, month=month, year=year))
+
+
+# --------------------------------------------------------- who works at the shop
+
+# One header shape cannot be settled by any rule. "13/7 đơn 3 - Anh Tâm - Hà Nội" is either
+# a customer and the person who reported the order, or a customer and a place -- both are
+# two names either side of a dash, both short, neither numeric. "Trà My" is a staff name at
+# this shop and also a district in Quảng Nam, so the question is about the world and not
+# about the text, which is where a rule stops and a reader starts.
+#
+# Asked once per NAME, not once per header, and the answer is kept. Every header carrying
+# that name is exact afterwards, so this converges to no calls at all.
+NAMES_PROMPT_VERSION = 1
+
+NAMES_SYSTEM = """\
+You are reading order headers from a Vietnamese bathroom-fittings shop's group chat.
+
+A header names the customer. Some also name the shop's own staff member who reported the \
+order, written last, after the customer:
+
+    13/7 đơn 1 - Chị Hương - Trà My      customer Chị Hương, reported by Trà My
+
+But the same shape can be a customer whose entry simply contains two parts:
+
+    13/7 đơn 3 - Anh Tâm - Hà Nội        one customer and a place, nobody reported it
+    20/7 đơn 2 - Chị Lan - mẹ chồng      one customer described two ways
+
+For each name you are given, decide whether it is A PERSON WHO WORKS AT THE SHOP AND \
+REPORTS ORDERS, or part of the customer's entry.
+
+What helps:
+  - a staff member turns up with MANY DIFFERENT customers; a place or a description \
+usually belongs to one
+  - Vietnamese place names (Hà Nội, Phú Quốc, Thái Thuỵ, Quảng Nam, districts, wards) are \
+not staff, even when they read like personal names
+  - a relationship or a description ("mẹ chồng", "chị gái", "khách quen") is not staff
+  - a plain personal name repeated across unrelated customers usually is
+
+When you cannot tell, answer "customer". A name wrongly called staff is written into the \
+order's identity and splits that customer's orders apart; a name wrongly left with the \
+customer only makes the customer's entry longer, and a person can correct it by picking \
+the name once in the app."""
+
+NAMES_USER_TEMPLATE = """\
+Which of these are the shop's own staff, reporting orders?
+
+{candidates}
+
+Answer for every name listed."""
+
+
+def build_names_prompt(candidates: dict[str, list[str]]) -> tuple[str, str]:
+    """(system, user) for one adjudication call.
+
+    Each candidate is shown with the headers it appeared in, because the strongest signal
+    is repetition across unrelated customers -- which is visible in the headers and in
+    nothing else.
+    """
+    blocks = []
+    for name, headers in sorted(candidates.items()):
+        seen = "\n".join(f"    {h}" for h in sorted(set(headers))[:8])
+        blocks.append(f'- "{name}" appears in {len(set(headers))} header(s):\n{seen}')
+    return NAMES_SYSTEM, NAMES_USER_TEMPLATE.format(candidates="\n".join(blocks))

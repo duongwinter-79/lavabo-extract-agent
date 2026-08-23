@@ -95,13 +95,21 @@ class ReporterInTheHeader(unittest.TestCase):
             with self.subTest(line):
                 self.assertEqual(self._parse(line), (customer, None))
 
-    def test_a_known_name_settles_an_ambiguous_trailing_field(self):
-        """"Anh Tâm - Hà Nội" is one customer and a place. Once the shop's own names are
-        known, only those count as a reporter."""
-        self.assertEqual(self._parse("13/7 đơn 3 - Anh Tâm - Hà Nội", {"tra my"}),
+    def test_a_ruling_settles_an_ambiguous_trailing_field(self):
+        """"Anh Tâm - Hà Nội" is one customer and a place; "Anh Tâm - Trà My" is a
+        customer and a staff member. Nothing in the text tells them apart -- only a
+        verdict about the NAME does, and both verdicts have to be storable."""
+        decided = {"tra my": True, "ha noi": False}
+        self.assertEqual(self._parse("13/7 đơn 3 - Anh Tâm - Hà Nội", decided),
                          ("Anh Tâm - Hà Nội", None))
-        self.assertEqual(self._parse("13/7 đơn 3 - Anh Tâm - Trà My", {"tra my"}),
+        self.assertEqual(self._parse("13/7 đơn 3 - Anh Tâm - Trà My", decided),
                          ("Anh Tâm", "Trà My"))
+
+    def test_an_unruled_name_still_reads_as_a_reporter(self):
+        """A new staff member's first order must not have their name folded into the
+        customer just because OTHER names are already known."""
+        self.assertEqual(self._parse("13/7 đơn 3 - Anh Tâm - Bảo Ngọc", {"tra my": True}),
+                         ("Anh Tâm", "Bảo Ngọc"))
 
     def test_the_header_beats_a_sender_line(self):
         blocks = zc.split_orders(
@@ -204,6 +212,113 @@ class Capturing(unittest.TestCase):
         self._capture(f"Trà My: 13/7 đơn 1 - Chị Hương\n{ORDER}")
         self._capture(f"13/7 đơn 1 - Chị Hương\n{ORDER}")
         self.assertEqual(list(reporters.load(self.cfg.zalo.inbox_dir).values()), ["Trà My"])
+
+
+class SettlingAmbiguousNames(unittest.TestCase):
+    """No rule separates "Anh Tâm - Hà Nội" from "Anh Tâm - Trà My": both are two short
+    names either side of a dash, and "Trà My" is a district in Quảng Nam as well as a
+    person here. The question is about the world, so it is asked once per NAME and the
+    answer is kept -- which makes the deterministic reading exact instead of replacing it.
+    """
+
+    BODY = "1 tủ BC52\nTổng 5.800\nĐã cọc 500k"
+
+    def setUp(self):
+        from lavabo import segment
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg = Config()
+        self.cfg.zalo.inbox_dir = Path(self.tmp.name) / "zalo"
+        self.cfg.zalo.inbox_dir.mkdir(parents=True)
+        self.cfg.extract.ai_segmentation = "shadow"
+        self.calls = 0
+        self.segment = segment
+        self._real = segment.completer_for
+        segment.completer_for = lambda cfg: self._fake()
+
+    def tearDown(self):
+        self.segment.completer_for = self._real
+        self.tmp.cleanup()
+
+    def _fake(self, verdicts=(("Hà Nội", "customer"), ("Bảo Ngọc", "staff"))):
+        outer = self
+
+        class Fake:
+            def complete_json(self, system, user, schema, *, max_tokens=0):
+                if "names" in schema.get("properties", {}):
+                    outer.calls += 1
+                    return outer.segment.Completion(
+                        {"names": [{"name": n, "role": r} for n, r in verdicts]},
+                        300, 40, "STOP")
+                return outer.segment.Completion({"orders": []}, 100, 20, "STOP")
+        return Fake()
+
+    def _chat(self):
+        return (f"13/7 đơn 3 - Anh Tâm - Hà Nội\n{self.BODY}\n"
+                f"13/7 đơn 1 - Chị Hương - Bảo Ngọc\n{self.BODY}\n"
+                f"14/7 đơn 1 - Minh Nguyễn - Bảo Ngọc\n{self.BODY}")
+
+    def _capture(self, text=None):
+        return zc.handle_orders(text or self._chat(), self.cfg, 7, 2026,
+                                all_months=False, trim=True, closer="Trà My")
+
+    def test_only_genuinely_ambiguous_names_are_asked_about(self):
+        known = {"tra my": True}
+        candidates = zc.undecided_names(
+            "13/7 đơn 1 - Chị Hương - Trà My\n"
+            "13/7 đơn 3 - Anh Tâm - Hà Nội\n"
+            "13/7 đơn 4 - Chị Lan\n"
+            "13/7 đơn 5 - Anh Tâm - 0912345678", known)
+        self.assertEqual(set(candidates), {"Hà Nội"})
+
+    def test_a_place_is_left_with_the_customer(self):
+        self._capture()
+        block = zc.split_orders(f"13/7 đơn 3 - Anh Tâm - Hà Nội\n{self.BODY}",
+                                target_month=7, inbox=self.cfg.zalo.inbox_dir)[0]
+        self.assertEqual(block.customer, "Anh Tâm - Hà Nội")
+        self.assertIsNone(block.reporter)
+
+    def test_a_staff_name_becomes_the_reporter(self):
+        self._capture()
+        block = zc.split_orders(f"13/7 đơn 1 - Chị Hương - Bảo Ngọc\n{self.BODY}",
+                                target_month=7, inbox=self.cfg.zalo.inbox_dir)[0]
+        self.assertEqual((block.customer, block.reporter), ("Chị Hương", "Bảo Ngọc"))
+
+    def test_the_question_is_asked_once_and_then_never_again(self):
+        self._capture()
+        self.assertEqual(self.calls, 1)
+        self._capture()
+        self._capture()
+        self.assertEqual(self.calls, 1, "a settled name must not be re-asked")
+
+    def test_both_verdicts_are_stored(self):
+        """Knowing a name is NOT staff is worth as much as knowing it is: without it the
+        shape test splits "Anh Tâm - Hà Nội" again on every paste."""
+        from lavabo import staff
+
+        self._capture()
+        stored = staff.load(self.cfg.zalo.inbox_dir)
+        self.assertEqual(stored.get("Hà Nội"), staff.NOT_STAFF)
+        self.assertEqual(stored.get("Bảo Ngọc"), staff.AI)
+
+    def test_a_person_outranks_the_model(self):
+        from lavabo import staff
+
+        self._capture()
+        staff.record(self.cfg.zalo.inbox_dir, "Hà Nội", staff.TYPED)
+        self.assertEqual(staff.load(self.cfg.zalo.inbox_dir)["Hà Nội"], staff.TYPED)
+
+    def test_an_unreachable_model_leaves_the_plain_reading_alone(self):
+        """Failing to reach the model must keep the existing guess, not invent another."""
+        self.segment.completer_for = lambda cfg: None
+        self._capture()
+        block = zc.split_orders(f"13/7 đơn 3 - Anh Tâm - Hà Nội\n{self.BODY}",
+                                target_month=7, inbox=self.cfg.zalo.inbox_dir)[0]
+        self.assertEqual((block.customer, block.reporter), ("Anh Tâm", "Hà Nội"))
+
+    def test_nothing_is_asked_when_no_name_is_ambiguous(self):
+        self._capture(f"13/7 đơn 1 - Chị Hương\n{self.BODY}")
+        self.assertEqual(self.calls, 0)
 
 
 class Flagging(unittest.TestCase):
