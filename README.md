@@ -183,7 +183,7 @@ them, so your own workbook is untouched:
 |---|---|
 | Bổ sung | a later message about this order, kept word for word |
 | Số tiền bổ sung | the money that message states — read out so you can see it, but **never added to Tổng** |
-| Cần xem lại | why a human should look: `có bổ sung`, `trùng số đơn`, `2 phiên bản`, `bổ sung — chưa chắc`, `chưa qua AI` |
+| Cần xem lại | why a human should look: `có bổ sung`, `trùng số đơn`, `trùng số đơn — khác người/khách`, `2 phiên bản`, `bổ sung — chưa chắc`, `chưa qua AI` |
 
 Rows with anything in **Cần xem lại** are tinted, the whole order, not just its first row.
 
@@ -198,6 +198,10 @@ app cannot tell a correction from an add-on, so it never edits the money it alre
 - **The same day and số đơn arriving as two separate orders** is marked `trùng số đơn`.
   This one *does* count twice in the total until you delete a row, which is exactly why it
   is flagged rather than merged.
+- **The same day and số đơn from two different people, or for two different customers** is
+  marked `trùng số đơn — khác người/khách`. **Both rows are real orders** and both are kept:
+  two staff each numbering their own orders from 1 produce a `13/7 đơn 1` each. Nothing is
+  wrong with the money — only the numbering is ambiguous — so renumber them when convenient.
 
 So `=SUM` and `=SUMIF` over the exported columns stay right while you review, and you
 decide what the order really was.
@@ -363,6 +367,7 @@ src/lavabo/
   load/        senkahomes.py           the 12-column layout
                excel.py                generic layout
   closers.py   who chốt each order, stored beside them
+  reporters.py who POSTED each order — người báo đơn, part of its identity
   video.py     checks a phone screen recording before its orders are read
   rawpaste.py  every pasted chunk, kept verbatim before anything parses it
   resegment.py replays those pastes when the capture code changes

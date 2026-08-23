@@ -65,7 +65,8 @@ class SegmentParsing(unittest.TestCase):
     def test_numeric_strings_are_accepted(self):
         raw = dict(ORDER, day="13", month="7", order_number="5")
         self.assertEqual(
-            segment.parse_response({"orders": [raw]}, LINES).orders[0].key, (13, 7, 5))
+            segment.parse_response({"orders": [raw]}, LINES).orders[0].key,
+            (13, 7, 5, "chi huong"))
 
     def test_a_line_range_past_the_end_is_clamped_not_dropped(self):
         raw = dict(ORDER, end_line=9999)
@@ -163,6 +164,8 @@ class BlockConversion(unittest.TestCase):
             segment.parse_response({"orders": [ORDER]}, LINES), target_month=7)
         self.assertEqual([b.key for b in by_regex], [b.key for b in by_model])
         self.assertEqual(by_regex[0].customer, by_model[0].customer)
+        self.assertEqual(by_model[0].key, (13, 7, 5, "chi huong"),
+                         "identity carries who the order belongs to")
 
     def test_the_header_is_not_repeated_inside_the_body(self):
         block = zc.blocks_from_segments(
@@ -182,9 +185,12 @@ class Comparison(unittest.TestCase):
         lines = chat.splitlines()
         blocks = zc.split_orders(chat, target_month=8)
         ai = segment.parse_response({"orders": [
-            {"header_line": 1, "end_line": 3, "day": 3, "month": 8, "order_number": 5},
-            {"header_line": 4, "end_line": 6, "day": 8, "month": 3, "order_number": 1},
-            {"header_line": 7, "end_line": 9, "day": 3, "month": 8, "order_number": 2},
+            {"header_line": 1, "end_line": 3, "day": 3, "month": 8, "order_number": 5,
+             "customer": "Phương Phan"},
+            {"header_line": 4, "end_line": 6, "day": 8, "month": 3, "order_number": 1,
+             "customer": "hoài bùi"},
+            {"header_line": 7, "end_line": 9, "day": 3, "month": 8, "order_number": 2,
+             "customer": "Nguyễn Tài Lợi"},
         ]}, lines)
 
         raw = segment.compare(ai, blocks)
@@ -198,7 +204,7 @@ class Comparison(unittest.TestCase):
         blocks = zc.split_orders(CHAT, target_month=7)
         lines = LINES + ["16/7 đơn 2", "1 lavabo", "Tổng 2tr"]
         extra = {"header_line": 7, "end_line": 9, "day": 16, "month": 7,
-                 "order_number": 2}
+                 "order_number": 2, "customer": None}
         found = segment.compare(
             segment.parse_response({"orders": [ORDER, extra]}, lines), blocks)
         self.assertEqual([d.kind for d in found], ["only_ai"])

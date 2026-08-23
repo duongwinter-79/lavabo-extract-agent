@@ -53,7 +53,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from lavabo import closers, extras, flags, rawpaste, segment  # noqa: E402
+from lavabo import (closers, extras, flags, rawpaste,  # noqa: E402
+                    reporters, segment)
 from lavabo.config import Config  # noqa: E402
 from lavabo.connectors.zalo_export import (  # noqa: E402
     DEFAULT_PATTERNS, ORDER_HEADER, header_customer)  # noqa: E402
@@ -172,15 +173,57 @@ class OrderBlock:
     # Later messages the segmenter attributed to THIS order, as (text, confidence).
     # Empty for regex-produced blocks, whose revisions come from trailing_update instead.
     ai_updates: list[tuple[str, str]] = field(default_factory=list)
+    # Who posted the message -- người báo đơn. None when the copy carried no sender names,
+    # which is every capture made before Zalo's copy included them.
+    reporter: str | None = None
 
     @property
     def text(self) -> str:
         return "\n".join([self.header, *self.lines]).strip()
 
     @property
-    def key(self) -> tuple[int, int, int]:
-        """Business identity of the order: day, month, order number."""
-        return (self.day, self.month, self.order_no)
+    def key(self) -> tuple[int, int, int, str]:
+        """Business identity: day, month, số đơn, and who the order belongs to.
+
+        (day, month, số đơn) alone holds only while ONE person posts orders. Two people
+        each numbering their own from 1 collide on the first day of the month: "13/7 đơn 1"
+        from each is two different orders for two different customers, and the second was
+        merged into the first or filed as a competing version of it. Copy-paste carries no
+        sender, so that assumption was invisible rather than chosen.
+
+        The fourth part is the reporter when the chat names one, and the CUSTOMER when it
+        does not -- which is the same discrimination by another route, since two orders
+        sharing a day and a number but naming different customers are two orders whoever
+        typed them. Folded, so a name written "Chị Hương" one day and "chi Huong" the next
+        is still one order rather than two.
+        """
+        return (self.day, self.month, self.order_no, self.owner)
+
+    @property
+    def owner(self) -> str:
+        """The folded name this order is filed under -- reporter first, customer after."""
+        return fold((self.reporter or self.customer or "").strip())
+
+    @property
+    def key_candidates(self) -> list[tuple[int, int, int, str]]:
+        """Every key this order could already be filed under, best match first.
+
+        Storage uses one key; LOOKUP has to accept both, because the two halves of the
+        fallback meet whenever the chat format changes. An order captured before Zalo's
+        copy carried sender names is filed under its customer, and the same order pasted
+        again once names arrive comes back with a reporter -- a different key, a second
+        file, and one order counted twice. Which would have happened to every order
+        already captured, on the first paste after the change.
+
+        Matching on either name merges them back. The cost is that two people posting the
+        same số đơn for the same customer on one day can still meet on the customer key;
+        that lands as a competing version, flagged for review, rather than silently.
+        """
+        by_customer = fold((self.customer or "").strip())
+        keys = [(self.day, self.month, self.order_no, self.owner)]
+        if by_customer and by_customer != self.owner:
+            keys.append((self.day, self.month, self.order_no, by_customer))
+        return keys
 
     @property
     def label(self) -> str:
@@ -219,6 +262,57 @@ DEPOSIT_ANY = re.compile(r"\b(?:da\s+)?(?<!guong )coc\b[^\d\n]{0,12}\d")
 TOTAL_ANY = re.compile(r"\bto+ng[rsfjx]?\b[^\d\n]{0,12}\d")
 # A line addressed at someone is group chatter, never part of an order.
 MENTION_LINE = re.compile(r"^\s*@")
+
+# Who sent the message -- người báo đơn. Written two ways once Zalo's copy carries sender
+# names, and both are handled because the shop will not be choosing between them:
+#
+#   Trà My: 15/8 đơn 1 - Meloxicam        the name inline, before the header
+#   Trà My (11:52)                        the name on its own line above the header
+#   15/8 đơn 1 - Meloxicam
+#
+# Deliberately narrow. The name may not contain a digit, a slash or a colon, which is what
+# keeps it away from the header itself -- "17/7 đơn 1: Thảo Nguyên" puts the CUSTOMER after
+# a colon, and reading that as a sender would rename every order written that way.
+REPORTER_PREFIX = re.compile(r"^\s*(?P<name>[^\d:/\[\]()][^:/\[\]]{0,58}?)"
+                             r"(?:\s*\([^)]{0,25}\))?\s*:\s*(?=\S)")
+
+# A sender on its own line. Must carry a MARKER -- a trailing colon, or a parenthesised
+# timestamp -- as well as being followed by an order header.
+#
+# The header alone is not enough of a test. Ordinary chatter sits right before the next
+# order all the time, and "ok chị em nhận rồi" was read as a sender name and went into the
+# order key. Getting this wrong is worse than missing it: a missed reporter falls back to
+# the customer and still separates two orders correctly, while a WRONG one splits an order
+# that should have merged, so the strictness is deliberately one-sided.
+REPORTER_LINE = re.compile(r"^\s*(?P<name>[^\d:/\[\]()][^:/\[\]]{0,58}?)\s*"
+                           r"(?:\([^)]{0,25}\)\s*:?|:)\s*$")
+
+
+def _standalone_reporter(stripped: str, lines: list[str], index: int) -> str | None:
+    """A sender name on its own line, but only when an order header follows it.
+
+    On its own this shape matches almost any short line of chat -- "vâng ạ", "ok chị" --
+    so the following header is what makes it a sender rather than conversation.
+    """
+    if not (match := REPORTER_LINE.match(stripped)):
+        return None
+    nxt = next((ln.strip() for ln in lines[index + 1:] if ln.strip()), "")
+    if not ORDER_HEADER.match(nxt):
+        return None
+    return match["name"].strip() or None
+
+
+def split_reporter(line: str) -> tuple[str | None, str]:
+    """(reporter, the rest of the line). Only strips a prefix that reveals a header.
+
+    Requiring the remainder to BE a header is what makes this safe to run over every line:
+    a prefix that does not expose an order is not a sender, it is somebody talking.
+    """
+    if match := REPORTER_PREFIX.match(line):
+        rest = line[match.end():]
+        if ORDER_HEADER.match(rest.strip()):
+            return match["name"].strip(), rest
+    return None, line
 # Lines that still belong to the order even though they follow the terminator.
 TRAILING_KEEP = re.compile(r"^\s*(?:note|ghi\s*ch[uu])\b\s*[:\-]?")
 
@@ -389,9 +483,14 @@ def split_orders(text: str, target_month: int | None = None) -> list[OrderBlock]
     """
     blocks: list[OrderBlock] = []
     current: OrderBlock | None = None
+    pending: str | None = None          # a sender seen on its own line, awaiting a header
 
-    for line in text.splitlines():
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        reporter, line = split_reporter(line)
         stripped = line.strip()
+        if reporter is None and pending is not None:
+            reporter, pending = pending, None
         if m := ORDER_HEADER.match(stripped):
             year = int(m["year"]) if m["year"] else None
             if year is not None and year < 100:
@@ -405,9 +504,19 @@ def split_orders(text: str, target_month: int | None = None) -> list[OrderBlock]
                 customer=header_customer(m) or None,
                 lines=[],
                 original_header=stripped,
+                reporter=reporter,
             )
             blocks.append(current)
-        elif current is not None:
+            continue
+
+        # A sender on its own line, checked BEFORE the line is filed under the order
+        # above it: these sit BETWEEN orders, so the previous block would otherwise
+        # swallow the name and the next order would never see it.
+        if stripped and (name := _standalone_reporter(stripped, lines, index)):
+            pending = name
+            continue
+
+        if current is not None:
             current.lines.append(line.rstrip())
 
     if target_month is not None:
@@ -449,6 +558,7 @@ def blocks_from_segments(result, target_month: int | None = None) -> list[OrderB
             date_swapped=order.date_swapped,
             original_header=order.header,
             ai_updates=[(u.text, u.confidence) for u in order.updates],
+            reporter=order.reporter,
         ))
     if target_month is not None:
         resolve_swapped_dates(blocks, target_month)
@@ -496,21 +606,34 @@ def merge_into(inbox: Path, path: Path, existing: str, block: "OrderBlock") -> s
     return "duplicate"
 
 
-def existing_orders(inbox: Path) -> dict[tuple[int, int, int], tuple[Path, int]]:
+def existing_orders(inbox: Path) -> dict[tuple, tuple[Path, int]]:
     """Map already-captured order keys to their file and size.
 
     Keyed on the order itself rather than file content, so re-copying an overlapping
     chunk of the chat does not create duplicates.
+
+    The key must be rebuilt exactly as OrderBlock.key builds it, reporter included -- which
+    is why the reporter lives in a sidecar and not only in memory. Reconstructing a
+    narrower key here than the one used when saving would put two different people's
+    "13/7 đơn 1" back into one file on the next paste.
     """
-    found: dict[tuple[int, int, int], tuple[Path, int]] = {}
+    known = reporters.load(inbox)
+    found: dict[tuple, tuple[Path, int]] = {}
     for path in inbox.glob("*.txt"):
         try:
             head = first_line(path.read_text(encoding="utf-8", errors="replace"))
         except OSError:
             continue
-        if m := ORDER_HEADER.match(head):
-            key = (int(m["day"]), int(m["month"]), int(m["order"]))
-            found[key] = (path, path.stat().st_size)
+        if not (m := ORDER_HEADER.match(head)):
+            continue
+        customer = fold((header_customer(m) or "").strip())
+        reporter = fold((known.get(path.name) or "").strip())
+        entry = (path, path.stat().st_size)
+        # Registered under both names for the same reason blocks look up both: a file
+        # saved before senders existed is filed under its customer, and the paste that
+        # finds it again may know a reporter.
+        for owner in filter(None, (reporter or customer, customer)):
+            found.setdefault((int(m["day"]), int(m["month"]), int(m["order"]), owner), entry)
     return found
 
 
@@ -702,10 +825,12 @@ def save_blocks(blocks: list[OrderBlock], cfg, month: int, year: int, *,
     inbox = cfg.zalo.inbox_dir
     mode = getattr(cfg.extract, "ai_segmentation", "off")
 
-    def note_order(path: Path, revisions: list[tuple[str, str]]) -> int:
+    def note_order(path: Path, revisions: list[tuple[str, str]],
+                   reporter: str | None = None) -> int:
         """Record everything held beside an order rather than inside it. Returns how
         many revisions were new, so the counts stay honest across both save paths."""
         closers.record(inbox, path.name, closer)
+        reporters.record(inbox, path.name, reporter)
         for flag in extra_flags:
             flags.record(inbox, path.name, flag)
         if fallback:
@@ -732,8 +857,8 @@ def save_blocks(blocks: list[OrderBlock], cfg, month: int, year: int, *,
         # model that returned a body with the revision still attached to it.
         revisions = ([(update, "high")] if update else []) + list(block.ai_updates)
         body = block.text
-        if block.key in known:
-            path, _ = known[block.key]
+        if match := next((k for k in block.key_candidates if k in known), None):
+            path, _ = known[match]
             existing = path.read_text(encoding="utf-8", errors="replace").strip()
             action = merge_into(inbox, path, existing, block)
             if action == "duplicate":
@@ -744,15 +869,16 @@ def save_blocks(blocks: list[OrderBlock], cfg, month: int, year: int, *,
                 versions += 1
                 print(f"  version {path.name}  (bản khác — cần xem lại)")
             else:
-                known[block.key] = (path, path.stat().st_size)
+                known[match] = (path, path.stat().st_size)
                 print(f"  {action:7} {path.name}")
                 saved += 1
-            updates += note_order(path, revisions)
+            updates += note_order(path, revisions, block.reporter)
             continue
 
         path = save(body, block.header, inbox)
-        updates += note_order(path, revisions)
-        known[block.key] = (path, len(body.encode("utf-8")))
+        updates += note_order(path, revisions, block.reporter)
+        for candidate in block.key_candidates:
+            known.setdefault(candidate, (path, len(body.encode("utf-8"))))
         print(f"  saved   {path.name}  ({len(block.lines)} lines"
               + (f", {block.customer}" if block.customer else "") + ")")
         saved += 1

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import os
+import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -71,23 +72,44 @@ def missing_schema_fields(schema) -> list[str]:
     return [name for name in REQUIRED_FIELDS if name not in have]
 
 
-def _duplicate_keys(conversations: list[Conversation]) -> set[tuple]:
-    """Order keys (day, month, số đơn) held by more than one captured order.
+def _fold(value: Any) -> str:
+    """Lowercase and strip Vietnamese tone marks, so a name spelled two ways is one name."""
+    decomposed = unicodedata.normalize("NFD", str(value or "").strip())
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return stripped.replace("đ", "d").replace("Đ", "D").lower()
 
-    A safety net independent of the revision sidecar, which only links a version to the
-    order it was merged against. Two separate files can still carry the same key -- from
-    a capture made before versions were tracked, or from a filename collision -- and
-    then nothing connects them: they extract independently, land as two full rows with
-    two STTs, and both totals count. That is the one duplicate shape that reaches the
-    money silently, so it is detected here from the rows themselves.
+
+def _duplicate_reasons(conversations: list[Conversation]) -> dict[tuple, str]:
+    """Why each repeated (day, month, số đơn) needs a person to look at it.
+
+    Two orders can share a day and a number for two very different reasons, and the sheet
+    has to say which:
+
+    **Different people, or different customers.** Since orders are keyed by who they belong
+    to, these are captured as two orders on purpose and BOTH rows are real -- two staff each
+    numbering their own orders from 1 produce a "13/7 đơn 1" each. Nothing should be merged
+    and nothing is wrong with the money; the numbering is just ambiguous, and the rows are
+    marked so the shop can renumber them.
+
+    **The same order twice.** Same day, same number, same person: a capture from before
+    versions were tracked, or a filename collision. Here the total genuinely counts twice.
     """
-    seen: dict[tuple, int] = {}
+    groups: dict[tuple, list[Conversation]] = {}
     for conv in conversations:
         raw = conv.raw or {}
         key = (raw.get("order_day"), raw.get("order_month"), raw.get("order_number"))
         if all(part is not None for part in key):
-            seen[key] = seen.get(key, 0) + 1
-    return {key for key, count in seen.items() if count > 1}
+            groups.setdefault(key, []).append(conv)
+
+    reasons: dict[tuple, str] = {}
+    for key, group in groups.items():
+        if len(group) < 2:
+            continue
+        owners = {_fold((c.raw or {}).get("order_reporter")
+                        or c.customer_name) for c in group}
+        reasons[key] = ("trùng số đơn — khác người/khách, cần đánh lại số"
+                        if len(owners) > 1 else "trùng số đơn")
+    return reasons
 
 
 def _order_sort_key(conv: Conversation) -> tuple:
@@ -158,7 +180,7 @@ def write_orders_workbook(
 
     stt = 0
     missing: list[str] = []
-    duplicate_keys = _duplicate_keys(orders)
+    duplicate_reasons = _duplicate_reasons(orders)
 
     for conv in orders:
         res = results.get(conv.conversation_id)
@@ -177,14 +199,15 @@ def write_orders_workbook(
         first = True
         updates, versions = extras.summary(conv.raw)
         who = conv.raw.get("sender_name") or closer or None
-        is_dupe = (conv.raw.get("order_day"), conv.raw.get("order_month"),
-                   conv.raw.get("order_number")) in duplicate_keys
+        dupe_reason = duplicate_reasons.get(
+            (conv.raw.get("order_day"), conv.raw.get("order_month"),
+             conv.raw.get("order_number")), "")
         # "chưa chắc" is a weaker claim than "có bổ sung" and has to read as one: the
         # segmenter is told to keep a revision it cannot classify rather than drop it,
         # and that trade is only sound if the reader can tell a guess from a certainty.
         revision = ("bổ sung — chưa chắc" if extras.uncertain(conv.raw)
                     else "có bổ sung") if updates else ""
-        reasons = [r for r in ("trùng số đơn" if is_dupe else "", revision,
+        reasons = [r for r in (dupe_reason, revision,
                                *(conv.raw.get("flags") or [])) if r]
 
         for name, qty in items:

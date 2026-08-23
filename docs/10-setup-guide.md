@@ -363,8 +363,13 @@ review. Three reasons appear:
 - **`có bổ sung`** — a later message changed or added to this order. Read it and decide.
 - **`2 phiên bản`** — two different versions of the same order. The second gets a row with
   the date and the name but **no STT and no money**, so it cannot be counted twice.
-- **`trùng số đơn`** — the same day and số đơn arrived as two separate orders. This one
-  *is* counted twice until you delete a row. Do that before using the file.
+- **`trùng số đơn`** — the same day and số đơn arrived as two separate orders from the
+  same person, for the same customer. This one *is* counted twice until you delete a row.
+  Do that before using the file.
+- **`trùng số đơn — khác người/khách`** — the same day and số đơn, but a different sender
+  or a different customer. **Both rows are real** and both are kept: if two people each
+  number their own orders from 1, they produce a `13/7 đơn 1` each. The money is right;
+  the numbering is ambiguous. Renumber when convenient — nothing needs deleting.
 - **`bổ sung — chưa chắc`** — a later message was attached to this order, but it might
   have been ordinary chat rather than a change. Kept deliberately: a revision wrongly
   dropped leaves money missing with nothing to show it was ever there, while one wrongly

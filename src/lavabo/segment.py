@@ -28,6 +28,7 @@ import hashlib
 import json
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Protocol
 
@@ -53,6 +54,8 @@ RESPONSE_SCHEMA: dict[str, Any] = {
                     "order_number": {"type": "integer"},
                     "customer": {"type": "string",
                                  "description": "Name from the header, or null if it states none."},
+                    "reporter": {"type": "string",
+                                 "description": "Who SENT the message, if the chat shows a sender. Null otherwise."},
                     "date_swapped": {"type": "boolean",
                                      "description": "True if day and month were typed the wrong way round."},
                     "repeats_header": {"type": "boolean",
@@ -79,6 +82,13 @@ RESPONSE_SCHEMA: dict[str, Any] = {
 }
 
 
+def _fold(value: str) -> str:
+    """Lowercase, strip Vietnamese tone marks. Matches OrderBlock.owner, deliberately."""
+    decomposed = unicodedata.normalize("NFD", (value or "").strip())
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return stripped.replace("đ", "d").replace("Đ", "D").lower()
+
+
 @dataclass
 class Update:
     text: str
@@ -96,11 +106,19 @@ class SegmentedOrder:
     date_swapped: bool = False
     repeats_header: bool = False
     updates: list[Update] = field(default_factory=list)
+    # Người báo đơn: who posted the message, when the chat names a sender.
+    reporter: str | None = None
 
     @property
-    def key(self) -> tuple[int, int, int]:
-        """Same business identity the regex path uses, so the two are comparable."""
-        return (self.day, self.month, self.order_number)
+    def key(self) -> tuple[int, int, int, str]:
+        """Same business identity the regex path uses, so the two stay comparable.
+
+        Both must build this the same way or the shadow comparison reports every order as
+        found by one side and missed by the other -- which is the loudest possible false
+        alarm, since only_regex is the line that stops a switch.
+        """
+        return (self.day, self.month, self.order_number,
+                _fold(self.reporter or self.customer or ""))
 
 
 @dataclass
@@ -224,6 +242,7 @@ def parse_response(data: dict[str, Any], lines: list[str]) -> SegmentResult:
             day=day, month=month, order_number=number,
             body=body,
             customer=(str(raw.get("customer") or "").strip() or None),
+            reporter=(str(raw.get("reporter") or "").strip() or None),
             date_swapped=bool(raw.get("date_swapped")),
             repeats_header=bool(raw.get("repeats_header")),
             updates=updates,
@@ -517,6 +536,8 @@ VIDEO_RESPONSE_SCHEMA: dict[str, Any] = {
                     "order_number": {"type": "integer"},
                     "customer": {"type": "string",
                                  "description": "Name from the header, or null if it states none."},
+                    "reporter": {"type": "string",
+                                 "description": "Who SENT the message, if the chat shows a sender. Null otherwise."},
                     "date_swapped": {"type": "boolean"},
                     "repeats_header": {"type": "boolean"},
                     "partial": {"type": "boolean",
@@ -581,6 +602,7 @@ def parse_video_response(data: dict[str, Any]) -> SegmentResult:
             day=day, month=month, order_number=number,
             body=body or header,
             customer=(str(raw.get("customer") or "").strip() or None),
+            reporter=(str(raw.get("reporter") or "").strip() or None),
             date_swapped=bool(raw.get("date_swapped")),
             repeats_header=bool(raw.get("repeats_header")),
             updates=updates,

@@ -178,6 +178,17 @@ real headers from this chat:
 Read the day, month, order number and customer name out of it. If a header states no \
 customer name, return null for it -- never take a name from elsewhere in the message.
 
+## Who sent it, when the chat shows that
+
+Some copies of this chat name the sender before the message -- "Trà My: 13/7 đơn 1 - ..." \
+or the name on its own line above it. That person is `reporter`, người báo đơn, and they \
+are NOT the customer. Report it when the chat shows it and null when it does not; never \
+guess it from the customer name or from a neighbouring message.
+
+It matters because two people number their own orders separately: "13/7 đơn 1" from one \
+and "13/7 đơn 1" from another are two different orders for two different customers, not \
+one order reported twice.
+
 ## Dates are day-first
 
 Vietnamese convention is day/month, so "8/3" is the 8th of March.
