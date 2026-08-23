@@ -21,6 +21,7 @@ import hashlib
 import json
 import logging
 import re
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -71,18 +72,73 @@ ORDER_HEADER = re.compile(
     # Only the first was accepted, so every order written the second way failed to
     # match, and a line that is not a header is chatter — the whole order was dropped
     # silently. Nothing reported it, because nothing had seen an order to report.
+    # A name may be followed by who reported the order -- see header_parties. The
+    # bracketed form needs it spelled out here because ")" ends that group, so
+    # "(Trần Thị Liên) - Ngọc Anh" matched nothing at all and the order vanished; the
+    # dashed form is split afterwards, since a dash cannot tell the two names apart.
     r"\s*(?:"
     r"[-–—:]\s*(?P<customer>\S.*?)"
     r"|\(\s*(?P<customer_paren>[^)]+?)\s*\)"
+    r"(?:\s*[-–—]\s*(?P<reporter_paren>[^-–—]+?))?"
     r")?\s*$",
     re.IGNORECASE,
 )
 
+# " - " between two names, as the third field of a header. Requires spaces around it, so
+# "29/6 đơn 4- Bùi Đức Hạnh" and a hyphenated name are left alone.
+NAME_SEPARATOR = re.compile(r"\s+[-–—]\s+")
+
+
+def _looks_like_a_person(name: str) -> bool:
+    """Cheap sanity check on a trailing field before it is read as a reporter."""
+    name = name.strip()
+    return bool(name) and len(name) <= 30 and len(name.split()) <= 4 and \
+        not any(ch.isdigit() for ch in name)
+
+
+def _fold_name(value: str) -> str:
+    decomposed = unicodedata.normalize("NFD", (value or "").strip())
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return stripped.replace("đ", "d").replace("Đ", "D").lower()
+
+
+def header_parties(match: re.Match, known: set[str] | None = None) -> tuple[str, str | None]:
+    """(customer, reporter) from an order header.
+
+    The shop writes the reporter into the header itself -- "13/7 đơn 1 - Chị Hương -
+    Trà My" -- because copy-paste does not carry who sent a message. Typed by hand it
+    survives every client and every capture route, including a screen recording, which no
+    sender line does.
+
+    Deciding where the customer ends is the whole difficulty, since both names are just
+    text either side of a dash. A trailing field is taken as the reporter when it MATCHES A
+    NAME THE SHOP ALREADY USES, which is exact; without such a list it falls back to
+    shape -- short, no digits, a few words. A customer whose name genuinely contains " - "
+    would be split by that fallback, and the first time anyone types it in the closer
+    picker the exact rule takes over.
+    """
+    if paren := (match["customer_paren"] or "").strip():
+        return paren.strip("()").strip(), (match["reporter_paren"] or "").strip() or None
+
+    raw = (match["customer"] or "").strip()
+    if not raw:
+        return "", None
+    parts = NAME_SEPARATOR.split(raw)
+    if len(parts) < 2:
+        return raw, None
+
+    head, tail = NAME_SEPARATOR.split(raw, maxsplit=len(parts) - 2)[0], parts[-1]
+    head = raw[: raw.rfind(tail)].rstrip(" -–—").strip()
+    if known and _fold_name(tail) in known:
+        return head, tail.strip()
+    if not known and _looks_like_a_person(tail):
+        return head, tail.strip()
+    return raw, None
+
 
 def header_customer(match: re.Match) -> str:
     """The display name from an order header, however it was written."""
-    raw = match["customer"] or match["customer_paren"] or ""
-    return raw.strip().strip("()").strip()
+    return header_parties(match)[0]
 
 
 ATTACHMENT_MARKERS = {

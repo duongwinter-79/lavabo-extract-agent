@@ -57,7 +57,7 @@ from lavabo import (closers, extras, flags, rawpaste,  # noqa: E402
                     reporters, segment)
 from lavabo.config import Config  # noqa: E402
 from lavabo.connectors.zalo_export import (  # noqa: E402
-    DEFAULT_PATTERNS, ORDER_HEADER, header_customer)  # noqa: E402
+    DEFAULT_PATTERNS, ORDER_HEADER, header_customer, header_parties)  # noqa: E402
 
 POLL_SECONDS = 0.5
 MIN_TRANSCRIPT_CHARS = 40
@@ -468,7 +468,21 @@ def resolve_swapped_dates(blocks: list["OrderBlock"], target_month: int) -> None
         block.date_swapped = True
 
 
-def split_orders(text: str, target_month: int | None = None) -> list[OrderBlock]:
+def staff_names(inbox: Path | None) -> set[str]:
+    """Folded names the shop already uses, from both sidecars.
+
+    Used to decide whether the last field of "13/7 đơn 1 - Chị Hương - Trà My" is a
+    reporter or part of the customer's name. Exact where it can be; the shape test in
+    header_parties only stands in until a name has been seen once.
+    """
+    if inbox is None:
+        return set()
+    names = list(closers.load(inbox).values()) + list(reporters.load(inbox).values())
+    return {fold(n.strip()) for n in names if n and n.strip()}
+
+
+def split_orders(text: str, target_month: int | None = None,
+                 inbox: Path | None = None) -> list[OrderBlock]:
     """Cut a chunk of group chat into order blocks.
 
     A line matching the order header starts a new block; everything until the next
@@ -484,6 +498,7 @@ def split_orders(text: str, target_month: int | None = None) -> list[OrderBlock]
     blocks: list[OrderBlock] = []
     current: OrderBlock | None = None
     pending: str | None = None          # a sender seen on its own line, awaiting a header
+    known = staff_names(inbox)
 
     lines = text.splitlines()
     for index, line in enumerate(lines):
@@ -495,16 +510,20 @@ def split_orders(text: str, target_month: int | None = None) -> list[OrderBlock]
             year = int(m["year"]) if m["year"] else None
             if year is not None and year < 100:
                 year += 2000
+            customer, in_header = header_parties(m, known)
             current = OrderBlock(
                 header=stripped,
                 day=int(m["day"]),
                 month=int(m["month"]),
                 year=year,
                 order_no=int(m["order"]),
-                customer=header_customer(m) or None,
+                customer=customer or None,
                 lines=[],
                 original_header=stripped,
-                reporter=reporter,
+                # A name typed into the header wins over one read off a sender line: the
+                # shop wrote it deliberately, and it is the only form that survives a
+                # screen recording, where there are no sender lines to read.
+                reporter=in_header or reporter,
             )
             blocks.append(current)
             continue
@@ -617,7 +636,8 @@ def existing_orders(inbox: Path) -> dict[tuple, tuple[Path, int]]:
     narrower key here than the one used when saving would put two different people's
     "13/7 đơn 1" back into one file on the next paste.
     """
-    known = reporters.load(inbox)
+    stored = reporters.load(inbox)
+    known = staff_names(inbox)
     found: dict[tuple, tuple[Path, int]] = {}
     for path in inbox.glob("*.txt"):
         try:
@@ -626,8 +646,9 @@ def existing_orders(inbox: Path) -> dict[tuple, tuple[Path, int]]:
             continue
         if not (m := ORDER_HEADER.match(head)):
             continue
-        customer = fold((header_customer(m) or "").strip())
-        reporter = fold((known.get(path.name) or "").strip())
+        in_header_customer, in_header_reporter = header_parties(m, known)
+        customer = fold(in_header_customer.strip())
+        reporter = fold((stored.get(path.name) or in_header_reporter or "").strip())
         entry = (path, path.stat().st_size)
         # Registered under both names for the same reason blocks look up both: a file
         # saved before senders existed is filed under its customer, and the paste that
@@ -761,7 +782,7 @@ def handle_orders(text: str, cfg, month: int, year: int, *,
     if store_raw:
         rawpaste.store(cfg.zalo.inbox_dir, text, month=month, year=year, closer=closer)
 
-    blocks = split_orders(text, target_month=month)
+    blocks = split_orders(text, target_month=month, inbox=cfg.zalo.inbox_dir)
     mode = getattr(cfg.extract, "ai_segmentation", "off")
     fallback = False
 

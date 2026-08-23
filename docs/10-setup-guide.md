@@ -432,6 +432,21 @@ differently and it is confusing if you forget.
 > **Android**: accessibility auto-scroll apps do this properly, and are much easier. If
 > anyone at the shop has an Android phone with Zalo, use that for the recording.
 
+### Writing who reported an order
+
+A screen recording carries no sender names either, and neither does copy-paste. If more
+than one person posts orders, put the name at the end of the header:
+
+```
+13/7 đơn 1 - Chị Hương - Trà My
+```
+
+Then two people can both use `đơn 1` on the same day without the app treating them as one
+order. **Tên KH** in the sheet still shows only `Chị Hương`.
+
+The app learns the names as they are used, so once `Trà My` has appeared it is never
+mistaken for part of a customer's name.
+
 ### 2. Record
 
 1. Add **Screen Recording** to Control Centre if it is not there

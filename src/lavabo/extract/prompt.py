@@ -174,16 +174,24 @@ real headers from this chat:
     17/7 đơn 1: Thảo Nguyên
     29/6 đơn 4- Bùi Đức Hạnh
     5/8 đơn 3
+    13/7 đơn 1 - Chị Hương - Trà My          customer, then who reported it
+    13/7 đơn 2 (Trần Thị Liên) - Ngọc Anh    the same, with the customer bracketed
 
 Read the day, month, order number and customer name out of it. If a header states no \
 customer name, return null for it -- never take a name from elsewhere in the message.
 
 ## Who sent it, when the chat shows that
 
-Some copies of this chat name the sender before the message -- "Trà My: 13/7 đơn 1 - ..." \
-or the name on its own line above it. That person is `reporter`, người báo đơn, and they \
-are NOT the customer. Report it when the chat shows it and null when it does not; never \
-guess it from the customer name or from a neighbouring message.
+The shop writes it into the header itself, LAST, after the customer: \
+"13/7 đơn 1 - Chị Hương - Trà My" is Chị Hương's order, reported by Trà My. Some copies of \
+the chat also name the sender before the message -- "Trà My: 13/7 đơn 1 - ..." or on its \
+own line above it. Either way that person is `reporter`, người báo đơn, and they are NOT \
+the customer. The header wins when both are present.
+
+Report it when it is written and null when it is not; never guess it from the customer \
+name or from a neighbouring message. Two names either side of a dash are only a customer \
+and a reporter when the second is a PERSON the shop keeps using -- "13/7 đơn 3 - Anh Tâm - \
+Hà Nội" names one customer and a place, so the customer is "Anh Tâm - Hà Nội".
 
 It matters because two people number their own orders separately: "13/7 đơn 1" from one \
 and "13/7 đơn 1" from another are two different orders for two different customers, not \

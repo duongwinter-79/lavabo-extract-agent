@@ -65,6 +65,51 @@ class ReadingTheReporter(unittest.TestCase):
         self.assertNotIn("Ngọc Anh (11:52)", blocks[0].lines)
 
 
+class ReporterInTheHeader(unittest.TestCase):
+    """The format the shop is adopting, because copy-paste carries no sender: the name is
+    typed into the header itself, last, after the customer."""
+
+    def _parse(self, line, known=None):
+        from lavabo.connectors.zalo_export import ORDER_HEADER, header_parties
+
+        match = ORDER_HEADER.match(line)
+        self.assertIsNotNone(match, f"header did not match: {line!r}")
+        return header_parties(match, known)
+
+    def test_the_dashed_form_splits_into_customer_and_reporter(self):
+        self.assertEqual(self._parse("13/7 đơn 1 - Chị Hương - Trà My"),
+                         ("Chị Hương", "Trà My"))
+
+    def test_the_bracketed_form_does_too(self):
+        """This one matched NOTHING before -- ")" ended the group, so the whole order
+        was dropped rather than mis-parsed."""
+        self.assertEqual(self._parse("13/7 đơn 2 (Trần Thị Liên) - Ngọc Anh"),
+                         ("Trần Thị Liên", "Ngọc Anh"))
+
+    def test_headers_the_shop_already_writes_are_unchanged(self):
+        for line, customer in (("13/7 đơn 1 - Chị Hương", "Chị Hương"),
+                               ("2/7 đơn 2 (Trần Thị Liên)", "Trần Thị Liên"),
+                               ("29/6 đơn 4- Bùi Đức Hạnh", "Bùi Đức Hạnh"),
+                               ("16/7 đơn 1 - Tiểu bảo bối", "Tiểu bảo bối"),
+                               ("17/7 đơn 1: Thảo Nguyên", "Thảo Nguyên")):
+            with self.subTest(line):
+                self.assertEqual(self._parse(line), (customer, None))
+
+    def test_a_known_name_settles_an_ambiguous_trailing_field(self):
+        """"Anh Tâm - Hà Nội" is one customer and a place. Once the shop's own names are
+        known, only those count as a reporter."""
+        self.assertEqual(self._parse("13/7 đơn 3 - Anh Tâm - Hà Nội", {"tra my"}),
+                         ("Anh Tâm - Hà Nội", None))
+        self.assertEqual(self._parse("13/7 đơn 3 - Anh Tâm - Trà My", {"tra my"}),
+                         ("Anh Tâm", "Trà My"))
+
+    def test_the_header_beats_a_sender_line(self):
+        blocks = zc.split_orders(
+            f"Ngọc Anh: 13/7 đơn 1 - Chị Hương - Trà My\n{ORDER}", target_month=7)
+        self.assertEqual(blocks[0].reporter, "Trà My")
+        self.assertEqual(blocks[0].customer, "Chị Hương")
+
+
 class Identity(unittest.TestCase):
     def _block(self, reporter=None, customer="Chị Hương", order_no=1):
         header = f"13/7 đơn {order_no}" + (f" - {customer}" if customer else "")
@@ -141,6 +186,19 @@ class Capturing(unittest.TestCase):
         self._capture(f"13/7 đơn 1 - Chị Hương\n{ORDER}")
         self._capture(f"Trà My: 13/7 đơn 1 - Chị Hương\n{ORDER}")
         self.assertEqual(list(reporters.load(self.cfg.zalo.inbox_dir).values()), ["Trà My"])
+
+    def test_the_header_format_separates_two_people(self):
+        result = self._capture(f"13/7 đơn 1 - Chị Hương - Trà My\n{ORDER}\n"
+                               f"13/7 đơn 1 - Anh Lợi - Ngọc Anh\n{ORDER}")
+        self.assertEqual(result.saved, 2)
+        self.assertEqual(len(self._files()), 2)
+
+    def test_the_customer_column_does_not_swallow_the_reporter(self):
+        self._capture(f"13/7 đơn 1 - Chị Hương - Trà My\n{ORDER}")
+        block = zc.split_orders(f"13/7 đơn 1 - Chị Hương - Trà My\n{ORDER}",
+                                target_month=7, inbox=self.cfg.zalo.inbox_dir)[0]
+        self.assertEqual(block.customer, "Chị Hương")
+        self.assertEqual(block.reporter, "Trà My")
 
     def test_a_reporter_is_never_erased_by_a_copy_that_lost_the_names(self):
         self._capture(f"Trà My: 13/7 đơn 1 - Chị Hương\n{ORDER}")

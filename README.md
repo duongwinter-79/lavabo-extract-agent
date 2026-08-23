@@ -55,6 +55,19 @@ Tổng 29tr
 ...
 ```
 
+**Adding who reported the order.** Copy-paste does not carry who sent a message, so if two
+people each number their own orders from 1, both produce a `13/7 đơn 1`. Writing the name
+into the header, last, tells them apart:
+
+```
+13/7 đơn 1 - Chị Hương - Trà My
+13/7 đơn 2 (Trần Thị Liên) - Ngọc Anh
+```
+
+`Tên KH` still gets only the customer. Optional — without it, the customer name separates
+the orders instead, which works unless two people use the same số đơn for the same
+customer on the same day.
+
 Everything else in the chat is ignored, and only the selected month is captured.
 
 > **`Ctrl+A` only copies what Zalo has loaded.** It is not a size limit you can raise —
