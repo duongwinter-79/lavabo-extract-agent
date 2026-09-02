@@ -711,9 +711,8 @@ def order_gaps(inbox: Path, month: int) -> list[str]:
     Zalo PC keeps only a scrollable window of messages actually loaded, so a single
     select-all can silently miss part of the month no matter how far you scrolled --
     this is the practical size limit, not the clipboard, which has no real cap of its
-    own. Capturing in overlapping chunks as you scroll is the standing workaround (safe
-    because orders dedupe by day/month/order number), but nothing short of comparing
-    against a source of truth can PROVE nothing was missed.
+    own. Capturing in overlapping chunks as you scroll is the standing workaround, but
+    nothing short of comparing against a source of truth can PROVE nothing was missed.
 
     This is the closest thing to one that costs nothing extra: within a shop day, order
     numbers are written 1, 2, 3... with no gaps -- staff number them by hand as they go.
@@ -721,20 +720,39 @@ def order_gaps(inbox: Path, month: int) -> list[str]:
     further up in Zalo that was never pasted. A day with zero captured orders is not
     flagged; the shop does not get orders every single day, and that is not evidence of
     anything missing.
+
+    Counted PER PERSON wherever the chat says who reported an order, because two people
+    numbering their own orders separately fill in each other's gaps: Trà My's 1 and 3
+    alongside Ngọc Anh's 2 reads as an unbroken 1, 2, 3 and the missing order is never
+    reported. Orders with no known reporter share one sequence, exactly as before.
     """
-    by_day: dict[int, set[int]] = {}
-    for day, m, order_no in existing_orders(inbox):
-        if m == month:
-            by_day.setdefault(day, set()).add(order_no)
+    stored = reporters.load(inbox)
+    known = staff_names(inbox)
+    by_group: dict[tuple[int, str], set[int]] = {}   # (day, folded reporter) -> numbers
+    names: dict[str, str] = {}                       # folded -> as written
+
+    for path in inbox.glob("*.txt"):
+        try:
+            head = first_line(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        if not (m := ORDER_HEADER.match(head)) or int(m["month"]) != month:
+            continue
+        who = (stored.get(path.name) or header_parties(m, known)[1] or "").strip()
+        folded = fold(who)
+        names.setdefault(folded, who)
+        by_group.setdefault((int(m["day"]), folded), set()).add(int(m["order"]))
 
     notes = []
-    for day in sorted(by_day):
-        nums = by_day[day]
+    for day, who in sorted(by_group):
+        nums = by_group[(day, who)]
         missing = [n for n in range(1, max(nums)) if n not in nums]
-        if missing:
-            have = ", ".join(str(n) for n in sorted(nums))
-            miss = ", ".join(str(n) for n in missing)
-            notes.append(f"{day}/{month}: thiếu đơn {miss} (đã có đơn {have})")
+        if not missing:
+            continue
+        have = ", ".join(str(n) for n in sorted(nums))
+        miss = ", ".join(str(n) for n in missing)
+        whose = f" ({names[who]})" if who else ""
+        notes.append(f"{day}/{month}{whose}: thiếu đơn {miss} (đã có đơn {have})")
     return notes
 
 

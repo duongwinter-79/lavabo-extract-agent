@@ -321,6 +321,61 @@ class SettlingAmbiguousNames(unittest.TestCase):
         self.assertEqual(self.calls, 0)
 
 
+class GapWarning(unittest.TestCase):
+    """order_gaps unpacked the order key positionally, so widening the key crashed the
+    status endpoint the page polls -- the whole app, on every refresh, for anyone with a
+    single order captured. No test touched it, which is why it shipped."""
+
+    BODY = "1 tủ\nTổng 5.800"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg = Config()
+        self.cfg.zalo.inbox_dir = Path(self.tmp.name) / "zalo"
+        self.cfg.zalo.inbox_dir.mkdir(parents=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _capture(self, header):
+        zc.handle_orders(f"{header}\n{self.BODY}", self.cfg, 8, 2026,
+                         all_months=False, trim=True, closer="Trà My")
+
+    def _gaps(self):
+        return zc.order_gaps(self.cfg.zalo.inbox_dir, 8)
+
+    def test_it_runs_at_all(self):
+        """The crash: too many values to unpack."""
+        self._capture("15/8 đơn 1 - Chị Hương")
+        self.assertEqual(self._gaps(), [])
+
+    def test_a_missing_number_is_reported(self):
+        self._capture("15/8 đơn 2 - KH2")
+        self._capture("15/8 đơn 3 - KH3")
+        self.assertEqual(len(self._gaps()), 1)
+        self.assertIn("thiếu đơn 1", self._gaps()[0])
+
+    def test_two_people_each_complete_raise_no_alarm(self):
+        self._capture("15/8 đơn 1 - KH a - Trà My")
+        self._capture("15/8 đơn 2 - KH b - Trà My")
+        self._capture("15/8 đơn 1 - KH c - Ngọc Anh")
+        self.assertEqual(self._gaps(), [])
+
+    def test_one_persons_gap_is_not_filled_in_by_the_other(self):
+        """Trà My's 1 and 3 plus Ngọc Anh's 2 reads as an unbroken 1, 2, 3 when the day
+        is counted as one sequence, and the missing order is never reported."""
+        self._capture("15/8 đơn 1 - KH a - Trà My")
+        self._capture("15/8 đơn 3 - KH b - Trà My")
+        self._capture("15/8 đơn 2 - KH c - Ngọc Anh")
+        gaps = " | ".join(self._gaps())
+        self.assertIn("Trà My", gaps)
+        self.assertIn("thiếu đơn 2", gaps)
+
+    def test_another_month_is_not_counted(self):
+        self._capture("15/8 đơn 2 - KH2")
+        self.assertEqual(zc.order_gaps(self.cfg.zalo.inbox_dir, 7), [])
+
+
 class Flagging(unittest.TestCase):
     """Both rows are written either way; the sheet has to say which kind of clash it is."""
 
