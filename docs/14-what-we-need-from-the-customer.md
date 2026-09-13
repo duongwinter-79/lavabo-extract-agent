@@ -108,8 +108,17 @@ flowchart TD
 
 ### 3.2 The knowledge pack — **P0, this is the shop's homework**
 
-**The pack is committed**, so whoever sends it to the shop needs no Python. Two shapes,
-and which one to send depends on the shop, not on us:
+**The pack is committed**, so whoever sends it to the shop needs no Python. Two shapes:
+
+> **This shop: send the folder.** They have a PC with Excel, which is the version where
+> the dropdowns work and the price column refuses `2tr850` as it is typed — caught in the
+> cell rather than in a report a week later. Send the files loose; Zalo and Messenger
+> handle `.zip` attachments badly.
+>
+> Still worth confirming *who* types. "The shop has a PC" and "the person who knows the
+> prices uses that PC" are not the same sentence — if the owner dictates and someone else
+> types, switch to the one-file version so both can see it at once.
+
 
 | | For | |
 |---|---|---|
