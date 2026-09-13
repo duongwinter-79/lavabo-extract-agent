@@ -221,6 +221,7 @@ bằng công cụ và sẽ báo lại chính xác dòng nào cần sửa ạ.
 
 | Doc | |
 |---|---|
+| [docs/15-end-to-end-flow.md](15-end-to-end-flow.md) | **every step drawn**, including the shop's, with the gates between them |
 | [docs/11-facebook-reply-agent.md](11-facebook-reply-agent.md) | the full plan and the intake spec |
 | [docs/12-business-ai-step-1.md](12-business-ai-step-1.md) | step 1 — what the access in §3.1 unlocks |
 | [docs/13-business-ai-step-2.md](13-business-ai-step-2.md) | step 2 — what `catalog.xlsx` unlocks |
