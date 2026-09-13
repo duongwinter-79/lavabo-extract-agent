@@ -188,13 +188,22 @@ class TheWholePack(unittest.TestCase):
     def setUp(self):
         self.dir = Path(tempfile.mkdtemp()) / "intake"
 
-    def test_a_freshly_generated_pack_validates(self):
-        """init -> check is the loop the shop runs. If the template cannot pass the
-        validator, the spec and the form have already drifted apart."""
+    def test_a_freshly_generated_pack_has_no_spreadsheet_errors(self):
+        """init -> check is the loop the shop runs. If the blank workbooks cannot pass
+        the validator, the spec and the form have already drifted apart."""
         write_intake(self.dir)
         problems = check_intake(self.dir)
-        self.assertEqual([str(p) for p in problems if p.fatal], [])
+        sheets = [str(p) for p in problems if p.fatal and p.file.endswith(".xlsx")]
+        self.assertEqual(sheets, [])
         self.assertTrue(any("ví dụ" in str(p) for p in problems))
+
+    def test_a_freshly_generated_pack_does_not_pass_overall(self):
+        """An empty pack is not a usable pack. Every markdown form comes back saying
+        which answers are still missing, which is the whole point of the marker."""
+        write_intake(self.dir)
+        fatal = [p for p in check_intake(self.dir) if p.fatal]
+        self.assertEqual({p.file for p in fatal},
+                         {d.filename for d in spec.DOC_SPECS})
 
     def test_init_never_overwrites_a_filled_in_file(self):
         write_intake(self.dir)
@@ -211,7 +220,8 @@ class TheWholePack(unittest.TestCase):
         write_catalog(self.dir, [{**GOOD, "ten_sp": "Cái shop đã điền"}])
         written, skipped = write_intake(self.dir, force=True)
         self.assertEqual(skipped, [])
-        self.assertEqual(len(written), len(spec.SHEETS) + len(spec.DOCS))
+        self.assertEqual(len(written),
+                         len(spec.SHEETS) + len(spec.DOC_SPECS) + len(spec.STATIC_DOCS))
 
     def test_a_missing_required_file_is_reported(self):
         write_intake(self.dir)
@@ -292,3 +302,77 @@ class TheWholePack(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheMarkdownForms(unittest.TestCase):
+    """The blanks nobody filled in.
+
+    A file returned untouched and a file somebody deliberately left empty look identical
+    without a marker, so the shop's "we sent you everything" and our "half of it is
+    blank" were previously both true and unarguable.
+    """
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp()) / "intake"
+        write_intake(self.dir)
+
+    def problems(self, filename="store.md"):
+        return [p for p in check_intake(self.dir) if p.file == filename]
+
+    def fill(self, filename, answer="xong"):
+        path = self.dir / filename
+        path.write_text(path.read_text(encoding="utf-8").replace(spec.PLACEHOLDER, answer),
+                        encoding="utf-8")
+
+    def test_an_untouched_form_names_every_missing_answer(self):
+        fatal = [p for p in self.problems() if p.fatal]
+        self.assertEqual(len(fatal), 1)
+        self.assertIn("Tên shop", str(fatal[0]))
+        self.assertIn("Hotline", str(fatal[0]))
+
+    def test_optional_blanks_do_not_block(self):
+        warned = [p for p in self.problems() if not p.fatal]
+        self.assertEqual(len(warned), 1)
+        self.assertIn("Website", str(warned[0]))
+        self.assertNotIn("Hotline", str(warned[0]))
+
+    def test_a_filled_form_is_clean(self):
+        self.fill("store.md")
+        self.assertEqual(self.problems(), [])
+
+    def test_the_instructions_are_not_mistaken_for_a_blank(self):
+        """The header explains what the marker means, so it contains one. A shop fills in
+        the fields and leaves that paragraph alone -- as they should -- and the form must
+        still come back clean instead of reporting one missing answer forever."""
+        path = self.dir / "store.md"
+        filled = [ln.replace(spec.PLACEHOLDER, "xong") if ln.startswith("-") else ln
+                  for ln in path.read_text(encoding="utf-8").splitlines()]
+        path.write_text("\n".join(filled), encoding="utf-8")
+
+        self.assertIn(spec.PLACEHOLDER, path.read_text(encoding="utf-8"))
+        self.assertEqual(self.problems(), [])
+
+    def test_reordering_and_deleting_sections_is_allowed(self):
+        """They will rearrange it. Matching by label rather than position means an edit
+        that loses nothing does not read as a missing answer."""
+        path = self.dir / "store.md"
+        lines = path.read_text(encoding="utf-8").splitlines()
+        kept = [ln for ln in lines if "Địa chỉ 2" not in ln and "Ngày nghỉ" not in ln]
+        path.write_text("\n".join(reversed(kept)), encoding="utf-8")
+        fatal = [p for p in self.problems() if p.fatal]
+        self.assertEqual(len(fatal), 1)
+        self.assertIn("Tên shop", str(fatal[0]))
+
+    def test_a_sample_conversation_is_tracked_by_its_heading(self):
+        problems = [str(p) for p in self.problems("voice.md") if p.fatal]
+        self.assertTrue(any("Hội thoại mẫu 1" in p for p in problems), problems)
+
+    def test_writing_the_samples_clears_them(self):
+        self.fill("voice.md", "Khách: tủ 80 bao nhiêu ạ?\nShop: dạ bên em...")
+        self.assertEqual(self.problems("voice.md"), [])
+
+    def test_a_deleted_form_is_reported(self):
+        (self.dir / "policies.md").unlink()
+        problems = self.problems("policies.md")
+        self.assertEqual(len(problems), 1)
+        self.assertIn("thiếu file", str(problems[0]))

@@ -20,7 +20,8 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
-from .spec import DOCS, SHEETS, SheetSpec
+from .spec import (DOC_SPECS, PLACEHOLDER, SHEETS, STATIC_DOCS, DocSpec,
+                   SheetSpec)
 
 log = logging.getLogger(__name__)
 
@@ -78,7 +79,15 @@ def write_intake(directory: Path, *, force: bool = False) -> tuple[list[Path], l
         _write_workbook(path, sheet)
         written.append(path)
 
-    for name, body in DOCS.items():
+    for doc in DOC_SPECS:
+        path = directory / doc.filename
+        if path.exists() and not force:
+            skipped.append(path)
+            continue
+        path.write_text(render_doc(doc), encoding="utf-8")
+        written.append(path)
+
+    for name, body in STATIC_DOCS.items():
         path = directory / name
         if path.exists() and not force:
             skipped.append(path)
@@ -87,6 +96,41 @@ def write_intake(directory: Path, *, force: bool = False) -> tuple[list[Path], l
         written.append(path)
 
     return written, skipped
+
+
+def render_doc(doc: DocSpec) -> str:
+    """A fill-in-the-blanks form, not a set of headings.
+
+    Every blank is the same marker, so the shop can see at a glance what is left and
+    `kb check` can say which fields are still empty. Without it a file returned
+    untouched and a file somebody deliberately left empty look identical.
+    """
+    out = [f"# {doc.title}", "", f"> {doc.why}", ">",
+           f"> Thay `{PLACEHOLDER}` bằng câu trả lời của shop. Phần sau mũi tên ← là ví dụ,",
+           "> xoá đi cũng được. Mục nào chưa biết thì cứ để nguyên — gửi được đến đâu hay đến đó.",
+           ""]
+
+    for section in doc.sections:
+        out += [f"## {section.heading}", ""]
+        if section.intro:
+            out += [f"*{section.intro}*", ""]
+
+        if section.prose:
+            out += [PLACEHOLDER, ""]
+            continue
+
+        for field in section.fields:
+            line = f"- **{field.label}:** {PLACEHOLDER}"
+            if field.example:
+                line += f"   ← ví dụ: {field.example}"
+            if not field.required:
+                line += "   *(không bắt buộc)*"
+            out.append(line)
+            if field.note:
+                out.append(f"  *{field.note}*")
+        out.append("")
+
+    return "\n".join(out).rstrip() + "\n"
 
 
 def _write_workbook(path: Path, sheet: SheetSpec) -> None:

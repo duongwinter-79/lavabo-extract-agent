@@ -112,6 +112,12 @@ Send them the folder produced by `lavabo kb init`. It is a set of forms now, not
 page: dropdowns on every list column, a comment on every header, an instructions sheet, and
 a price cell that rejects `2tr850` as it is typed.
 
+The three text files are forms too. Every answer is a `[chưa điền]` marker the shop
+overwrites, with an example beside it, so `kb check` can report **which answers are still
+missing by name** — `store.md: còn 7 mục chưa điền: Tên shop, Địa chỉ 1, Hotline…`. Without
+that, a file returned untouched and a file deliberately left empty look identical, and
+"we sent you everything" and "half of it is blank" are both true and unarguable.
+
 | File | Priority | Notes |
 |---|---|---|
 | `store.md` | **P0** | 10 minutes. Địa chỉ, giờ, hotline |

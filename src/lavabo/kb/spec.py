@@ -198,12 +198,148 @@ IMAGES = SheetSpec(
 
 SHEETS: tuple[SheetSpec, ...] = (CATALOG, SHIPPING, FAQ, SYNONYMS, PROMOTIONS, IMAGES)
 
-# The text files. Templates, not schemas -- nothing validates prose.
-#
-# The first one is not a template but a covering letter: the folder gets forwarded by
-# email or Zalo and arrives at the shop with none of our documents attached, so whatever
-# it needs to say has to be inside it.
-DOCS: dict[str, str] = {
+# ---------------------------------------------------------------- the text files
+
+# The markdown files were skeletons of bare headings, which is a blank page with extra
+# steps: nothing said what a good answer looked like, and a file returned untouched was
+# indistinguishable from one deliberately left empty. So every blank is now a marker the
+# shop overwrites, and `kb check` can tell the difference.
+PLACEHOLDER = "[chưa điền]"
+
+
+@dataclass(frozen=True, slots=True)
+class DocField:
+    label: str
+    required: bool = True
+    example: str = ""
+    note: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class DocSection:
+    heading: str
+    intro: str = ""
+    fields: tuple[DocField, ...] = ()
+    # A section the shop writes prose into rather than filling fields.
+    prose: bool = False
+    prose_required: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class DocSpec:
+    filename: str
+    title: str
+    why: str                       # what the agent does with this file
+    sections: tuple[DocSection, ...]
+
+    def fields(self) -> list[DocField]:
+        return [f for s in self.sections for f in s.fields]
+
+
+STORE = DocSpec(
+    filename="store.md",
+    title="Thông tin cửa hàng",
+    why='AI đọc file này để trả lời "shop ở đâu", "mấy giờ đóng cửa", "có ship tỉnh không".',
+    sections=(
+        DocSection("Cửa hàng", fields=(
+            DocField("Tên shop", example="Senka Homes"),
+            DocField("Shop bán gì", example="thiết bị vệ sinh: tủ lavabo, gương, sen tắm, chậu rửa"),
+        )),
+        DocSection("Địa chỉ và giờ mở cửa", fields=(
+            DocField("Địa chỉ 1", example="Số 12, đường ABC, phường X, TP Thái Bình"),
+            DocField("Địa chỉ 2", required=False, note="Bỏ qua nếu chỉ có một cơ sở."),
+            DocField("Giờ mở cửa", example="8h00 - 20h00, tất cả các ngày"),
+            DocField("Ngày nghỉ", required=False, example="nghỉ mùng 1-5 Tết"),
+        )),
+        DocSection("Liên hệ", fields=(
+            DocField("Hotline", example="0912 345 678"),
+            DocField("Zalo", required=False),
+            DocField("Website", required=False,
+                     note="Để trống nếu chưa có. Không bắt buộc."),
+        )),
+        DocSection("Giao hàng", fields=(
+            DocField("Khu vực giao hàng", example="toàn quốc"),
+            DocField("Có hỗ trợ lắp đặt không", example="có, tại Thái Bình và các tỉnh lân cận"),
+        )),
+    ),
+)
+
+POLICIES = DocSpec(
+    filename="policies.md",
+    title="Chính sách",
+    why=("Đây là những câu AI được phép trả lời chắc chắn. Mục nào để trống thì AI sẽ "
+         "chuyển cho nhân viên thay vì đoán — để trống vẫn an toàn, ghi sai thì không."),
+    sections=(
+        DocSection("Đặt cọc và thanh toán", fields=(
+            DocField("Mức cọc", example="30% giá trị đơn"),
+            DocField("Hình thức thanh toán", example="chuyển khoản hoặc tiền mặt khi nhận hàng"),
+            DocField("Thanh toán nốt khi nào", example="khi nhận hàng"),
+        )),
+        DocSection("Bảo hành", fields=(
+            DocField("Thời gian bảo hành", example="12 tháng"),
+            DocField("Bảo hành những gì", example="lỗi kỹ thuật của nhà sản xuất, bản lề, ray trượt"),
+            DocField("KHÔNG bảo hành những gì", example="vỡ do va đập, ngấm nước do lắp sai",
+                     note="Quan trọng ngang phần được bảo hành. Thiếu mục này AI dễ hứa quá tay."),
+            DocField("Cách yêu cầu bảo hành", example="gọi hotline, gửi ảnh qua Zalo"),
+        )),
+        DocSection("Đổi trả", fields=(
+            DocField("Đổi trả trong bao lâu", example="7 ngày kể từ khi nhận hàng"),
+            DocField("Điều kiện đổi trả", example="còn nguyên hộp, chưa lắp đặt"),
+            DocField("Ai chịu phí ship đổi trả", example="shop chịu nếu lỗi từ shop"),
+        )),
+        DocSection("Lắp đặt và thời gian xử lý", fields=(
+            DocField("Phí lắp đặt", example="miễn phí trong nội thành"),
+            DocField("Sau khi chốt đơn bao lâu thì giao", example="3-5 ngày",
+                     note="Ghi khoảng, đừng ghi một ngày cụ thể."),
+        )),
+    ),
+)
+
+VOICE = DocSpec(
+    filename="voice.md",
+    title="Giọng của shop",
+    why=("Quyết định AI nghe như người của shop hay như máy. Phần hội thoại mẫu ở cuối "
+         "có giá trị hơn tất cả phần còn lại cộng lại — nhờ ĐÚNG người đang trả lời tin "
+         "nhắn hằng ngày viết, đừng nhờ người khác viết hộ."),
+    sections=(
+        DocSection("Xưng hô", fields=(
+            DocField("Shop tự xưng là", example="em"),
+            DocField("Gọi khách là", example="anh/chị"),
+        )),
+        DocSection("Cách trả lời", fields=(
+            DocField("Độ dài mỗi câu trả lời", example="2-3 câu, ngắn gọn"),
+            DocField("Có dùng emoji không", example="có, tối đa 1 cái"),
+            DocField("Câu kết thúc thường dùng", required=False,
+                     example="Anh/chị cần em tư vấn thêm gì không ạ?"),
+        )),
+        DocSection("Nhân viên và giờ làm việc", fields=(
+            DocField("Giờ nhân viên trả lời tin nhắn", example="8h00 - 20h00"),
+            DocField("Ai nhận tin nhắn AI chuyển sang", example="chị Hương",
+                     note="Phải là một người cụ thể. Không có tên ở đây thì tin nhắn "
+                          "chuyển đi sẽ rơi vào khoảng không."),
+            DocField("Câu AI nói khi chuyển cho nhân viên",
+                     example="Dạ em nhờ bạn phụ trách trả lời giúp mình ngay ạ."),
+            DocField("Câu AI nói ngoài giờ làm việc",
+                     example="Dạ ngoài giờ làm việc, bạn phụ trách sẽ liên hệ lại đầu giờ sáng ạ."),
+        )),
+        DocSection(
+            "Hội thoại mẫu 1 — khách hỏi giá",
+            intro="Chép lại một đoạn chat thật gần đây, cả câu khách hỏi và câu shop trả lời.",
+            prose=True),
+        DocSection(
+            "Hội thoại mẫu 2 — khách hỏi ship hoặc bảo hành",
+            prose=True),
+        DocSection(
+            "Hội thoại mẫu 3 — một tình huống khó",
+            intro="Khách mặc cả, khách phàn nàn, hoặc khách hỏi mẫu shop không có.",
+            prose=True),
+    ),
+)
+
+DOC_SPECS: tuple[DocSpec, ...] = (STORE, POLICIES, VOICE)
+
+# Files with nothing to fill in: a covering letter, and a list the shop only adds to.
+STATIC_DOCS: dict[str, str] = {
     "00-DOC-TRUOC.md": """# Đọc trước — thư mục này là gì
 
 Đây là bộ biểu mẫu để trợ lý tự động trả lời tin nhắn Facebook của shop
@@ -240,6 +376,20 @@ trả lời đúng. AI chỉ biết những gì trong thư mục này, không bi
 4. **Để trống còn hơn ghi sai.** Ô trống thì AI nói "để em kiểm tra lại"
    rồi chuyển cho nhân viên. Ô ghi sai thì AI nói sai với khách.
 
+## Cách điền file .md (store, policies, voice)
+
+Mở bằng Notepad, TextEdit hoặc Word đều được. Trong file có nhiều chỗ ghi
+`[chưa điền]` — thay chỗ đó bằng câu trả lời của shop. Ví dụ:
+
+    - **Hotline:** [chưa điền]   ← ví dụ: 0912 345 678
+
+điền xong thành:
+
+    - **Hotline:** 0912 345 678
+
+Mục nào chưa biết thì cứ để nguyên `[chưa điền]`, bên em sẽ hỏi lại. Mục ghi
+*(không bắt buộc)* thì bỏ trống cũng được.
+
 ## Cách điền file Excel
 
 - Mỗi file có sheet **Hướng dẫn** giải thích từng cột.
@@ -252,58 +402,6 @@ trả lời đúng. AI chỉ biết những gì trong thư mục này, không bi
 
 Điền được đến đâu gửi đến đó, không cần đợi xong hết. Bên em có công cụ
 kiểm tra file và sẽ báo lại chính xác dòng nào cần sửa.
-""",
-    "store.md": """# Thông tin cửa hàng
-
-- Tên shop:
-- Địa chỉ 1:
-- Địa chỉ 2:
-- Giờ mở cửa:
-- Hotline:
-- Zalo:
-- Khu vực giao hàng:
-- Website (nếu có):
-""",
-    "policies.md": """# Chính sách
-
-## Đặt cọc
-Mức cọc:
-Hình thức thanh toán:
-
-## Bảo hành
-Thời gian:
-Bảo hành những gì:
-KHÔNG bảo hành những gì:
-Cách yêu cầu bảo hành:
-
-## Đổi trả
-Trong bao lâu:
-Điều kiện:
-Ai chịu phí ship đổi trả:
-
-## Lắp đặt
-Có hỗ trợ lắp không:
-Phí:
-
-## Thời gian xử lý đơn
-""",
-    "voice.md": """# Giọng của shop
-
-- Xưng hô (em/shop/bên mình):
-- Gọi khách là (anh chị/bạn):
-- Độ dài mỗi câu trả lời:
-- Dùng emoji không:
-- Giờ nhân viên trả lời tin nhắn:
-- Câu chuyển cho nhân viên (viết đúng câu khách sẽ nhìn thấy):
-
-## Ba hội thoại mẫu
-Người đang trả lời tin nhắn hằng ngày viết, không phải người viết tài liệu này.
-
-### 1. Khách hỏi giá
-
-### 2. Khách hỏi ship
-
-### 3. Một tình huống khó (khách phàn nàn, mặc cả, hoặc hỏi mẫu không có)
 """,
     "dont_say.md": """# Những câu AI không được nói
 

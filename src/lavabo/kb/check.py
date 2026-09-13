@@ -20,8 +20,9 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from ..money import parse_vnd
-from .spec import (CATALOG, EXAMPLE_MARKER, FAQ, IMAGES, PROMOTIONS, SHEETS,
-                   STALE_FAIL_DAYS, STALE_WARN_DAYS, Field, SheetSpec)
+from .spec import (CATALOG, DOC_SPECS, EXAMPLE_MARKER, FAQ, IMAGES, PLACEHOLDER,
+                   PROMOTIONS, SHEETS, STALE_FAIL_DAYS, STALE_WARN_DAYS, DocSpec,
+                   Field, SheetSpec)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +68,55 @@ def check_intake(directory: Path) -> list[Problem]:
         tables[sheet.filename] = rows
 
     problems.extend(_cross_checks(directory, tables))
+    for doc in DOC_SPECS:
+        problems.extend(_check_doc(directory / doc.filename, doc))
     return problems
+
+
+# ------------------------------------------------------------------- text files
+
+def _check_doc(path: Path, doc: DocSpec) -> list[Problem]:
+    """Which blanks in a markdown form are still blank.
+
+    Matching is by the label the shop sees, not by line number: they will reorder
+    sections, delete ones that do not apply, and paste in extra notes, and none of that
+    should read as a missing answer.
+    """
+    if not path.exists():
+        return [Problem(doc.filename, "thiếu file này")]
+
+    wanted = {f.label.lower(): f for s in doc.sections for f in s.fields}
+    empty_required: list[str] = []
+    empty_optional: list[str] = []
+    heading = ""
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            heading = stripped.lstrip("#").strip()
+        if PLACEHOLDER not in stripped or stripped.startswith(">"):
+            continue
+
+        label = _label_of(stripped) or heading
+        field = wanted.get(label.lower())
+        (empty_optional if field and not field.required else empty_required).append(label)
+
+    out: list[Problem] = []
+    if empty_required:
+        out.append(Problem(doc.filename,
+                           f"còn {len(empty_required)} mục chưa điền: "
+                           + ", ".join(empty_required)))
+    if empty_optional:
+        out.append(Problem(doc.filename,
+                           "chưa điền (không bắt buộc): " + ", ".join(empty_optional),
+                           fatal=False))
+    return out
+
+
+def _label_of(line: str) -> str:
+    """The bold label on a form line: "- **Hotline:** [chưa điền]" -> "Hotline"."""
+    match = re.search(r"\*\*(.+?):?\*\*", line)
+    return match.group(1).strip() if match else ""
 
 
 # --------------------------------------------------------------------------- per file
