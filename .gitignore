@@ -19,6 +19,10 @@ data/out/*
 !data/out/.gitkeep
 probe.md
 
+# The shop's own price list, photos and policies. Same rule as data/:
+# real prices and customer-facing content are not ours to commit.
+intake/
+
 # Python
 .venv/
 venv/

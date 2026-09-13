@@ -10,6 +10,8 @@
     lavabo config                      show effective settings + drift from the example
     lavabo models                      list models this key can use
     lavabo verify
+    lavabo kb init                     write the blank intake pack for the shop
+    lavabo kb check                    validate the filled-in pack before uploading
 """
 
 from __future__ import annotations
@@ -711,6 +713,48 @@ def cmd_verify(args, cfg: Config) -> int:
     return 0
 
 
+def cmd_kb(args, cfg: Config) -> int:
+    """The knowledge pack: hand out the blank forms, then refuse the bad ones.
+
+    Deliberately independent of the staging db and of any API key -- this runs on a
+    laptop belonging to whoever is chasing the shop for their price list.
+    """
+    from .kb.check import check_intake, report
+    from .kb.templates import write_intake
+
+    directory = Path(args.dir)
+
+    if args.kb_command == "init":
+        written, skipped = write_intake(directory, force=args.force)
+        for path in written:
+            print(f"  tạo  {path}")
+        for path in skipped:
+            print(f"  giữ  {path} (đã có sẵn)")
+        if skipped and not args.force:
+            print("\n  Những file đã có được giữ nguyên. --force để ghi đè.")
+        print(f"\n  Gửi thư mục {directory} cho shop. "
+              f"Điền xong thì chạy: lavabo kb check --dir {directory}")
+        return 0
+
+    if not directory.is_dir():
+        print(f"Không tìm thấy thư mục {directory}. "
+              f"Tạo bằng: lavabo kb init --dir {directory}", file=sys.stderr)
+        return 1
+
+    problems = check_intake(directory)
+    print(report(problems))
+
+    fatal = [p for p in problems if p.fatal]
+    if fatal:
+        print(f"\nCHƯA ĐẠT — {len(fatal)} lỗi phải sửa.")
+        return 1
+    if args.strict and problems:
+        print(f"\nCHƯA ĐẠT (--strict) — {len(problems)} cảnh báo.")
+        return 1
+    print("\nĐẠT — pack sẵn sàng để tải lên.")
+    return 0
+
+
 def cmd_run(args, cfg: Config) -> int:
     for step in (cmd_ingest, cmd_extract, cmd_load):
         if code := step(args, cfg):
@@ -805,6 +849,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--null-threshold", type=float, default=0.5)
     add_llm_args(p)
 
+    p = sub.add_parser("kb", help="the shop's knowledge pack: blank forms, then validation")
+    kb = p.add_subparsers(dest="kb_command", required=True)
+    q = kb.add_parser("init", help="write the blank intake workbooks and text templates")
+    q.add_argument("--dir", default="intake")
+    q.add_argument("--force", action="store_true", help="overwrite files that already exist")
+    add_llm_args(q)
+    q = kb.add_parser("check", help="validate a filled-in pack before it is uploaded")
+    q.add_argument("--dir", default="intake")
+    q.add_argument("--strict", action="store_true", help="treat warnings as failures too")
+    add_llm_args(q)
+    add_llm_args(p)
+
     p = sub.add_parser("run", help="ingest + extract + load")
     p.add_argument("--source", choices=["meta", "zalo", "all"], default="all")
     p.add_argument("--out", help="output .xlsx path")
@@ -833,7 +889,7 @@ def main(argv: list[str] | None = None) -> int:
                 "load": cmd_load, "verify": cmd_verify, "run": cmd_run,
                 "models": cmd_models, "config": cmd_config,
                 "inspect": cmd_inspect, "append": cmd_append,
-                "resegment": cmd_resegment}
+                "resegment": cmd_resegment, "kb": cmd_kb}
     try:
         return handlers[args.command](args, cfg)
     except KeyboardInterrupt:

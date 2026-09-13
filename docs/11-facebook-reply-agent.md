@@ -205,6 +205,8 @@ Worth saying explicitly, because it saves them days:
 
 ### 3.6 The folder they hand over
 
+`lavabo kb init` writes this whole tree as blank forms — dropdowns on every enum column, a comment on every header, and an instructions sheet — so the shop fills in a form rather than inventing a spreadsheet. `lavabo kb check` then refuses it while anything in [docs/13](13-business-ai-step-2.md) §4 is still wrong.
+
 ```
 intake/
 ├── catalog.xlsx

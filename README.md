@@ -262,6 +262,9 @@ lavabo resegment    # re-capture stored pastes after fixing capture logic
 lavabo load --layout senkahomes --out data/out/report.xlsx --month 8 --year 2026
 lavabo append --into "QUẢN LÝ ĐƠN SENKAHOMES.xlsx" --month 8 --year 2026 --dry-run
 lavabo verify
+
+lavabo kb init                 # blank intake pack to send the shop
+lavabo kb check --dir intake   # refuse a price list before it reaches Meta
 ```
 
 Capture can also be run on its own, with more control:

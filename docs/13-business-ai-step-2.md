@@ -115,6 +115,12 @@ numbers.
 
 ### The validator, before anything is uploaded
 
+```bash
+lavabo kb init                 # the blank pack, with dropdowns and a price cell
+                               # that refuses "2tr850" as it is typed
+lavabo kb check --dir intake   # exit 1 while anything below is still wrong
+```
+
 Hard fail — nothing uploads:
 
 ```
@@ -129,6 +135,10 @@ Hard fail — nothing uploads:
 [ ] cap_nhat_ngay present, and no row older than 60 days
 [ ] no cell contains "tr", "k", "~", "từ", "liên hệ" in a price column
 ```
+
+Implemented in `src/lavabo/kb/check.py`; `tests/test_kb_check.py` carries one case per
+rule. A rejected price cell is told what to type instead — `money.parse_vnd` already
+reads the shop's own shorthand, so `2tr850` comes back as "Nhập 2850000".
 
 Warn — upload, but tell the shop:
 
