@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import zipfile
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -273,3 +274,29 @@ def _instructions(ws, sheet: SheetSpec) -> None:
     ws.append([])
     ws.append(["", "", "", "Dòng chữ xám trong sheet Dữ liệu là ví dụ — xoá đi trước khi gửi."])
     ws.cell(row=ws.max_row, column=4).font = EXAMPLE_FONT
+
+
+def write_zip(directory: Path, out: Path) -> Path:
+    """Zip the pack, because the person forwarding it should not have to send 14 files.
+
+    Entry order and timestamps are pinned so a rebuild that changed nothing produces a
+    recognisably similar archive. The bytes still differ run to run -- openpyxl stamps a
+    creation time inside every workbook -- so nothing should compare these by hash; the
+    drift test compares the pack's CONTENT instead.
+    """
+    files = sorted(q for q in directory.rglob("*") if q.is_file())
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(out.suffix + ".tmp")
+
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in files:
+            info = zipfile.ZipInfo(
+                str(Path(directory.name) / path.relative_to(directory)),
+                date_time=(2026, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, path.read_bytes())
+
+    os.replace(tmp, out)
+    log.info("wrote %s (%d files)", out, len(files))
+    return out

@@ -721,7 +721,7 @@ def cmd_kb(args, cfg: Config) -> int:
     laptop belonging to whoever is chasing the shop for their price list.
     """
     from .kb.check import check_intake, report
-    from .kb.templates import write_intake
+    from .kb.templates import write_intake, write_zip
 
     directory = Path(args.dir)
 
@@ -731,6 +731,10 @@ def cmd_kb(args, cfg: Config) -> int:
             print(f"  tạo  {path}")
         for path in skipped:
             print(f"  giữ  {path} (đã có sẵn)")
+        if args.zip:
+            archive = write_zip(directory, Path(args.zip) if isinstance(args.zip, str)
+                                else directory.with_suffix(".zip"))
+            print(f"  gói {archive}")
         if skipped and not args.force:
             print("\n  Những file đã có được giữ nguyên. --force để ghi đè.")
         print(f"\n  Gửi thư mục {directory} cho shop. "
@@ -899,6 +903,8 @@ def main(argv: list[str] | None = None) -> int:
     q = kb.add_parser("init", help="write the blank intake workbooks and text templates")
     q.add_argument("--dir", default="intake")
     q.add_argument("--force", action="store_true", help="overwrite files that already exist")
+    q.add_argument("--zip", nargs="?", const=True, default=False,
+                   help="also write a .zip of the pack, for forwarding it in one piece")
     add_llm_args(q)
     q = kb.add_parser("check", help="validate a filled-in pack before it is uploaded")
     q.add_argument("--dir", default="intake")

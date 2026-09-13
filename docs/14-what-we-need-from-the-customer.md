@@ -108,7 +108,17 @@ flowchart TD
 
 ### 3.2 The knowledge pack — **P0, this is the shop's homework**
 
-Send them the folder produced by `lavabo kb init`. It is a set of forms now, not a blank
+**The pack is committed at [`templates/intake/`](../templates/intake), with
+[`templates/intake-lavabo.zip`](../templates/intake-lavabo.zip) for forwarding it in one
+piece** — so whoever sends it to the shop needs no Python. It is generated output, kept
+honest by `tests/test_intake_pack.py`, which fails if it drifts from what `kb init`
+produces. Regenerate after any spec change:
+
+```bash
+lavabo kb init --dir templates/intake --force --zip templates/intake-lavabo.zip
+```
+
+Send them that folder. It is a set of forms now, not a blank
 page: dropdowns on every list column, a comment on every header, an instructions sheet, and
 a price cell that rejects `2tr850` as it is typed.
 

@@ -21,7 +21,10 @@ probe.md
 
 # The shop's own price list, photos and policies. Same rule as data/:
 # real prices and customer-facing content are not ours to commit.
-intake/
+#
+# Root-anchored on purpose. A bare "intake/" matches a directory of that name at ANY
+# depth, which silently swallowed templates/intake/ -- the blank pack we DO commit.
+/intake/
 
 # Python
 .venv/
