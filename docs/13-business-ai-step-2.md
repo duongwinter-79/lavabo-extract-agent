@@ -23,7 +23,7 @@ customer has a screenshot. Everything below is built around that one sentence.
 > at, and it is live knowledge the moment the agent is switched on. Audit those two entries
 > before enabling anything, and treat `catalog.xlsx` as the thing that replaces them rather
 > than a parallel copy. Two catalogues is the "one fact, one place" rule broken by
-> construction.
+> construction. The chosen fix is a Google Drive source the shop edits — [docs/18-google-drive-source.md](18-google-drive-source.md).
 
 ## 1. Do not start step 2 until all five are true
 

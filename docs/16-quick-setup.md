@@ -237,7 +237,8 @@ Page is worse than no reply. So, in order:
 1. Open the Bảng giá entry and compare a few prices against what the shop charges today.
 2. Open the 14-item product list and check the same.
 3. Stale or unsure → **remove or replace it before enabling**, and keep the agent to
-   policy answers as step 1 intends.
+   policy answers as step 1 intends. Replacing it means a Google Drive source rather than
+   editing the copy inside Meta — see [docs/18-google-drive-source.md](18-google-drive-source.md).
 4. Only then turn it on.
 
 Fourteen items is also worth reading as good news: the catalogue work in
