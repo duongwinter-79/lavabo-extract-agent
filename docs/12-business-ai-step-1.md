@@ -48,10 +48,27 @@ flowchart LR
 
 ## 1. Pre-flight — 30 minutes, do before touching any setting
 
+### Đường dẫn nhanh
+
+| Màn hình | Link |
+|---|---|
+| Người dùng — thêm người | <https://business.facebook.com/settings/people> |
+| **Trang — gán tài sản + phân quyền** | <https://business.facebook.com/settings/pages> |
+| Hộp thư | <https://business.facebook.com/latest/inbox> |
+| **Tự động hóa** | <https://business.facebook.com/latest/inbox/automations> |
+| Thông tin doanh nghiệp | <https://business.facebook.com/settings/info> |
+| Trung tâm bảo mật — 2FA, xác minh doanh nghiệp | <https://business.facebook.com/settings/security_center> |
+| Commerce Manager — danh mục sản phẩm (bước 2) | <https://business.facebook.com/commerce> |
+
+Nếu link mở nhầm doanh nghiệp khác, thêm `?business_id=<id>` — id nằm trong URL khi đã vào
+đúng portfolio. **[confirm]** Các đường dẫn này theo mẫu URL ổn định lâu nay, không mở
+được từ môi trường viết tài liệu này để kiểm chứng.
+
+
 | # | Check | How | If it fails |
 |---|---|---|---|
-| 1 | You have **Toàn quyền kiểm soát** (full control) on the Page | Business Suite → Cài đặt → Người dùng | Ask the owner. Nothing below works at Editor level |
-| 2 | Business AI is **available for this account** | Business Suite → **Hộp thư** → **Tự động hóa** — look for a Business AI / Trợ lý AI entry | It is rolled out per business account, not per Page. If it isn't there, see §8 |
+| 1 | You have **Toàn quyền kiểm soát** (full control) on the Page | [/settings/pages](https://business.facebook.com/settings/pages) — the asset, not just [/settings/people](https://business.facebook.com/settings/people) | Ask the owner. Nothing below works at Editor level |
+| 2 | Business AI is **available for this account** | [/latest/inbox/automations](https://business.facebook.com/latest/inbox/automations) — look for a Business AI / Trợ lý AI entry | It is rolled out per business account, not per Page. If it isn't there, see §8 |
 | 3 | Page language / business language is **Tiếng Việt** | The setup wizard asks for the primary business language on first run | Wrong language here is the single worst first mistake — it is what makes the agent answer Vietnamese customers in English |
 | 4 | **No third-party chatbot is connected** | Cài đặt → Ứng dụng / Nền tảng đã kết nối. Look for Abit, vPage/Nhanh, Botcake, AhaChat, Chatfuel, Manychat | **Disconnect or pause it first.** Two automations in one inbox means duplicate replies and a bot arguing with a bot. This is the most common real-world failure |
 | 5 | **Trả lời tức thì (Instant reply) is OFF** | Hộp thư → Tự động hóa → Trả lời tức thì | Leave it on and every customer gets a canned message *and* an AI message, one second apart. Note this is only true **once Business AI answers** — if you ran [docs/16](16-quick-setup.md) Part A alone, instant reply was correct there and turns off here |
@@ -95,7 +112,7 @@ The fill-in-the-blanks values, which only the shop can supply:
 
 ## 3. Configuration, in order
 
-Business Suite → **Hộp thư** → **Tự động hóa** → **Business AI / Trợ lý AI**. The panels
+[Hộp thư → Tự động hóa](https://business.facebook.com/latest/inbox/automations) → **Business AI / Trợ lý AI**. The panels
 below appear under roughly these names; the wizard's order varies by account.
 
 ### 3.1 Ngôn ngữ
@@ -259,7 +276,7 @@ and it is the only thing standing between the shop and a screenshot on Facebook.
    make sure staff know *how*, and that taking over stops the AI in that thread.
 3. **Day 4–7 — normal operation, gap log running** (§6).
 
-**Kill switch:** Hộp thư → Tự động hóa → Business AI → tắt. One toggle. Make sure a second
+**Kill switch:** [Hộp thư → Tự động hóa](https://business.facebook.com/latest/inbox/automations) → Business AI → tắt. One toggle. Make sure a second
 person knows where it is, and test it once before launch — not during the incident.
 
 ---

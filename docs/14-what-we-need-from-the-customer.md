@@ -104,7 +104,7 @@ flowchart TD
 | 3 | **Is the Page inside a Business Portfolio** (Trình quản lý doanh nghiệp)? Which one? | Required for verification and for any API path | 5 min |
 | 4 | **Business Verification status** — done / in progress / not started. If not started, **start it today** (GPKD, mã số thuế, địa chỉ, điện thoại) | The only item with an unbounded external clock. Needed for Path B, useful regardless | 30 min + days of waiting |
 | 5 | **Is any third-party chatbot connected** to the Page (Abit, vPage/Nhanh, Botcake, AhaChat, Manychat)? | Two automations in one inbox = duplicate replies. It has to be off before we start | 5 min |
-| 6 | **Screenshot of** Hộp thư → Tự động hóa | Tells us in one image whether Business AI is available for this account, which decides Path A vs Path B | 2 min |
+| 6 | **Screenshot of** [Hộp thư → Tự động hóa](https://business.facebook.com/latest/inbox/automations) | Tells us in one image whether Business AI is available for this account, which decides Path A vs Path B | 2 min |
 
 #### Getting item 1 right
 
@@ -115,8 +115,16 @@ Two separate grants, and being added as a business user alone gives **nothing**:
 | Business portfolio | **Employee access** (Nhân viên) | Portfolio Admin also manages people, assets and billing. Not needed until Path B |
 | The Page, as an assigned asset | **Toàn quyền kiểm soát** (full control) | Partial access covers content, comments, messages, ads and insights but **cannot open Page settings**, and Tự động hóa / Business AI live there. There is no narrower permission that reaches them |
 
-Their click path: **Cài đặt → Người dùng → Thêm người** → email → Employee → assign the
-**Trang** asset → **Toàn quyền kiểm soát**.
+Their click path, with links:
+
+1. [business.facebook.com/settings/people](https://business.facebook.com/settings/people)
+   → Thêm người → email → **Nhân viên**.
+2. [business.facebook.com/settings/pages](https://business.facebook.com/settings/pages)
+   → chọn Trang → Assign people → tick **Toàn quyền kiểm soát**.
+
+**Step 2 is the one that gets skipped**, and the symptom is confusing: the invited person
+appears under Người dùng, sees the Page, and finds the settings unreachable. Verify from
+`/settings/pages`, not from `/settings/people`.
 
 Full control includes removing other admins and deleting the Page, so ask for it with the
 mitigations attached: the owner keeps their own full control (never be the sole

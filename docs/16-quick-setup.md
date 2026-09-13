@@ -74,12 +74,29 @@ human behind it, is worse than no automation.
 
 ## 2. Pre-flight — 10 minutes
 
+### Đường dẫn nhanh
+
+| Màn hình | Link |
+|---|---|
+| Người dùng — thêm người | <https://business.facebook.com/settings/people> |
+| **Trang — gán tài sản + phân quyền** | <https://business.facebook.com/settings/pages> |
+| Hộp thư | <https://business.facebook.com/latest/inbox> |
+| **Tự động hóa** | <https://business.facebook.com/latest/inbox/automations> |
+| Thông tin doanh nghiệp | <https://business.facebook.com/settings/info> |
+| Trung tâm bảo mật — 2FA, xác minh doanh nghiệp | <https://business.facebook.com/settings/security_center> |
+| Commerce Manager — danh mục sản phẩm (bước 2) | <https://business.facebook.com/commerce> |
+
+Nếu link mở nhầm doanh nghiệp khác, thêm `?business_id=<id>` — id nằm trong URL khi đã vào
+đúng portfolio. **[confirm]** Các đường dẫn này theo mẫu URL ổn định lâu nay, không mở
+được từ môi trường viết tài liệu này để kiểm chứng.
+
+
 | # | Check | Where | If it fails |
 |---|---|---|---|
-| 1 | You have **Toàn quyền kiểm soát** on the Page | Cài đặt → Người dùng | Nothing below is possible at Editor level |
-| 2 | **No third-party chatbot is connected** | Cài đặt → Ứng dụng / Nền tảng đã kết nối | Disconnect Abit / vPage / Botcake / AhaChat / Manychat first, or two bots reply over each other |
-| 3 | Page **address, hours and phone are filled in** | Cài đặt → Thông tin trang | Fill them. Both the FAQ automation and Business AI read this, and it is the answer to the single most common question |
-| 4 | Note whether **Business AI** appears | Hộp thư → Tự động hóa | Absent is fine — do Part A only |
+| 1 | You have **Toàn quyền kiểm soát** on the Page | [/settings/pages](https://business.facebook.com/settings/pages) — the Page asset, not just [/settings/people](https://business.facebook.com/settings/people) | Nothing below is possible at Editor level |
+| 2 | **No third-party chatbot is connected** | [/settings/business_apps](https://business.facebook.com/settings/business_apps) hoặc Cài đặt → Ứng dụng | Disconnect Abit / vPage / Botcake / AhaChat / Manychat first, or two bots reply over each other |
+| 3 | Page **address, hours and phone are filled in** | [/settings/info](https://business.facebook.com/settings/info) | Fill them. Both the FAQ automation and Business AI read this, and it is the answer to the single most common question |
+| 4 | Note whether **Business AI** appears | [/latest/inbox/automations](https://business.facebook.com/latest/inbox/automations) | Absent is fine — do Part A only |
 
 Check 2 is the one that gets skipped and then costs an afternoon of confusion.
 
@@ -87,7 +104,7 @@ Check 2 is the one that gets skipped and then costs an afternoon of confusion.
 
 ## 3. Part A — the automations everyone has
 
-**Hộp thư → Tự động hóa.** Fill the `[...]` from §1 before pasting. **[confirm]** the exact
+**[Hộp thư → Tự động hóa](https://business.facebook.com/latest/inbox/automations).** Fill the `[...]` from §1 before pasting. **[confirm]** the exact
 panel names as you go.
 
 ### 3.1 Lời chào (Greeting)
@@ -231,7 +248,7 @@ Row 10 is what catches Trả lời tức thì fighting with Business AI.
 
 ### Turning it off
 
-Hộp thư → Tự động hóa → tắt từng mục. Know where this is before you need it, and make sure
+[Hộp thư → Tự động hóa](https://business.facebook.com/latest/inbox/automations) → tắt từng mục. Know where this is before you need it, and make sure
 one other person does too.
 
 ---
