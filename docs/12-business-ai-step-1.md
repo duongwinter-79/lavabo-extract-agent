@@ -54,7 +54,7 @@ flowchart LR
 | 2 | Business AI is **available for this account** | Business Suite → **Hộp thư** → **Tự động hóa** — look for a Business AI / Trợ lý AI entry | It is rolled out per business account, not per Page. If it isn't there, see §8 |
 | 3 | Page language / business language is **Tiếng Việt** | The setup wizard asks for the primary business language on first run | Wrong language here is the single worst first mistake — it is what makes the agent answer Vietnamese customers in English |
 | 4 | **No third-party chatbot is connected** | Cài đặt → Ứng dụng / Nền tảng đã kết nối. Look for Abit, vPage/Nhanh, Botcake, AhaChat, Chatfuel, Manychat | **Disconnect or pause it first.** Two automations in one inbox means duplicate replies and a bot arguing with a bot. This is the most common real-world failure |
-| 5 | **Trả lời tức thì (Instant reply) is OFF** | Hộp thư → Tự động hóa → Trả lời tức thì | Leave it on and every customer gets a canned message *and* an AI message, one second apart |
+| 5 | **Trả lời tức thì (Instant reply) is OFF** | Hộp thư → Tự động hóa → Trả lời tức thì | Leave it on and every customer gets a canned message *and* an AI message, one second apart. Note this is only true **once Business AI answers** — if you ran [docs/16](16-quick-setup.md) Part A alone, instant reply was correct there and turns off here |
 | 6 | Câu hỏi thường gặp (the old static FAQ automation) is off or trimmed | Same menu | It shadows the AI with worse answers |
 | 7 | Staff know this is happening, and **who owns the handoffs** | A person, a name, and their hours | Handoffs landing nowhere is worse than no agent |
 
@@ -368,6 +368,7 @@ LAUNCH
 
 | Doc | |
 |---|---|
+| [docs/16-quick-setup.md](16-quick-setup.md) | **the short form of this document** — basic auto-replies live in an afternoon, no intake pack |
 | [docs/11-facebook-reply-agent.md](11-facebook-reply-agent.md) | the full plan — intake pack (§3), storage (§4), Path B |
 | [docs/13-business-ai-step-2.md](13-business-ai-step-2.md) | **step 2** — adding the catalogue and prices, once the gates in its §1 are met |
 | [docs/14-what-we-need-from-the-customer.md](14-what-we-need-from-the-customer.md) | the access and decisions this document assumes you already have |

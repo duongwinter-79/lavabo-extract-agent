@@ -305,6 +305,7 @@ S18 plus the handoffs from S28 are what justify it. It becomes the answer when:
 | Doc | |
 |---|---|
 | [docs/14-what-we-need-from-the-customer.md](14-what-we-need-from-the-customer.md) | audited status and the request list — S1–S11 in prose |
+| [docs/16-quick-setup.md](16-quick-setup.md) | S13–S17 in one afternoon, skipping the pack — deterministic replies before generative ones |
 | [docs/12-business-ai-step-1.md](12-business-ai-step-1.md) | S13–S18 click by click, with the 20-question script |
 | [docs/13-business-ai-step-2.md](13-business-ai-step-2.md) | S19–S28, the column spec and the 25-question script |
 | [docs/11-facebook-reply-agent.md](11-facebook-reply-agent.md) | §7 — the Path B build |
