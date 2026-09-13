@@ -181,6 +181,20 @@ Commerce Manager → Catalogs → Data sources → Add items.
 
 ### 6.1 Field mapping
 
+```bash
+lavabo kb feed --dir intake \
+  --link "https://facebook.com/<page>" \
+  --brand "<tên shop>" \
+  --image-base "https://<nơi host ảnh>"     # bỏ qua nếu ảnh chưa được host
+```
+
+Implemented in `src/lavabo/kb/feed.py`. It runs `kb check` first and **refuses to write a
+feed while anything is fatally wrong** — the mapping below only ever runs on a catalogue
+that passed. `mpn` is filled from `ma_sp`, which satisfies Meta's universal-ID rule for a
+shop with no GTIN, and `custom_label_0` carries `cap_nhat_ngay` so a stale row is visible
+inside Commerce Manager without opening the spreadsheet.
+
+
 | `catalog.xlsx` | Meta feed field | Conversion |
 |---|---|---|
 | `ma_sp` | `id` | as-is; must stay stable |
@@ -220,6 +234,11 @@ Two ways out:
 - **Host the images** and use the feed. Faster for hundreds of SKUs, but now the shop owns
   a hosting bill and a broken-link failure mode — a dead image URL is a product that stops
   showing.
+
+`kb feed` reports the split rather than guessing for you: without `--image-base` every row
+ships with an empty `image_link` and the command says how many rows Meta will reject. That
+is the honest output — it is not an error, because a first catalogue of fifty is genuinely
+better added by hand.
 
 Worth naming plainly: **this is a place where the custom agent is simply better.** Path B
 keeps photos on disk, uploads each once, and caches Meta's reusable `attachment_id`

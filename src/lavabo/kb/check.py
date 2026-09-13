@@ -277,12 +277,19 @@ def _cross_checks(directory: Path, tables: dict[str, list[dict]]) -> list[Proble
             out.append(Problem("images/", f"{len(unused)} ảnh không gắn với sản phẩm nào "
                                           "— AI sẽ không bao giờ gửi chúng", fatal=False))
 
+    # A mapping that points at no product costs a missing photo, not a wrong price, so
+    # it never blocks an upload. The untouched example row is the common case and says
+    # so in the words the catalogue uses for it.
     known = {_text(r.get("ma_sp")).lower() for r in catalog}
     for r in tables.get(IMAGES.filename, []):
         sku = _text(r.get("ma_sp"))
-        if sku and sku.lower() not in known:
-            out.append(Problem(IMAGES.filename,
-                               f"mã {sku!r} không có trong catalog.xlsx", row=r["_row"]))
+        if not sku or sku.lower() in known:
+            continue
+        message = ("dòng ví dụ mẫu vẫn còn trong file — xoá trước khi gửi"
+                   if EXAMPLE_MARKER in sku
+                   else f"mã {sku!r} không có trong catalog.xlsx — ảnh này sẽ không "
+                        "bao giờ được gửi")
+        out.append(Problem(IMAGES.filename, message, row=r["_row"], fatal=False))
     return out
 
 
@@ -315,6 +322,14 @@ def _as_date(value) -> date | None:
         except ValueError:
             continue
     return None
+
+
+def read_catalog(directory: Path) -> list[dict]:
+    """The catalogue rows, for a caller that has already run `check_intake` and is
+    satisfied. Deliberately separate: nothing should read rows without having decided
+    what to do about the problems in them."""
+    rows, _ = _read_and_check(directory / CATALOG.filename, CATALOG)
+    return rows
 
 
 def report(problems: list[Problem]) -> str:

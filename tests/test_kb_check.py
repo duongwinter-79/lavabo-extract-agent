@@ -240,6 +240,32 @@ class TheWholePack(unittest.TestCase):
         self.assertFalse(problems[0].fatal)
         self.assertIn("catalog.xlsx", str(problems[0]))
 
+    def test_an_image_mapped_to_an_unknown_product_does_not_block_the_upload(self):
+        """Found by running `kb feed` on a real catalogue: the shop had emptied
+        catalog.xlsx of example rows and left images.xlsx untouched, and the pack
+        hard-failed over a photo mapping. A mapping that points nowhere costs a missing
+        photo, not a wrong price — the line docs/13 draws for what is fatal."""
+        write_intake(self.dir)
+        write_catalog(self.dir, [GOOD])          # no VI-DU rows left
+        problems = [p for p in check_intake(self.dir) if p.file == "images.xlsx"]
+        self.assertEqual(len(problems), 1)
+        self.assertFalse(problems[0].fatal)
+        self.assertIn("ví dụ", str(problems[0]))
+
+    def test_a_typo_in_an_image_mapping_says_what_it_costs(self):
+        write_intake(self.dir)
+        write_catalog(self.dir, [GOOD])
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Dữ liệu"
+        ws.append(spec.IMAGES.names)
+        ws.append(["a.jpg", "BC52-80-TRNAG", "front", ""])
+        wb.save(self.dir / "images.xlsx")
+        problems = [p for p in check_intake(self.dir) if p.file == "images.xlsx"]
+        self.assertEqual(len(problems), 1)
+        self.assertFalse(problems[0].fatal)
+        self.assertIn("sẽ không bao giờ được gửi", str(problems[0]))
+
     def test_the_naming_instructions_are_not_mistaken_for_a_photo(self):
         """kb init drops a .txt in images/ explaining the naming rule. Counting it as an
         unattached photo told the shop to fix something we put there ourselves."""

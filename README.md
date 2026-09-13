@@ -265,6 +265,8 @@ lavabo verify
 
 lavabo kb init                 # blank intake pack to send the shop
 lavabo kb check --dir intake   # refuse a price list before it reaches Meta
+lavabo kb feed  --dir intake --link https://facebook.com/<page> --brand "<shop>"
+                               # a passing catalogue -> Meta Commerce feed CSV
 ```
 
 Capture can also be run on its own, with more control:

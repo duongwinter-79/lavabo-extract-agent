@@ -12,6 +12,7 @@
     lavabo verify
     lavabo kb init                     write the blank intake pack for the shop
     lavabo kb check                    validate the filled-in pack before uploading
+    lavabo kb feed                     catalog.xlsx -> Meta Commerce product feed
 """
 
 from __future__ import annotations
@@ -742,9 +743,12 @@ def cmd_kb(args, cfg: Config) -> int:
         return 1
 
     problems = check_intake(directory)
-    print(report(problems))
-
     fatal = [p for p in problems if p.fatal]
+
+    if args.kb_command == "feed":
+        return _kb_feed(args, cfg, directory, fatal)
+
+    print(report(problems))
     if fatal:
         print(f"\nCHƯA ĐẠT — {len(fatal)} lỗi phải sửa.")
         return 1
@@ -752,6 +756,47 @@ def cmd_kb(args, cfg: Config) -> int:
         print(f"\nCHƯA ĐẠT (--strict) — {len(problems)} cảnh báo.")
         return 1
     print("\nĐẠT — pack sẵn sàng để tải lên.")
+    return 0
+
+
+def _kb_feed(args, cfg: Config, directory: Path, fatal: list) -> int:
+    """A feed is where a spreadsheet becomes something the Page says out loud, so a
+    catalogue that fails `kb check` never reaches one."""
+    from .kb.check import read_catalog, report
+    from .kb.feed import build_feed
+
+    if fatal:
+        print(report(fatal))
+        print(f"\nKhông tạo feed — sửa {len(fatal)} lỗi trên trước đã "
+              f"(lavabo kb check --dir {directory}).", file=sys.stderr)
+        return 1
+
+    if not args.link and not args.link_template:
+        print("Feed của Meta bắt buộc có cột link. Truyền --link <URL trang Facebook>, "
+              "hoặc --link-template 'https://.../{ma_sp}' nếu shop có web riêng. "
+              "Xem docs/13 §6.2.", file=sys.stderr)
+        return 1
+
+    out = Path(args.out) if args.out else cfg.output_dir / "meta-catalog-feed.csv"
+    result = build_feed(
+        read_catalog(directory), out,
+        link=args.link, link_template=args.link_template,
+        image_base=args.image_base, brand=args.brand,
+        timezone_name=cfg.zalo.timezone,
+    )
+
+    print(f"  {result.path}")
+    print(f"  {result.rows} sản phẩm, {result.on_sale} đang khuyến mãi")
+    if not args.brand:
+        print("  CẢNH BÁO: chưa có --brand. Cột mpn đã điền bằng mã sản phẩm, "
+              "nhưng nên truyền tên shop.")
+    if result.without_image:
+        # Not a failure: the CSV is still worth reading, and hosting images is a
+        # deployment decision the shop has not made yet. But Meta will drop these rows.
+        print(f"  CẢNH BÁO: {result.without_image}/{result.rows} dòng chưa có ảnh công khai. "
+              "Meta sẽ từ chối đúng những dòng đó.")
+        print("  Cách xử lý: --image-base <URL thư mục ảnh đã host>, hoặc thêm sản phẩm "
+              "thủ công trong Commerce Manager (docs/13 §6.3).")
     return 0
 
 
@@ -858,6 +903,18 @@ def main(argv: list[str] | None = None) -> int:
     q = kb.add_parser("check", help="validate a filled-in pack before it is uploaded")
     q.add_argument("--dir", default="intake")
     q.add_argument("--strict", action="store_true", help="treat warnings as failures too")
+    add_llm_args(q)
+    q = kb.add_parser("feed", help="turn a passing catalog.xlsx into a Meta Commerce feed")
+    q.add_argument("--dir", default="intake")
+    q.add_argument("--out", help="output .csv path (default: <output_dir>/meta-catalog-feed.csv)")
+    q.add_argument("--link", default="",
+                   help="URL for every product — the Page URL when there is no website")
+    q.add_argument("--link-template", default="",
+                   help="per-product URL with {ma_sp} substituted")
+    q.add_argument("--image-base", default="",
+                   help="public URL the image filenames hang off; without it rows ship "
+                        "with no image and Meta rejects them")
+    q.add_argument("--brand", default="", help="shop or manufacturer name")
     add_llm_args(q)
     add_llm_args(p)
 
