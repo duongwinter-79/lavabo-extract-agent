@@ -133,9 +133,21 @@ setup is done. If they would rather not grant it at all, a booked screen-share w
 owner clicks and we guide works — slower, and the answer to "can you just fix that one
 thing" becomes another meeting.
 
-**Turn on two-factor authentication on our Facebook account before the invite is sent.**
-Portfolios commonly require it and the invite fails without it; this is the usual "the
-link doesn't work". Meta has no service accounts — it is a personal account either way.
+**The invite goes to an email; the access attaches to a Facebook account.** Business
+portfolios run on Facebook user identities — there is no standalone Meta business login.
+Clicking the invite link binds the access to **whichever Facebook account that browser is
+logged into at that moment**, and the email need not match it. So decide which account
+should hold this, sign into it first (a clean profile or incognito avoids accepting as
+whatever Chrome remembered), and only then open the link. Accepting as the wrong identity
+is fixed only by the customer removing and re-inviting.
+
+**Turn on two-factor authentication on that account before the invite is sent.** Portfolios
+commonly require it and the invite fails without it; this is the usual "the link doesn't
+work".
+
+**Do not create a second Facebook account for this.** It is the natural instinct and it is
+a trap: Meta allows one personal account per person, duplicates get disabled, and a
+disabled account takes the client's business access with it.
 
 Not yet: the **catalogue** asset (Commerce Manager) matters only at step 2, and portfolio
 Admin belongs to §3.4.
