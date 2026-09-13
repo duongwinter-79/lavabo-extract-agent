@@ -40,8 +40,10 @@ programmatically. **[confirm]**
 - **No server, no App Review, no webhook.** Hours of configuration, not weeks.
 - You cannot make it read live stock, quote a negotiated price, or write an order into
   `QUẢN LÝ ĐƠN SENKAHOMES.xlsx`. It knows what you uploaded, nothing more.
-- Vietnamese support for the agent itself is **unconfirmed** — Vietnamese appears in
-  Meta's supported-document-language lists, which is not the same statement. **[confirm]**
+- **Vietnam: launched.** Meta rolled Business AI out in the Vietnamese market from
+  7 April 2026, and this shop's Business account is already in Vietnamese. What is *not*
+  guaranteed is per-account availability — Meta enables it business by business, so the
+  gate below is about this account, not about the country. **[confirm]**
 
 ### Path B — Custom agent on this repo's stack
 
@@ -57,7 +59,9 @@ base built from the shop's own files, the LLM provider already configured
 
 ### Recommendation
 
-**Do A now, and build B only for what A cannot do.**
+**Do A now, and build B only for what A cannot do.** This is decided —
+[docs/12-business-ai-step-1.md](12-business-ai-step-1.md) is the first configuration step,
+and it defines the seam the custom agent is built against.
 
 The shop's blocking problem is that questions go unanswered overnight. Path A fixes that
 this week without touching App Review, which per §6 is the long pole on any custom path.
@@ -65,15 +69,15 @@ Path B is worth building only once we know which questions the native agent gets
 and we will know, because every conversation is already being pulled into staging and can
 be graded.
 
-**Day-1 gate (30 minutes, do this before anything else):** open Business Suite → Inbox →
-Automations/AI and check whether the Business Agent is offered for *this* Page in
-Vietnam, in Vietnamese. The answer splits the plan:
+**Day-1 gate (30 minutes, do this before anything else):** open Business Suite →
+**Hộp thư → Tự động hóa** and check whether Business AI is offered for *this* business
+account. The answer splits the plan:
 
 ```mermaid
 flowchart TD
-    G["Day-1 gate:<br/>Business Agent available<br/>for this Page, in Vietnamese?"]
-    G -->|Yes| A["Path A<br/>Configure in Business Suite<br/>Week 1"]
-    G -->|"No / English only"| B["Path B<br/>Custom webhook agent<br/>Week 1 starts App Review"]
+    G["Day-1 gate:<br/>Business AI enabled for<br/>THIS business account?"]
+    G -->|Yes| A["Path A — the default<br/>Configure in Business Suite<br/>see docs/12"]
+    G -->|"Not rolled out yet"| B["Path B<br/>Custom webhook agent<br/>Week 1 starts App Review"]
     A --> M["Measure 2-4 weeks:<br/>deflection, wrong answers,<br/>handoff rate"]
     M -->|"Good enough"| S["Stop. Keep Path A.<br/>Maintain the knowledge pack"]
     M -->|"Wrong on price/stock,<br/>or orders need capturing"| B
@@ -684,7 +688,7 @@ The dominating cost is the intake pack, and it is paid in the shop's time, not i
 | Risk | Likelihood | Mitigation |
 |---|---|---|
 | **Intake pack never arrives complete** | High — this is the usual failure | Launch on the minimum pack (§3.6) and a narrow topic set. A working agent answering 4 topics pulls the rest of the pack out of the shop; a stalled project never does |
-| Business Agent not available in Vietnamese | Medium | Day-1 gate. Falls back to Path B, which is language-agnostic |
+| Business AI not yet enabled for this account | Medium | Vietnam launched April 2026, but rollout is per business account. Day-1 gate; [docs/12](12-business-ai-step-1.md) §8 has the escalation path, and everything configured there ports to Path B |
 | App Review rejected or slow | Medium-high | Verification started day 1; Path A serves customers meanwhile; phases 3–4 don't wait on it |
 | **Agent quotes a stale price** | Medium | Catalog is the single price authority; weekly refresh; number-grounding check; every answer's sources logged |
 | Wrong answer damages a sale | Medium | Shadow week; staged launch; handoff-over-guess; kill switch |
@@ -715,6 +719,7 @@ The dominating cost is the intake pack, and it is paid in the shop's time, not i
 
 | Doc | |
 |---|---|
+| [docs/12-business-ai-step-1.md](12-business-ai-step-1.md) | **the first configuration step** — Path A, click by click, in Vietnamese |
 | [docs/04-meta-setup.md](04-meta-setup.md) | Page token, permissions, Advanced Access — the prerequisites for §6 |
 | [docs/02-agent-plan.md](02-agent-plan.md) | The extraction pipeline this agent's conversations flow into |
 | [docs/07-zalo-oa-flow.md](07-zalo-oa-flow.md) | The Zalo webhook flow — same receive-and-store shape |

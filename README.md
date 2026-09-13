@@ -367,6 +367,7 @@ switching to `on`.
 | [docs/09-cloud-architecture.md](docs/09-cloud-architecture.md) | plan for moving to Cloud Run — what breaks, what it costs, and the cheaper alternative |
 | [docs/10-setup-guide.md](docs/10-setup-guide.md) | **start here on a new machine** — install, Gemini key, autostart, Tailscale, first run |
 | [docs/11-facebook-reply-agent.md](docs/11-facebook-reply-agent.md) | plan for an agent that **answers** Facebook messages — what the shop must hand over, how it is stored, how it replies |
+| [docs/12-business-ai-step-1.md](docs/12-business-ai-step-1.md) | **first configuration step** — turning on Meta Business AI for the Page, in Vietnamese, without letting it quote a price |
 
 ### Shape of it
 
