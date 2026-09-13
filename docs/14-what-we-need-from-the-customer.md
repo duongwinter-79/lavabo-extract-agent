@@ -99,12 +99,38 @@ flowchart TD
 
 | # | What we need | Why | Effort |
 |---|---|---|---|
-| 1 | **Full-control admin on the Facebook Page** for one named person on our side — or a booked screen-share where the owner clicks and we guide | Everything in [docs/12](12-business-ai-step-1.md) is a settings screen. Editor access is not enough | 10 min |
+| 1 | **Business portfolio: Employee access, AND the Page asset assigned with Toàn quyền kiểm soát** — see below | Everything in [docs/12](12-business-ai-step-1.md) is a settings screen | 10 min |
 | 2 | **Answer: does the Page get customer messages today?** Roughly how many a day, and is there history in the inbox? | Decides whether Business AI can learn from past chats — see the fork in §2 | 1 min |
 | 3 | **Is the Page inside a Business Portfolio** (Trình quản lý doanh nghiệp)? Which one? | Required for verification and for any API path | 5 min |
 | 4 | **Business Verification status** — done / in progress / not started. If not started, **start it today** (GPKD, mã số thuế, địa chỉ, điện thoại) | The only item with an unbounded external clock. Needed for Path B, useful regardless | 30 min + days of waiting |
 | 5 | **Is any third-party chatbot connected** to the Page (Abit, vPage/Nhanh, Botcake, AhaChat, Manychat)? | Two automations in one inbox = duplicate replies. It has to be off before we start | 5 min |
 | 6 | **Screenshot of** Hộp thư → Tự động hóa | Tells us in one image whether Business AI is available for this account, which decides Path A vs Path B | 2 min |
+
+#### Getting item 1 right
+
+Two separate grants, and being added as a business user alone gives **nothing**:
+
+| Layer | Ask for | Why not more |
+|---|---|---|
+| Business portfolio | **Employee access** (Nhân viên) | Portfolio Admin also manages people, assets and billing. Not needed until Path B |
+| The Page, as an assigned asset | **Toàn quyền kiểm soát** (full control) | Partial access covers content, comments, messages, ads and insights but **cannot open Page settings**, and Tự động hóa / Business AI live there. There is no narrower permission that reaches them |
+
+Their click path: **Cài đặt → Người dùng → Thêm người** → email → Employee → assign the
+**Trang** asset → **Toàn quyền kiểm soát**.
+
+Full control includes removing other admins and deleting the Page, so ask for it with the
+mitigations attached: the owner keeps their own full control (never be the sole
+controller), it is revocable in two clicks, and we step down to Messages-only access once
+setup is done. If they would rather not grant it at all, a booked screen-share where the
+owner clicks and we guide works — slower, and the answer to "can you just fix that one
+thing" becomes another meeting.
+
+**Turn on two-factor authentication on our Facebook account before the invite is sent.**
+Portfolios commonly require it and the invite fails without it; this is the usual "the
+link doesn't work". Meta has no service accounts — it is a personal account either way.
+
+Not yet: the **catalogue** asset (Commerce Manager) matters only at step 2, and portfolio
+Admin belongs to §3.4.
 
 ### 3.2 The knowledge pack — **P0, this is the shop's homework**
 
@@ -230,8 +256,14 @@ Chào anh/chị, để bật trợ lý trả lời tin nhắn Facebook cho shop,
 mấy thứ sau ạ:
 
 A. QUYỀN TRUY CẬP (làm được ngay hôm nay, ~30 phút)
-1. Cấp quyền "Toàn quyền kiểm soát" trang Facebook cho [TÊN/EMAIL], hoặc
-   hẹn 30 phút gọi video để anh/chị bấm và bên em hướng dẫn.
+1. Thêm em vào Trình quản lý doanh nghiệp:
+   Cài đặt → Người dùng → Thêm người → email [EMAIL] → chọn quyền
+   "Nhân viên", rồi ở bước gán tài sản chọn Trang [TÊN TRANG] và bật
+   "Toàn quyền kiểm soát".
+   Bước cuối bắt buộc — Tự động hóa và Business AI nằm trong Cài đặt
+   trang, quyền thấp hơn không mở được. Anh/chị vẫn giữ nguyên quyền của
+   mình và gỡ quyền của em bất cứ lúc nào cũng được.
+   (Hoặc hẹn 30 phút gọi video để anh/chị bấm, bên em hướng dẫn.)
 2. Cho em hỏi: trang Facebook hiện có khách nhắn tin không ạ? Khoảng bao
    nhiêu tin mỗi ngày, và trong hộp thư đã có tin nhắn cũ chưa?
 3. Trang đã nằm trong Trình quản lý doanh nghiệp (Business Manager) chưa ạ?
