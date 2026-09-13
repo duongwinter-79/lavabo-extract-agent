@@ -196,10 +196,12 @@ A file `voice.md` answering, in the shop's own words:
 
 Worth saying explicitly, because it saves them days:
 
-- **Past Messenger conversations.** Already reachable through `lavabo ingest --source meta`
-  and already staged in `data/staging.db`. We mine the real question distribution from
-  there — which questions actually get asked, in the customer's real wording, and how staff
-  answer them. That's where `faq.xlsx` and `synonyms.xlsx` get their second draft.
+- **Past Messenger conversations** — *if* the Page has them and we have access. The
+  connector to read them exists but **has never been pointed at a real Page**
+  ([docs/14](14-what-we-need-from-the-customer.md) §1), so this is a plan, not a fact. Once
+  access lands, `lavabo ingest --source meta` stages the real question distribution and
+  `faq.xlsx` gets its second draft from what customers actually typed. Until then, the FAQ
+  file is written by hand and carries the whole load.
 - **A website.** Nice for Path A's URL crawler; not required.
 - **Any technical setup.** Everything in §3 is Excel, photos and a text file.
 
@@ -609,7 +611,16 @@ assume at least one round trip. **[confirm]** current requirements at submission
 
 ## 8. Testing and acceptance
 
-Build the eval set **from the shop's own history**, which already exists in staging:
+Build the eval set **from the shop's own history — once there is any**. As of
+[docs/14](14-what-we-need-from-the-customer.md) §1 staging is empty and Meta has never
+authenticated, so there are two versions of this step:
+
+**Now, with no access:** the test set is the scripts in
+[docs/12](12-business-ai-step-1.md) §4 and [docs/13](13-business-ai-step-2.md) §9, plus the
+three sample conversations the shop writes into `voice.md`. Hand-written, ~45 questions,
+good enough to catch every failure that matters.
+
+**Later, once the Page token lands:**
 
 1. `lavabo ingest --source meta --full` (needs the Page token from §3.1).
 2. Pull the 100 most common real customer questions from `messages` where
@@ -722,6 +733,7 @@ The dominating cost is the intake pack, and it is paid in the shop's time, not i
 | Doc | |
 |---|---|
 | [docs/12-business-ai-step-1.md](12-business-ai-step-1.md) | **the first configuration step** — Path A, click by click, in Vietnamese |
+| [docs/14-what-we-need-from-the-customer.md](14-what-we-need-from-the-customer.md) | audited status, and the access + files still needed |
 | [docs/04-meta-setup.md](04-meta-setup.md) | Page token, permissions, Advanced Access — the prerequisites for §6 |
 | [docs/02-agent-plan.md](02-agent-plan.md) | The extraction pipeline this agent's conversations flow into |
 | [docs/07-zalo-oa-flow.md](07-zalo-oa-flow.md) | The Zalo webhook flow — same receive-and-store shape |

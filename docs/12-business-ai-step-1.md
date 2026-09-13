@@ -112,7 +112,7 @@ tắm, chậu rửa, phụ kiện), địa chỉ, giờ mở cửa, hotline, Zal
 
 | Source | Step 1 |
 |---|---|
-| Lịch sử trò chuyện (past chats) | **On.** This is where the shop's real tone and real questions live |
+| Lịch sử trò chuyện (past chats) | **On** — but check what is actually there. On a Page with little or no message history this source is empty, and `faq.xlsx` then carries the entire load ([docs/14](14-what-we-need-from-the-customer.md) §2) |
 | Nội dung trang / fanpage | **On** |
 | Website | On, if there is one |
 | Danh mục sản phẩm (catalog) | **Off** — §0 |
@@ -370,6 +370,7 @@ LAUNCH
 |---|---|
 | [docs/11-facebook-reply-agent.md](11-facebook-reply-agent.md) | the full plan — intake pack (§3), storage (§4), Path B |
 | [docs/13-business-ai-step-2.md](13-business-ai-step-2.md) | **step 2** — adding the catalogue and prices, once the gates in its §1 are met |
+| [docs/14-what-we-need-from-the-customer.md](14-what-we-need-from-the-customer.md) | the access and decisions this document assumes you already have |
 | [docs/04-meta-setup.md](04-meta-setup.md) | Page token and permissions, needed for Path B |
 
 ## Sources

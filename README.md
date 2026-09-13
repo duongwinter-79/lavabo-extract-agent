@@ -372,6 +372,7 @@ switching to `on`.
 | [docs/11-facebook-reply-agent.md](docs/11-facebook-reply-agent.md) | plan for an agent that **answers** Facebook messages — what the shop must hand over, how it is stored, how it replies |
 | [docs/12-business-ai-step-1.md](docs/12-business-ai-step-1.md) | **first configuration step** — turning on Meta Business AI for the Page, in Vietnamese, without letting it quote a price |
 | [docs/13-business-ai-step-2.md](docs/13-business-ai-step-2.md) | step 2 — the catalogue and prices: the column spec, the validator, and the one wrong number that rolls it back |
+| [docs/14-what-we-need-from-the-customer.md](docs/14-what-we-need-from-the-customer.md) | **audited status** of what is built vs never connected, and the exact list to ask the shop for |
 
 ### Shape of it
 
