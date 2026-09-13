@@ -369,6 +369,7 @@ LAUNCH
 | Doc | |
 |---|---|
 | [docs/11-facebook-reply-agent.md](11-facebook-reply-agent.md) | the full plan — intake pack (§3), storage (§4), Path B |
+| [docs/13-business-ai-step-2.md](13-business-ai-step-2.md) | **step 2** — adding the catalogue and prices, once the gates in its §1 are met |
 | [docs/04-meta-setup.md](04-meta-setup.md) | Page token and permissions, needed for Path B |
 
 ## Sources
