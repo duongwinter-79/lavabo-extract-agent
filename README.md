@@ -263,8 +263,9 @@ lavabo load --layout senkahomes --out data/out/report.xlsx --month 8 --year 2026
 lavabo append --into "QUẢN LÝ ĐƠN SENKAHOMES.xlsx" --month 8 --year 2026 --dry-run
 lavabo verify
 
-lavabo kb init --zip           # blank intake pack to send the shop, zipped
-                               # a ready-made copy lives in templates/intake/
+lavabo kb init                 # blank intake pack to send the shop
+lavabo kb init --one-file p.xlsx   # same pack as ONE workbook, for Google Sheets
+                               # ready-made copies of both live in templates/
 lavabo kb check --dir intake   # refuse a price list before it reaches Meta
 lavabo kb feed  --dir intake --link https://facebook.com/<page> --brand "<shop>"
                                # a passing catalogue -> Meta Commerce feed CSV

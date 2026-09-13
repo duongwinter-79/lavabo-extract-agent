@@ -27,6 +27,14 @@ from lavabo.kb.templates import write_intake                      # noqa: E402
 COMMITTED = ROOT / "templates" / "intake"
 
 
+def sheets(path: Path) -> dict[str, list]:
+    """Every cell of every tab — what the shop can see, ignoring the creation stamp
+    openpyxl writes into each file."""
+    book = load_workbook(path)
+    return {ws.title: [list(row) for row in ws.iter_rows(values_only=True)]
+            for ws in book.worksheets}
+
+
 def fingerprint(directory: Path) -> dict[str, object]:
     """Everything about the pack that the shop can see."""
     out: dict[str, object] = {}
@@ -66,10 +74,22 @@ class TheCommittedPack(unittest.TestCase):
                     "  lavabo kb init --dir templates/intake --force "
                     "--zip templates/intake-lavabo.zip")
 
-    def test_the_zip_is_committed_too(self):
-        archive = ROOT / "templates" / "intake-lavabo.zip"
-        self.assertTrue(archive.is_file())
-        self.assertGreater(archive.stat().st_size, 10_000)
+    def test_the_one_file_workbook_is_committed_and_current(self):
+        """The Google Sheets copy rots the same way, and a zip taught us that a
+        committed artifact nothing compares is a committed artifact nobody updates."""
+        from lavabo.kb.onefile import write_one_file
+
+        committed = ROOT / "templates" / "lavabo-intake-onefile.xlsx"
+        self.assertTrue(committed.is_file(),
+                        "regenerate: lavabo kb init --one-file "
+                        "templates/lavabo-intake-onefile.xlsx")
+
+        fresh = Path(tempfile.mkdtemp()) / "pack.xlsx"
+        write_one_file(fresh)
+        self.assertEqual(sheets(committed), sheets(fresh),
+                         "templates/lavabo-intake-onefile.xlsx is stale. Regenerate:\n"
+                         "  lavabo kb init --one-file "
+                         "templates/lavabo-intake-onefile.xlsx --force")
 
 
 if __name__ == "__main__":

@@ -108,17 +108,29 @@ flowchart TD
 
 ### 3.2 The knowledge pack — **P0, this is the shop's homework**
 
-**The pack is committed at [`templates/intake/`](../templates/intake), with
-[`templates/intake-lavabo.zip`](../templates/intake-lavabo.zip) for forwarding it in one
-piece** — so whoever sends it to the shop needs no Python. It is generated output, kept
-honest by `tests/test_intake_pack.py`, which fails if it drifts from what `kb init`
-produces. Regenerate after any spec change:
+**The pack is committed**, so whoever sends it to the shop needs no Python. Two shapes,
+and which one to send depends on the shop, not on us:
+
+| | For | |
+|---|---|---|
+| [`templates/intake/`](../templates/intake) | A PC with Excel, someone comfortable with files | Dropdowns, header comments, and a price cell that rejects `2tr850` as it is typed |
+| [`templates/lavabo-intake-onefile.xlsx`](../templates/lavabo-intake-onefile.xlsx) | **A phone, or no Excel** | Upload to Drive → open with Google Sheets → share one link. Every form is a tab, including the text ones. Sheets keeps the dropdowns; it drops the whole-number guard, so `kb check --file` is what catches a bad price instead |
+
+Both are generated output, kept honest by `tests/test_intake_pack.py`, which compares them
+cell by cell against a fresh generation and fails with the regenerate command. After any
+spec change:
 
 ```bash
-lavabo kb init --dir templates/intake --force --zip templates/intake-lavabo.zip
+lavabo kb init --dir templates/intake --force
+lavabo kb init --one-file templates/lavabo-intake-onefile.xlsx --force
 ```
 
-Send them that folder. It is a set of forms now, not a blank
+Checking what comes back:
+
+```bash
+lavabo kb check --dir intake            # the folder
+lavabo kb check --file pack.xlsx        # the Google Sheets copy, downloaded as .xlsx
+``` It is a set of forms now, not a blank
 page: dropdowns on every list column, a comment on every header, an instructions sheet, and
 a price cell that rejects `2tr850` as it is typed.
 

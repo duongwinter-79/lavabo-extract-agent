@@ -122,9 +122,21 @@ def _label_of(line: str) -> str:
 # --------------------------------------------------------------------------- per file
 
 def _read_and_check(path: Path, sheet: SheetSpec) -> tuple[list[dict], list[Problem]]:
-    problems: list[Problem] = []
     wb = load_workbook(path, data_only=True)
     ws = wb["Dữ liệu"] if "Dữ liệu" in wb.sheetnames else wb.worksheets[0]
+    return check_rows(ws, sheet)
+
+
+def check_rows(ws, sheet: SheetSpec, *, label: str = "") -> tuple[list[dict], list[Problem]]:
+    """Validate one worksheet against a SheetSpec.
+
+    Split out from the per-file reader so the one-file workbook -- same columns, one tab
+    each -- runs the identical rules rather than a second, drifting copy of them. `label`
+    names the location in messages: a filename in the folder pack, a tab name in the
+    single workbook.
+    """
+    problems: list[Problem] = []
+    where = label or sheet.filename
 
     header = [str(c).strip().lower() if c is not None else "" for c in next(
         ws.iter_rows(min_row=1, max_row=1, values_only=True), ())]
@@ -132,7 +144,7 @@ def _read_and_check(path: Path, sheet: SheetSpec) -> tuple[list[dict], list[Prob
 
     missing = [f.name for f in sheet.fields if f.required and f.name not in index]
     if missing:
-        problems.append(Problem(sheet.filename,
+        problems.append(Problem(where,
                                 f"thiếu cột bắt buộc: {', '.join(missing)}"))
         return [], problems
 
@@ -148,65 +160,66 @@ def _read_and_check(path: Path, sheet: SheetSpec) -> tuple[list[dict], list[Prob
 
         for fld in sheet.fields:
             if fld.name in index:
-                problems.extend(_check_cell(sheet, fld, row, number))
+                problems.extend(_check_cell(sheet, fld, row, number, where))
 
         if sheet.unique:
             key = _text(row.get(sheet.unique))
             if key:
                 if key.lower() in seen:
                     problems.append(Problem(
-                        sheet.filename,
+                        where,
                         f"{sheet.unique} {key!r} đã có ở dòng {seen[key.lower()]}. "
                         "Mỗi mã chỉ được xuất hiện một lần.", row=number))
                 seen[key.lower()] = number
 
     if not rows:
-        problems.append(Problem(sheet.filename, "file không có dòng dữ liệu nào"))
+        problems.append(Problem(where, "file không có dòng dữ liệu nào"))
 
-    problems.extend(_sheet_rules(sheet, rows))
+    problems.extend(_sheet_rules(sheet, rows, where))
     return rows, problems
 
 
-def _check_cell(sheet: SheetSpec, fld: Field, row: dict, number: int) -> list[Problem]:
+def _check_cell(sheet: SheetSpec, fld: Field, row: dict, number: int,
+                where: str) -> list[Problem]:
     out: list[Problem] = []
     value = row.get(fld.name)
     blank = value is None or str(value).strip() == ""
 
     if blank:
         if fld.required:
-            out.append(Problem(sheet.filename, f"cột {fld.name} ({fld.label}) đang trống",
+            out.append(Problem(where, f"cột {fld.name} ({fld.label}) đang trống",
                                row=number))
         elif fld.required_with and not _blank(row.get(fld.required_with)):
             out.append(Problem(
-                sheet.filename,
+                where,
                 f"có {fld.required_with} thì bắt buộc phải có {fld.name}. {fld.note}",
                 row=number))
         return out
 
     if fld.kind == "integer":
-        out.extend(_check_integer(sheet, fld, value, number))
+        out.extend(_check_integer(fld, value, number, where))
     elif fld.kind == "date" and _as_date(value) is None:
-        out.append(Problem(sheet.filename,
+        out.append(Problem(where,
                            f"cột {fld.name}: {value!r} không phải ngày. Nhập dạng 2026-09-20.",
                            row=number))
     elif fld.kind == "enum" and fld.strict_enum:
         if _text(value).lower() not in {e.lower() for e in fld.enum}:
             out.append(Problem(
-                sheet.filename,
+                where,
                 f"cột {fld.name}: {_text(value)!r} không hợp lệ. "
                 f"Chỉ nhận: {' / '.join(fld.enum)}", row=number))
     return out
 
 
-def _check_integer(sheet: SheetSpec, fld: Field, value, number: int) -> list[Problem]:
+def _check_integer(fld: Field, value, number: int, where: str) -> list[Problem]:
     if isinstance(value, (int, float)) and float(value).is_integer():
         return ([] if value >= 0 else
-                [Problem(sheet.filename, f"cột {fld.name}: số âm ({value})", row=number)])
+                [Problem(where, f"cột {fld.name}: số âm ({value})", row=number)])
 
     text = _text(value)
     if _RANGE.search(text):
         return [Problem(
-            sheet.filename,
+            where,
             f"cột {fld.name}: {text!r} là một khoảng giá, không phải một giá. "
             "Nếu giá thay đổi theo đơn thì bỏ dòng này ra khỏi danh mục và "
             "để nhân viên báo giá.", row=number)]
@@ -214,28 +227,28 @@ def _check_integer(sheet: SheetSpec, fld: Field, value, number: int) -> list[Pro
     if text.replace(".", "").replace(",", "").replace(" ", "").isdigit():
         # "2.850.000" typed as text: unambiguous, but say so rather than silently accept.
         return [Problem(
-            sheet.filename,
+            where,
             f"cột {fld.name}: {text!r} đang là chữ, không phải số. "
             f"Nhập {int(re.sub(r'[^0-9]', '', text))} (chỉ chữ số).", row=number)]
 
     guess = parse_vnd(text)
     fix = (f"Nhập {guess} (chỉ chữ số)." if guess
            else "Ô giá chỉ nhận chữ số, ví dụ 2850000.")
-    return [Problem(sheet.filename,
+    return [Problem(where,
                     f"cột {fld.name}: {text!r} không phải số nguyên. {fix}", row=number)]
 
 
-def _sheet_rules(sheet: SheetSpec, rows: list[dict]) -> list[Problem]:
+def _sheet_rules(sheet: SheetSpec, rows: list[dict], where: str) -> list[Problem]:
     if sheet is CATALOG:
-        return _catalog_rules(rows)
+        return _catalog_rules(rows, where)
     if sheet is PROMOTIONS:
-        return [Problem(sheet.filename,
+        return [Problem(where,
                         f"khuyến mãi {_text(r.get('ten_km'))!r} đã hết hạn — nên xoá khỏi file",
                         row=r["_row"], fatal=False)
                 for r in rows
                 if (d := _as_date(r.get("den_ngay"))) and d < date.today()]
     if sheet is FAQ:
-        return [Problem(sheet.filename,
+        return [Problem(where,
                         "câu trả lời có vẻ chứa con số giá. Giá chỉ được nằm trong "
                         "catalog.xlsx — để ở hai nơi thì một nơi sẽ cũ.",
                         row=r["_row"], fatal=False)
@@ -243,7 +256,7 @@ def _sheet_rules(sheet: SheetSpec, rows: list[dict]) -> list[Problem]:
     return []
 
 
-def _catalog_rules(rows: list[dict]) -> list[Problem]:
+def _catalog_rules(rows: list[dict], where: str = CATALOG.filename) -> list[Problem]:
     out: list[Problem] = []
     today = date.today()
     names: dict[str, int] = {}
@@ -253,7 +266,7 @@ def _catalog_rules(rows: list[dict]) -> list[Problem]:
         listed, promo = _int(r.get("gia_niem_yet")), _int(r.get("gia_km"))
 
         if listed is not None and promo is not None and promo >= listed:
-            out.append(Problem(CATALOG.filename,
+            out.append(Problem(where,
                                f"giá khuyến mãi ({promo}) không nhỏ hơn giá niêm yết ({listed})",
                                row=n))
 
@@ -266,31 +279,31 @@ def _catalog_rules(rows: list[dict]) -> list[Problem]:
         if updated := _as_date(r.get("cap_nhat_ngay")):
             age = (today - updated).days
             if age > STALE_FAIL_DAYS:
-                out.append(Problem(CATALOG.filename,
+                out.append(Problem(where,
                                    f"dòng này chưa được kiểm tra lại {age} ngày "
                                    f"(quá {STALE_FAIL_DAYS}). Xác nhận lại giá rồi cập nhật "
                                    "cột cap_nhat_ngay.", row=n))
             elif age > STALE_WARN_DAYS:
-                out.append(Problem(CATALOG.filename,
+                out.append(Problem(where,
                                    f"chưa kiểm tra lại {age} ngày", row=n, fatal=False))
 
         if _SPECIFIC_DAY.search(_text(r.get("thoi_gian_giao"))):
-            out.append(Problem(CATALOG.filename,
+            out.append(Problem(where,
                                f"thoi_gian_giao {_text(r.get('thoi_gian_giao'))!r} là một ngày "
                                "cụ thể. Ghi khoảng ('3-5 ngày') — AI đọc cột này ra thành "
                                "lời hứa giao hàng.", row=n, fatal=False))
         if _blank(r.get("anh")):
-            out.append(Problem(CATALOG.filename, "chưa có ảnh", row=n, fatal=False))
+            out.append(Problem(where, "chưa có ảnh", row=n, fatal=False))
         if _blank(r.get("ghi_chu_tu_van")):
-            out.append(Problem(CATALOG.filename, "chưa có ghi chú tư vấn", row=n, fatal=False))
+            out.append(Problem(where, "chưa có ghi chú tư vấn", row=n, fatal=False))
         if EXAMPLE_MARKER in _text(r.get("ma_sp")):
-            out.append(Problem(CATALOG.filename,
+            out.append(Problem(where,
                                "dòng ví dụ mẫu vẫn còn trong file — xoá trước khi gửi",
                                row=n, fatal=False))
 
         key = re.sub(r"\s+", " ", _text(r.get("ten_sp"))).lower()
         if key and key in names:
-            out.append(Problem(CATALOG.filename,
+            out.append(Problem(where,
                                f"tên trùng với dòng {names[key]} — có phải dòng lặp không?",
                                row=n, fatal=False))
         names.setdefault(key, n)
@@ -371,6 +384,48 @@ def _as_date(value) -> date | None:
         except ValueError:
             continue
     return None
+
+
+def check_one_file(path: Path) -> list[Problem]:
+    """Validate the single-workbook version of the pack (`kb init --one-file`)."""
+    from .onefile import read_one_file
+
+    if not path.exists():
+        return [Problem(path.name, "không tìm thấy file này")]
+
+    sheets, docs = read_one_file(path)
+    problems: list[Problem] = []
+    tables: dict[str, list[dict]] = {}
+
+    for title, spec, ws in sheets:
+        rows, found = check_rows(ws, spec, label=f"tab {title!r}")
+        problems.extend(found)
+        tables[spec.filename] = rows
+
+    for title, doc, answers in docs:
+        problems.extend(_check_answers(f"tab {title!r}", doc, answers))
+
+    problems.extend(_cross_checks(path.parent, tables))
+    return problems
+
+
+def _check_answers(where: str, doc: DocSpec, answers: dict[str, str]) -> list[Problem]:
+    """The doc fields, answered in a column instead of over a placeholder."""
+    empty_required = [f.label for f in doc.fields()
+                      if f.required and not answers.get(f.label.lower())]
+    empty_optional = [f.label for f in doc.fields()
+                      if not f.required and not answers.get(f.label.lower())]
+    empty_required += [s.heading for s in doc.sections
+                       if s.prose and not answers.get(s.heading.lower())]
+
+    out: list[Problem] = []
+    if empty_required:
+        out.append(Problem(where, f"còn {len(empty_required)} mục chưa điền: "
+                                  + ", ".join(empty_required)))
+    if empty_optional:
+        out.append(Problem(where, "chưa điền (không bắt buộc): " + ", ".join(empty_optional),
+                           fatal=False))
+    return out
 
 
 def read_catalog(directory: Path) -> list[dict]:

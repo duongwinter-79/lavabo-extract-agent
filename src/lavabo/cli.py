@@ -12,6 +12,7 @@
     lavabo verify
     lavabo kb init                     write the blank intake pack for the shop
     lavabo kb check                    validate the filled-in pack before uploading
+    lavabo kb init --one-file x.xlsx   the whole pack as ONE workbook, for Google Sheets
     lavabo kb feed                     catalog.xlsx -> Meta Commerce product feed
 """
 
@@ -720,10 +721,24 @@ def cmd_kb(args, cfg: Config) -> int:
     Deliberately independent of the staging db and of any API key -- this runs on a
     laptop belonging to whoever is chasing the shop for their price list.
     """
-    from .kb.check import check_intake, report
+    from .kb.check import check_intake, check_one_file, report
+    from .kb.onefile import write_one_file
     from .kb.templates import write_intake, write_zip
 
     directory = Path(args.dir)
+
+    if args.kb_command == "init" and args.one_file:
+        out = Path(args.one_file)
+        try:
+            write_one_file(out, force=args.force)
+        except FileExistsError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        print(f"  tạo  {out}")
+        print("\n  Tải file này lên Google Drive rồi mở bằng Google Sheets, "
+              "chia sẻ link cho shop.")
+        print(f"  Điền xong, tải về .xlsx rồi chạy: lavabo kb check --file {out}")
+        return 0
 
     if args.kb_command == "init":
         written, skipped = write_intake(directory, force=args.force)
@@ -739,6 +754,19 @@ def cmd_kb(args, cfg: Config) -> int:
             print("\n  Những file đã có được giữ nguyên. --force để ghi đè.")
         print(f"\n  Gửi thư mục {directory} cho shop. "
               f"Điền xong thì chạy: lavabo kb check --dir {directory}")
+        return 0
+
+    if getattr(args, "file", None):
+        problems = check_one_file(Path(args.file))
+        print(report(problems))
+        fatal = [p for p in problems if p.fatal]
+        if fatal:
+            print(f"\nCHƯA ĐẠT — {len(fatal)} lỗi phải sửa.")
+            return 1
+        if args.strict and problems:
+            print(f"\nCHƯA ĐẠT (--strict) — {len(problems)} cảnh báo.")
+            return 1
+        print("\nĐẠT — pack sẵn sàng để tải lên.")
         return 0
 
     if not directory.is_dir():
@@ -905,9 +933,12 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--force", action="store_true", help="overwrite files that already exist")
     q.add_argument("--zip", nargs="?", const=True, default=False,
                    help="also write a .zip of the pack, for forwarding it in one piece")
+    q.add_argument("--one-file", metavar="PATH",
+                   help="write the whole pack as ONE workbook instead, for Google Sheets")
     add_llm_args(q)
     q = kb.add_parser("check", help="validate a filled-in pack before it is uploaded")
     q.add_argument("--dir", default="intake")
+    q.add_argument("--file", help="check a one-file workbook instead of a folder")
     q.add_argument("--strict", action="store_true", help="treat warnings as failures too")
     add_llm_args(q)
     q = kb.add_parser("feed", help="turn a passing catalog.xlsx into a Meta Commerce feed")
