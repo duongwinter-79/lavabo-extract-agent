@@ -377,6 +377,7 @@ switching to `on`.
 | [docs/10-setup-guide.md](docs/10-setup-guide.md) | **start here on a new machine** — install, Gemini key, autostart, Tailscale, first run |
 | [docs/11-facebook-reply-agent.md](docs/11-facebook-reply-agent.md) | plan for an agent that **answers** Facebook messages — what the shop must hand over, how it is stored, how it replies |
 | [docs/16-quick-setup.md](docs/16-quick-setup.md) | **start here to go live today** — basic auto-replies from a ten-minute phone call, no intake pack |
+| [docs/17-desktop-session-brief.md](docs/17-desktop-session-brief.md) | the prompt to hand a Claude session running on the shop's own machine, where the browser is logged in |
 | [docs/12-business-ai-step-1.md](docs/12-business-ai-step-1.md) | **first configuration step** — turning on Meta Business AI for the Page, in Vietnamese, without letting it quote a price |
 | [docs/13-business-ai-step-2.md](docs/13-business-ai-step-2.md) | step 2 — the catalogue and prices: the column spec, the validator, and the one wrong number that rolls it back |
 | [docs/14-what-we-need-from-the-customer.md](docs/14-what-we-need-from-the-customer.md) | **audited status** of what is built vs never connected, and the exact list to ask the shop for |

@@ -284,6 +284,7 @@ argument for doing this before collecting the intake pack rather than after.
 
 | Doc | |
 |---|---|
+| [docs/17-desktop-session-brief.md](17-desktop-session-brief.md) | the same job handed to a Claude session on the shop's machine, instead of clicked by hand |
 | [docs/12-business-ai-step-1.md](12-business-ai-step-1.md) | the full step 1 — this is its short form |
 | [docs/15-end-to-end-flow.md](15-end-to-end-flow.md) | where this sits: S13–S17, minus the waiting |
 | [docs/14-what-we-need-from-the-customer.md](14-what-we-need-from-the-customer.md) | the pack this deliberately skips |
