@@ -139,7 +139,19 @@ Checking what comes back:
 ```bash
 lavabo kb check --dir intake            # the folder
 lavabo kb check --file pack.xlsx        # the Google Sheets copy, downloaded as .xlsx
-``` It is a set of forms now, not a blank
+```
+
+Media arrives separately, straight off a phone — a folder per mã SP, any filenames:
+
+```bash
+lavabo kb media --from ~/Downloads/ANH-SAN-PHAM --dir intake
+```
+
+It renames, rotates, downscales, pulls stills from demo videos, writes `images.xlsx`, and
+reports what it could not place: HEIC files (with the one iPhone setting that fixes them
+for good), loose photos belonging to no product, and codes absent from `catalog.xlsx`. It
+never guesses which product a loose photo belongs to — an unattached photo costs a missing
+picture, a misattached one puts the wrong product in front of a customer. It is a set of forms now, not a blank
 page: dropdowns on every list column, a comment on every header, an instructions sheet, and
 a price cell that rejects `2tr850` as it is typed.
 
@@ -158,7 +170,8 @@ that, a file returned untouched and a file deliberately left empty look identica
 | `voice.md` | **P0** | Including the three sample conversations, written by whoever answers messages today |
 | `dont_say.md` | P1 | |
 | `catalog.xlsx` | **P1 — gates step 2 entirely** | The big one. Top 50 sellers is enough to start |
-| Ảnh sản phẩm | P1 | One per SKU, named `<mã SP>__front.jpg` |
+| Ảnh sản phẩm | P1 | **From their phone — do not ask them to rename anything.** One Drive folder per mã SP, photos dropped in, folder shared. `00-GUI-ANH-TU-DIEN-THOAI.md` in the pack walks them through it |
+| Video demo | P2 | Same folders. `lavabo kb media` pulls the sharpest frames out — for many SKUs an installation video is the only picture of the product in a real bathroom |
 | `synonyms.xlsx`, `promotions.xlsx`, `images.xlsx` | P2 | Optional |
 
 They send it back; we run `lavabo kb check --dir intake` and it either passes or says

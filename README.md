@@ -267,6 +267,8 @@ lavabo kb init                 # blank intake pack to send the shop
 lavabo kb init --one-file p.xlsx   # same pack as ONE workbook, for Google Sheets
                                # ready-made copies of both live in templates/
 lavabo kb check --dir intake   # refuse a price list before it reaches Meta
+lavabo kb media --from <phone dump> --dir intake
+                               # phone photos/videos -> named images/
 lavabo kb feed  --dir intake --link https://facebook.com/<page> --brand "<shop>"
                                # a passing catalogue -> Meta Commerce feed CSV
 ```

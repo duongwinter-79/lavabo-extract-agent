@@ -53,6 +53,10 @@ Nếu không muốn đổi tên file: cứ để tên máy ảnh (IMG_4821.jpg) 
 vào file images.xlsx. Ảnh không có tên trong catalog.xlsx hoặc
 images.xlsx thì AI không nhìn thấy.
 
+ẢNH ĐANG Ở TRONG ĐIỆN THOẠI? Đừng đổi tên từng file. Đọc
+00-GUI-ANH-TU-DIEN-THOAI.md — chỉ cần xếp vào thư mục theo mã sản
+phẩm, và video demo cũng gửi được.
+
 KHÔNG gửi: ảnh chụp màn hình có tên hoặc số điện thoại khách, ảnh có
 logo chìm của shop khác.
 """

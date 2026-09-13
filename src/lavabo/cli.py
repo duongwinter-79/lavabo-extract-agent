@@ -13,6 +13,7 @@
     lavabo kb init                     write the blank intake pack for the shop
     lavabo kb check                    validate the filled-in pack before uploading
     lavabo kb init --one-file x.xlsx   the whole pack as ONE workbook, for Google Sheets
+    lavabo kb media --from <dump>      phone photos/videos -> named images/ + mapping
     lavabo kb feed                     catalog.xlsx -> Meta Commerce product feed
 """
 
@@ -727,6 +728,9 @@ def cmd_kb(args, cfg: Config) -> int:
 
     directory = Path(args.dir)
 
+    if args.kb_command == "media":
+        return _kb_media(args, cfg, directory)
+
     if args.kb_command == "init" and args.one_file:
         out = Path(args.one_file)
         try:
@@ -788,6 +792,53 @@ def cmd_kb(args, cfg: Config) -> int:
         print(f"\nCHƯA ĐẠT (--strict) — {len(problems)} cảnh báo.")
         return 1
     print("\nĐẠT — pack sẵn sàng để tải lên.")
+    return 0
+
+
+def _kb_media(args, cfg: Config, directory: Path) -> int:
+    """Turn a phone dump into the images/ folder the pack expects."""
+    from .kb.check import read_catalog
+    from .kb.media import organise, write_mapping
+
+    source = Path(args.source)
+    if not source.is_dir():
+        print(f"Không tìm thấy thư mục {source}", file=sys.stderr)
+        return 1
+
+    known = None
+    catalog = directory / "catalog.xlsx"
+    if catalog.exists():
+        known = {str(r.get("ma_sp", "")).strip().lower() for r in read_catalog(directory)}
+
+    images = directory / "images"
+    report = organise(source, images, known_skus=known, frames=args.frames)
+
+    print(f"  {report.photo_count} ảnh cho {len(report.products)} sản phẩm -> {images}")
+    if report.videos:
+        print(f"  {len(report.videos)} video, đã lấy khung hình rõ nhất làm ảnh")
+    for sku, names in sorted(report.products.items()):
+        if not names:
+            print(f"  THIẾU ẢNH: {sku} — thư mục rỗng hoặc không đọc được file nào")
+
+    if report.heic:
+        print(f"\n  {len(report.heic)} ảnh định dạng HEIC chưa đọc được:")
+        for name in report.heic[:5]:
+            print(f"    - {name}")
+        print("    iPhone: Cài đặt > Camera > Định dạng > chọn 'Tương thích nhất',")
+        print("    rồi chụp lại, hoặc gửi qua Zalo/Messenger (tự đổi sang JPG).")
+    if report.unmapped:
+        print(f"\n  {len(report.unmapped)} file không biết thuộc sản phẩm nào — "
+              "để trong thư mục mang tên mã SP:")
+        for name in report.unmapped[:5]:
+            print(f"    - {name}")
+    if report.unknown_sku:
+        print(f"\n  CẢNH BÁO: {len(report.unknown_sku)} mã không có trong catalog.xlsx: "
+              + ", ".join(report.unknown_sku[:5]))
+
+    if not args.no_mapping and report.products:
+        write_mapping(report, directory / "images.xlsx")
+        print(f"\n  đã ghi {directory / 'images.xlsx'}")
+    print(f"\n  Kiểm tra lại: lavabo kb check --dir {directory}")
     return 0
 
 
@@ -941,6 +992,15 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--file", help="check a one-file workbook instead of a folder")
     q.add_argument("--strict", action="store_true", help="treat warnings as failures too")
     add_llm_args(q)
+    q = kb.add_parser("media", help="phone photos and demo videos into the pack's images/")
+    q.add_argument("--from", dest="source", required=True,
+                   help="folder of phone media: one subfolder per mã SP")
+    q.add_argument("--dir", default="intake")
+    q.add_argument("--frames", type=int, default=3,
+                   help="stills to pull from each demo video (default 3)")
+    q.add_argument("--no-mapping", action="store_true", help="do not rewrite images.xlsx")
+    add_llm_args(q)
+
     q = kb.add_parser("feed", help="turn a passing catalog.xlsx into a Meta Commerce feed")
     q.add_argument("--dir", default="intake")
     q.add_argument("--out", help="output .csv path (default: <output_dir>/meta-catalog-feed.csv)")
