@@ -33,11 +33,39 @@ TITLE_FONT = Font(bold=True, size=13)
 INT_COLUMNS_FORMAT = "#,##0"
 DATE_FORMAT = "yyyy-mm-dd"
 
+IMAGE_NOTE = """Bỏ ảnh sản phẩm vào thư mục này.
+
+Đặt tên theo mã sản phẩm trong catalog.xlsx:
+
+    BC52-80-TRANG__front.jpg      ảnh chính, chụp thẳng
+    BC52-80-TRANG__angle.jpg      chụp nghiêng
+    BC52-80-TRANG__detail.jpg     cận cảnh chi tiết
+    BC52-80-TRANG__lapdat.jpg     ảnh đã lắp trong phòng tắm thật
+    BC52-80-TRANG__size.jpg       bản vẽ kích thước
+
+Mỗi mã ít nhất 1 ảnh. Mẫu bán chạy nên có 3-5 ảnh.
+Ảnh JPG hoặc PNG, cạnh dài từ 1200px trở lên, dưới 8MB.
+Ảnh iPhone dạng HEIC phải đổi sang JPG trước.
+
+Nếu không muốn đổi tên file: cứ để tên máy ảnh (IMG_4821.jpg) và khai
+vào file images.xlsx. Ảnh không có tên trong catalog.xlsx hoặc
+images.xlsx thì AI không nhìn thấy.
+
+KHÔNG gửi: ảnh chụp màn hình có tên hoặc số điện thoại khách, ảnh có
+logo chìm của shop khác.
+"""
+
 
 def write_intake(directory: Path, *, force: bool = False) -> tuple[list[Path], list[Path]]:
     """Create the intake folder. Returns (written, skipped-because-they-exist)."""
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "images").mkdir(exist_ok=True)
+    images = directory / "images"
+    images.mkdir(exist_ok=True)
+    # An empty folder does not survive being zipped and emailed, and the naming rule has
+    # to travel with the folder it applies to.
+    note = images / "00-DAT-TEN-ANH.txt"
+    if not note.exists() or force:
+        note.write_text(IMAGE_NOTE, encoding="utf-8")
 
     written: list[Path] = []
     skipped: list[Path] = []

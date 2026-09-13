@@ -44,6 +44,10 @@ _MONEY_IN_TEXT = re.compile(r"\b\d{1,3}(?:[.,]\d{3})+\b|\b\d+\s*(?:tr|triệu|tr
 
 # "thứ 5", "20/9", "ngày 20": docs/13 §3 wants a range in thoi_gian_giao, because a
 # named day read out by a bot is a delivery promise nobody in the shop agreed to.
+# The folder also carries the naming instructions we put there; a .txt file is not a
+# photo the shop forgot to attach to a product.
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".gif", ".bmp"}
+
 _SPECIFIC_DAY = re.compile(r"\bthứ\s*[2-7]\b|\bchủ\s*nhật\b|\bngày\s*\d{1,2}\b|"
                            r"\b\d{1,2}\s*/\s*\d{1,2}\b", re.IGNORECASE)
 
@@ -255,7 +259,8 @@ def _cross_checks(directory: Path, tables: dict[str, list[dict]]) -> list[Proble
 
     images_dir = directory / "images"
     on_disk = {p.name.lower() for p in images_dir.iterdir()
-               if p.is_file()} if images_dir.is_dir() else set()
+               if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES
+               } if images_dir.is_dir() else set()
     mapped = {_text(r.get("ten_file")).lower() for r in tables.get(IMAGES.filename, [])}
 
     if on_disk:

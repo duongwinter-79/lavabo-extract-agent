@@ -240,6 +240,21 @@ class TheWholePack(unittest.TestCase):
         self.assertFalse(problems[0].fatal)
         self.assertIn("catalog.xlsx", str(problems[0]))
 
+    def test_the_naming_instructions_are_not_mistaken_for_a_photo(self):
+        """kb init drops a .txt in images/ explaining the naming rule. Counting it as an
+        unattached photo told the shop to fix something we put there ourselves."""
+        write_intake(self.dir)
+        problems = [str(p) for p in check_intake(self.dir)]
+        self.assertFalse(any("không gắn với sản phẩm" in p for p in problems), problems)
+
+    def test_a_real_unattached_photo_is_still_flagged(self):
+        """IMG_4821.jpg would not do: the images.xlsx example row already maps it to a
+        product, and a mapped photo is an attached photo."""
+        write_intake(self.dir)
+        (self.dir / "images" / "IMG_9999.jpg").write_bytes(b"jpeg-ish")
+        problems = [str(p) for p in check_intake(self.dir)]
+        self.assertTrue(any("không gắn với sản phẩm" in p for p in problems), problems)
+
     def test_an_image_named_in_the_catalog_but_missing_from_disk_is_flagged(self):
         write_intake(self.dir)
         (self.dir / "images" / "BC52-80-TRANG__front.jpg").write_bytes(b"not really a jpeg")
