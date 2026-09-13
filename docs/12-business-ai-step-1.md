@@ -48,6 +48,18 @@ flowchart LR
 
 ## 1. Pre-flight — 30 minutes, do before touching any setting
 
+> **Verified against the live account, 13/09/2026** (screenshot). The feature is called
+> **Meta Business Agent** in this Vietnamese UI — not "Business AI", not "Trợ lý AI" — and
+> it lives at its own URL, not under Hộp thư:
+>
+> <https://business.facebook.com/latest/business_ai/knowledge?business_id=…&asset_id=…>
+>
+> Its left nav is **Trang chủ · Thông tin của bạn · Hướng dẫn · Chat thử · Cài đặt**, and
+> the on/off toggle sits top right showing **AI đang tắt** / AI đang bật. The four-way
+> Knowledge / Personality / Audience / Handoff split described from secondary sources
+> earlier does not exist as such; those settings live under Hướng dẫn and Cài đặt.
+
+
 ### Đường dẫn nhanh
 
 | Màn hình | Link |
@@ -68,7 +80,7 @@ Nếu link mở nhầm doanh nghiệp khác, thêm `?business_id=<id>` — id n�
 | # | Check | How | If it fails |
 |---|---|---|---|
 | 1 | You have **Toàn quyền kiểm soát** (full control) on the Page | [/settings/pages](https://business.facebook.com/settings/pages) — the asset, not just [/settings/people](https://business.facebook.com/settings/people) | Ask the owner. Nothing below works at Editor level |
-| 2 | Business AI is **available for this account** | [/latest/inbox/automations](https://business.facebook.com/latest/inbox/automations) — look for a Business AI / Trợ lý AI entry | It is rolled out per business account, not per Page. If it isn't there, see §8 |
+| 2 | ~~Business AI is available for this account~~ **CONFIRMED available** | [/latest/business_ai/knowledge](https://business.facebook.com/latest/business_ai/knowledge) — it is called **Meta Business Agent** | It is rolled out per business account, not per Page. If it isn't there, see §8 |
 | 3 | Page language / business language is **Tiếng Việt** | The setup wizard asks for the primary business language on first run | Wrong language here is the single worst first mistake — it is what makes the agent answer Vietnamese customers in English |
 | 4 | **No third-party chatbot is connected** | Cài đặt → Ứng dụng / Nền tảng đã kết nối. Look for Abit, vPage/Nhanh, Botcake, AhaChat, Chatfuel, Manychat | **Disconnect or pause it first.** Two automations in one inbox means duplicate replies and a bot arguing with a bot. This is the most common real-world failure |
 | 5 | **Trả lời tức thì (Instant reply) is OFF** | Hộp thư → Tự động hóa → Trả lời tức thì | Leave it on and every customer gets a canned message *and* an AI message, one second apart. Note this is only true **once Business AI answers** — if you ran [docs/16](16-quick-setup.md) Part A alone, instant reply was correct there and turns off here |
@@ -112,8 +124,9 @@ The fill-in-the-blanks values, which only the shop can supply:
 
 ## 3. Configuration, in order
 
-[Hộp thư → Tự động hóa](https://business.facebook.com/latest/inbox/automations) → **Business AI / Trợ lý AI**. The panels
-below appear under roughly these names; the wizard's order varies by account.
+[Meta Business Agent](https://business.facebook.com/latest/business_ai/knowledge). Sections below map to its
+left nav: **Thông tin của bạn** (knowledge), **Hướng dẫn** (instructions), **Chat thử**
+(test), **Cài đặt** (settings).
 
 ### 3.1 Ngôn ngữ
 
@@ -276,7 +289,7 @@ and it is the only thing standing between the shop and a screenshot on Facebook.
    make sure staff know *how*, and that taking over stops the AI in that thread.
 3. **Day 4–7 — normal operation, gap log running** (§6).
 
-**Kill switch:** [Hộp thư → Tự động hóa](https://business.facebook.com/latest/inbox/automations) → Business AI → tắt. One toggle. Make sure a second
+**Kill switch:** the toggle at the top right of [Meta Business Agent](https://business.facebook.com/latest/business_ai/knowledge) — it reads **AI đang tắt** when off. One toggle. Make sure a second
 person knows where it is, and test it once before launch — not during the incident.
 
 ---

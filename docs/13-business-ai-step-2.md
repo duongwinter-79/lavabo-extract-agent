@@ -16,6 +16,15 @@ customer has a screenshot. Everything below is built around that one sentence.
 
 ---
 
+> **Update, 13/09/2026 — a catalogue already exists.** The live account's Meta Business
+> Agent knowledge holds *Sản phẩm của SENKA HOME — 14 mặt hàng* (created 18/5/26) and a
+> *Bảng giá* reading **15 tuần** old. So step 2 may be a correction job, not a build — but
+> the staleness is the point: fifteen weeks is past the 60-day limit §4 rejects a catalogue
+> at, and it is live knowledge the moment the agent is switched on. Audit those two entries
+> before enabling anything, and treat `catalog.xlsx` as the thing that replaces them rather
+> than a parallel copy. Two catalogues is the "one fact, one place" rule broken by
+> construction.
+
 ## 1. Do not start step 2 until all five are true
 
 | Gate | Why it's a gate |
@@ -24,6 +33,7 @@ customer has a screenshot. Everything below is built around that one sentence.
 | **Zero wrong answers in the last 3 days** | If it still gets policy wrong, it will get prices wrong |
 | Handoffs actually reach a person, and staff use the takeover | Step 2 increases handoff volume, not decreases it |
 | `catalog.xlsx` exists and **passes §4** | No exceptions. A catalogue with one bad row is a catalogue with one public lie |
+| The **existing 14-item list and Bảng giá are audited** — corrected or removed | They are already in the agent's knowledge; fixing our file while theirs stays stale changes nothing |
 | **One named person owns the weekly price update**, with a slot in their week | This is the real gate — see §8 |
 
 The last one fails most often, and it is the one worth walking away from. A catalogue that
@@ -215,6 +225,8 @@ Required feed fields are `id`, `title`, `description`, `availability`, `conditio
 
 The feed wants a product URL and this shop has no website. Options, in order of preference:
 
+0. **First check what the existing 14-item catalogue already uses** — it was created
+   without us, so the `link` question may already be answered in the account.
 1. The Page's own shop/product permalink if Commerce Manager generates one.
 2. A link to the Page itself for every row — accepted in practice, but **[confirm]**, and it
    is the kind of thing Meta's review can object to.

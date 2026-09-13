@@ -81,7 +81,8 @@ human behind it, is worse than no automation.
 | Người dùng — thêm người | <https://business.facebook.com/settings/people> |
 | **Trang — gán tài sản + phân quyền** | <https://business.facebook.com/settings/pages> |
 | Hộp thư | <https://business.facebook.com/latest/inbox> |
-| **Tự động hóa** | <https://business.facebook.com/latest/inbox/automations> |
+| **Tự động hóa** (lời chào, FAQ, vắng mặt) | <https://business.facebook.com/latest/inbox/automations> |
+| **Meta Business Agent** — đã xác nhận có trên tài khoản này | <https://business.facebook.com/latest/business_ai/knowledge> |
 | Thông tin doanh nghiệp | <https://business.facebook.com/settings/info> |
 | Trung tâm bảo mật — 2FA, xác minh doanh nghiệp | <https://business.facebook.com/settings/security_center> |
 | Commerce Manager — danh mục sản phẩm (bước 2) | <https://business.facebook.com/commerce> |
@@ -96,7 +97,7 @@ Nếu link mở nhầm doanh nghiệp khác, thêm `?business_id=<id>` — id n�
 | 1 | You have **Toàn quyền kiểm soát** on the Page | [/settings/pages](https://business.facebook.com/settings/pages) — the Page asset, not just [/settings/people](https://business.facebook.com/settings/people) | Nothing below is possible at Editor level |
 | 2 | **No third-party chatbot is connected** | [/settings/business_apps](https://business.facebook.com/settings/business_apps) hoặc Cài đặt → Ứng dụng | Disconnect Abit / vPage / Botcake / AhaChat / Manychat first, or two bots reply over each other |
 | 3 | Page **address, hours and phone are filled in** | [/settings/info](https://business.facebook.com/settings/info) | Fill them. Both the FAQ automation and Business AI read this, and it is the answer to the single most common question |
-| 4 | Note whether **Business AI** appears | [/latest/inbox/automations](https://business.facebook.com/latest/inbox/automations) | Absent is fine — do Part A only |
+| 4 | ~~Note whether Business AI appears~~ **Confirmed present**, currently **AI đang tắt** | [/latest/business_ai/knowledge](https://business.facebook.com/latest/business_ai/knowledge) | — |
 
 Check 2 is the one that gets skipped and then costs an afternoon of confusion.
 
@@ -209,7 +210,7 @@ let them keep.
 
 ## 4. Part B — Business AI, only if it is there
 
-Skip entirely if step 2.4 found nothing. If it is there and you want it live today:
+It is there — confirmed 13/09/2026, and currently switched off. **Read §4.1 before the toggle.**
 
 1. **Ngôn ngữ: Tiếng Việt.** Re-check it after every other change.
 2. **Nguồn kiến thức:** turn on Lịch sử trò chuyện and Nội dung trang. Leave the product
@@ -220,6 +221,27 @@ Skip entirely if step 2.4 found nothing. If it is there and you want it live tod
 4. **Chủ đề chuyển nhân viên:** the list in [docs/12](12-business-ai-step-1.md) §3.6.
 5. **Turn Trả lời tức thì OFF** (§3.2) and **turn the static FAQ off or trim it** — two
    layers answering the same question is how a Page ends up contradicting itself.
+
+### 4.1 What is already in there — check before flipping the toggle
+
+The account's **Thông tin của bạn** already holds knowledge nobody on our side wrote:
+
+- **Sản phẩm của SENKA HOME — 14 mặt hàng**, created 18/5/26.
+- **Bảng giá — 15 tuần** old. **[confirm]** what that figure measures.
+
+The moment the toggle goes to *AI đang bật*, the agent answers from those. A fifteen-week-old
+price list is past the staleness limit `lavabo kb check` refuses a catalogue at, and the
+whole argument of [docs/13](13-business-ai-step-2.md) is that a wrong price quoted by the
+Page is worse than no reply. So, in order:
+
+1. Open the Bảng giá entry and compare a few prices against what the shop charges today.
+2. Open the 14-item product list and check the same.
+3. Stale or unsure → **remove or replace it before enabling**, and keep the agent to
+   policy answers as step 1 intends.
+4. Only then turn it on.
+
+Fourteen items is also worth reading as good news: the catalogue work in
+[docs/13](13-business-ai-step-2.md) may be a correction job rather than a build.
 
 ---
 

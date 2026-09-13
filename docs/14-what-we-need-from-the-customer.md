@@ -104,7 +104,7 @@ flowchart TD
 | 3 | **Is the Page inside a Business Portfolio** (Trình quản lý doanh nghiệp)? Which one? | Required for verification and for any API path | 5 min |
 | 4 | **Business Verification status** — done / in progress / not started. If not started, **start it today** (GPKD, mã số thuế, địa chỉ, điện thoại) | The only item with an unbounded external clock. Needed for Path B, useful regardless | 30 min + days of waiting |
 | 5 | **Is any third-party chatbot connected** to the Page (Abit, vPage/Nhanh, Botcake, AhaChat, Manychat)? | Two automations in one inbox = duplicate replies. It has to be off before we start | 5 min |
-| 6 | **Screenshot of** [Hộp thư → Tự động hóa](https://business.facebook.com/latest/inbox/automations) | Tells us in one image whether Business AI is available for this account, which decides Path A vs Path B | 2 min |
+| 6 | ~~Screenshot of the automations panel~~ **DONE 13/09/2026** | **Meta Business Agent is available** and currently off. Path A confirmed. [/latest/business_ai/knowledge](https://business.facebook.com/latest/business_ai/knowledge) | — |
 
 #### Getting item 1 right
 
