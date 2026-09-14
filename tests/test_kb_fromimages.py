@@ -194,14 +194,19 @@ class ScreenshotsOfThePageInbox(unittest.TestCase):
         self.assertIn("giá riêng cho khách", header)
 
     def test_a_negotiated_price_is_marked_rather_than_filed_as_list_price(self):
+        """"riêng anh em để 2tr5" is a deal for one customer. In a column of numbers it
+        reads exactly like a list price."""
         report = self.read({self.shop: _blank_chat() | {
             "co_noi_ve_gia": True, "nguoi_bao_gia": "shop", "gia": 2500000,
             "la_gia_khuyen_mai": True, "cau_noi_nguyen_van": "riêng anh em để 2tr5"}})
         write_draft(report, self.target)
         rows = list(load_workbook(self.target)["Dữ liệu"].iter_rows(values_only=True))
         header = list(rows[1])
-        self.assertEqual(rows[2][header.index("la_gia_khuyen_mai")], "có")
-        self.assertIn("riêng anh em", rows[2][header.index("cau_noi_nguyen_van")])
+        # Rows follow the folder's sort order, so find the one under test by filename
+        # rather than assuming it is first.
+        row = next(r for r in rows[2:] if r[0] == "shop.jpg")
+        self.assertEqual(row[header.index("la_gia_khuyen_mai")], "có")
+        self.assertIn("riêng anh em", row[header.index("cau_noi_nguyen_van")])
 
     def test_the_chat_draft_keeps_the_shops_exact_words(self):
         self.assertIn("cau_noi_nguyen_van", CHAT_COLUMNS)
