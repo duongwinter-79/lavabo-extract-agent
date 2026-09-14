@@ -16,6 +16,8 @@
     lavabo kb media --from <dump|xlsx> phone photos/videos, or photos pasted into a
                                       workbook -> named images/ + mapping
     lavabo kb publish --to drive/      filled pack -> the folder Meta's Drive connector reads
+    lavabo kb contact-sheet --from <folder>   number unnamed photos so the shop can
+                                      name them all in one message
     lavabo kb feed                     catalog.xlsx -> Meta Commerce product feed
 """
 
@@ -728,6 +730,9 @@ def cmd_kb(args, cfg: Config) -> int:
     from .kb.onefile import write_one_file
     from .kb.templates import write_intake, write_zip
 
+    if args.kb_command == "contact-sheet":
+        return _kb_contact_sheet(args, cfg)
+
     directory = Path(args.dir)
 
     if args.kb_command == "media":
@@ -812,6 +817,16 @@ def _kb_media(args, cfg: Config, directory: Path) -> int:
               file=sys.stderr)
         return 1
 
+    mapping = None
+    if args.map:
+        from .kb.contact import read_mapping
+        try:
+            mapping = read_mapping(Path(args.map))
+        except (ValueError, KeyError) as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        print(f"  dùng bảng đặt tên: {len(mapping)} ảnh đã có mã")
+
     known = None
     catalog = directory / "catalog.xlsx"
     if catalog.exists():
@@ -819,7 +834,8 @@ def _kb_media(args, cfg: Config, directory: Path) -> int:
 
     images = directory / "images"
     report = (organise_workbook(source, images, known_skus=known) if workbook
-              else organise(source, images, known_skus=known, frames=args.frames))
+              else organise(source, images, known_skus=known, frames=args.frames,
+                            mapping=mapping))
 
     print(f"  {report.photo_count} ảnh cho {len(report.products)} sản phẩm -> {images}")
     if report.videos:
@@ -847,6 +863,31 @@ def _kb_media(args, cfg: Config, directory: Path) -> int:
         write_mapping(report, directory / "images.xlsx")
         print(f"\n  đã ghi {directory / 'images.xlsx'}")
     print(f"\n  Kiểm tra lại: lavabo kb check --dir {directory}")
+    return 0
+
+
+def _kb_contact_sheet(args, cfg: Config) -> int:
+    """Turn a pile of nameless photos into one question the shop can answer."""
+    from .kb.contact import build
+
+    source = Path(args.source)
+    if not source.is_dir():
+        print(f"Không tìm thấy thư mục {source}", file=sys.stderr)
+        return 1
+
+    try:
+        sheet = build(source, Path(args.out))
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+    print(f"  {sheet.count} ảnh, {len(sheet.pages)} trang")
+    for page in sheet.pages:
+        print(f"    {page}")
+    print(f"    {sheet.mapping}")
+    print("\n  Gửi các trang ảnh cho shop, hỏi: ảnh số mấy là mẫu nào.")
+    print(f"  Điền mã vào cột ma_sp trong {sheet.mapping.name}, rồi chạy:")
+    print(f"    lavabo kb media --from {source} --map {sheet.mapping} --dir intake")
     return 0
 
 
@@ -1046,6 +1087,14 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--frames", type=int, default=3,
                    help="stills to pull from each demo video (default 3)")
     q.add_argument("--no-mapping", action="store_true", help="do not rewrite images.xlsx")
+    q.add_argument("--map", help="a filled anh-can-dat-ten.xlsx from `kb contact-sheet`, "
+                                 "for photos that arrived with no product name")
+    add_llm_args(q)
+
+    q = kb.add_parser("contact-sheet",
+                      help="number unnamed photos so the shop can name them in one message")
+    q.add_argument("--from", dest="source", required=True, help="folder of unnamed photos")
+    q.add_argument("--out", default="contact-sheet", help="where to write the pages")
     add_llm_args(q)
 
     q = kb.add_parser("publish",

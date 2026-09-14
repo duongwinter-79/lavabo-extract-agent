@@ -194,6 +194,18 @@ lavabo kb media --from ~/Downloads/ANH-SAN-PHAM --dir intake   # a folder
 lavabo kb media --from ~/Downloads/pack.xlsx --dir intake          # photos pasted into the workbook
 ```
 
+When the photos arrive with no product name at all — sent straight into a chat, `received_8837221.jpg`, no folders — number them and ask once:
+
+```bash
+lavabo kb contact-sheet --from ~/anh-nhan-duoc --out contact-sheet/
+#   → anh-danh-so-1.jpg   send this to the shop: "ảnh số mấy là mẫu nào?"
+#   → anh-can-dat-ten.xlsx   fill ma_sp from their reply
+lavabo kb media --from ~/anh-nhan-duoc --map contact-sheet/anh-can-dat-ten.xlsx --dir intake
+```
+
+One message, one reply, every photo named. A row left blank stays unnamed rather than being
+filed under a plausible neighbour — the premise of this route is that nobody could tell.
+
 It renames, rotates, downscales, pulls stills from demo videos, writes `images.xlsx`, and
 reports what it could not place: HEIC files (with the one iPhone setting that fixes them
 for good), loose photos belonging to no product, and codes absent from `catalog.xlsx`. It

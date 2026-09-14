@@ -139,9 +139,13 @@ def _write_bytes(blob: bytes, target: Path) -> bool:
 
 
 def organise(source: Path, images_dir: Path, *, known_skus: set[str] | None = None,
-             frames: int = FRAMES_PER_VIDEO) -> MediaReport:
+             frames: int = FRAMES_PER_VIDEO,
+             mapping: dict[str, tuple[str, str]] | None = None) -> MediaReport:
     report = MediaReport()
     images_dir.mkdir(parents=True, exist_ok=True)
+
+    if mapping is not None:
+        return _from_mapping(source, images_dir, mapping, known_skus, report, frames)
 
     for entry in sorted(source.iterdir()):
         if entry.is_dir():
@@ -151,6 +155,41 @@ def organise(source: Path, images_dir: Path, *, known_skus: set[str] | None = No
                 _one_file(entry, sku, images_dir, report, frames)
             elif entry.suffix.lower() in PHOTO_SUFFIXES | HEIC_SUFFIXES | VIDEO_SUFFIXES:
                 report.unmapped.append(entry.name)
+
+    if known_skus is not None:
+        report.unknown_sku = sorted(s for s in report.products if s.lower() not in known_skus)
+    return report
+
+
+def _from_mapping(source: Path, images_dir: Path, mapping: dict[str, tuple[str, str]],
+                  known_skus: set[str] | None, report: MediaReport,
+                  frames: int) -> MediaReport:
+    """Name photos from a filled contact sheet rather than from their folder.
+
+    A file with no row is left unmapped rather than filed somewhere plausible: the whole
+    reason this path exists is that nobody could tell which product it was.
+    """
+    for path in sorted(p for p in source.rglob("*") if p.is_file()):
+        if path.suffix.lower() not in PHOTO_SUFFIXES | HEIC_SUFFIXES | VIDEO_SUFFIXES:
+            continue
+        entry = mapping.get(path.name.lower())
+        if not entry:
+            report.unmapped.append(path.name)
+            continue
+        sku, role = entry
+        saved = report.products.setdefault(sku, [])
+        if path.suffix.lower() in HEIC_SUFFIXES:
+            report.heic.append(f"{sku}/{path.name}")
+            continue
+        if path.suffix.lower() in VIDEO_SUFFIXES:
+            report.videos.append(f"{sku}/{path.name}")
+            saved.extend(_video_frames(path, sku, images_dir, frames, len(saved), saved))
+            continue
+        name = _target_name(sku, role or "", len(saved), saved, use_hints=bool(role))
+        if _downscale(path, images_dir / name):
+            saved.append(name)
+        else:
+            report.skipped.append(path.name)
 
     if known_skus is not None:
         report.unknown_sku = sorted(s for s in report.products if s.lower() not in known_skus)
