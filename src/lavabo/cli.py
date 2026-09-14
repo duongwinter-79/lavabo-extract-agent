@@ -18,6 +18,8 @@
     lavabo kb publish --to drive/      filled pack -> the folder Meta's Drive connector reads
     lavabo kb contact-sheet --from <folder>   number unnamed photos so the shop can
                                       name them all in one message
+    lavabo kb from-images --from <folder>     read size/colour/price OFF the pictures
+                                      into a draft a human confirms
     lavabo kb feed                     catalog.xlsx -> Meta Commerce product feed
 """
 
@@ -733,6 +735,9 @@ def cmd_kb(args, cfg: Config) -> int:
     if args.kb_command == "contact-sheet":
         return _kb_contact_sheet(args, cfg)
 
+    if args.kb_command == "from-images":
+        return _kb_from_images(args, cfg)
+
     directory = Path(args.dir)
 
     if args.kb_command == "media":
@@ -863,6 +868,36 @@ def _kb_media(args, cfg: Config, directory: Path) -> int:
         write_mapping(report, directory / "images.xlsx")
         print(f"\n  đã ghi {directory / 'images.xlsx'}")
     print(f"\n  Kiểm tra lại: lavabo kb check --dir {directory}")
+    return 0
+
+
+def _kb_from_images(args, cfg: Config) -> int:
+    """Read what the pictures say, into a draft nobody may mistake for a price list."""
+    from .extract.base import build_extractor
+    from .kb.fromimages import read_folder, write_draft
+
+    source = Path(args.source)
+    if not source.is_dir():
+        print(f"Không tìm thấy thư mục {source}", file=sys.stderr)
+        return 1
+
+    schema = cfg.load_schema()
+    extractor = build_extractor(cfg.extract, schema)
+    report = read_folder(source, extractor, limit=args.limit)
+    if not report.readings:
+        print(f"Không có ảnh nào trong {source}", file=sys.stderr)
+        return 1
+
+    target = write_draft(report, Path(args.out))
+    print(f"  {target}")
+    print(f"  {len(report.readings)} ảnh · {len(report.products)} là ảnh sản phẩm · "
+          f"{len(report.with_price)} có giá đọc được")
+    if report.failed:
+        print(f"  {len(report.failed)} ảnh không đọc được")
+    print(f"  tokens: {report.input_tokens} vào / {report.output_tokens} ra")
+    print("\n  ĐÂY LÀ BẢN NHÁP. Giá trên ảnh có thể cũ, hoặc là giá của nơi khác.")
+    print("  Đối chiếu với shop, điền cột ma_sp và da_kiem_tra, rồi mới chuyển sang "
+          "catalog.xlsx.")
     return 0
 
 
@@ -1095,6 +1130,13 @@ def main(argv: list[str] | None = None) -> int:
                       help="number unnamed photos so the shop can name them in one message")
     q.add_argument("--from", dest="source", required=True, help="folder of unnamed photos")
     q.add_argument("--out", default="contact-sheet", help="where to write the pages")
+    add_llm_args(q)
+
+    q = kb.add_parser("from-images",
+                      help="read size/colour/price off product pictures into a draft")
+    q.add_argument("--from", dest="source", required=True, help="folder of product images")
+    q.add_argument("--out", default="catalog-draft.xlsx", help="draft .xlsx to write")
+    q.add_argument("--limit", type=int, help="stop after N images — use it first")
     add_llm_args(q)
 
     q = kb.add_parser("publish",

@@ -268,6 +268,8 @@ lavabo kb init --one-file p.xlsx   # same pack as ONE workbook, for Google Sheet
                                # ready-made copies of both live in templates/
 lavabo kb check --dir intake   # refuse a price list before it reaches Meta
 lavabo kb publish --to drive/   # filled pack -> the folder Meta's Drive connector reads
+lavabo kb from-images --from <product images>
+                               # read size/colour/price OFF the pictures
 lavabo kb contact-sheet --from <unnamed photos>
                                # number them so the shop names all at once
 lavabo kb media --from <phone dump> --dir intake

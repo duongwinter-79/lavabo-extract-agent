@@ -202,3 +202,60 @@ get replaced with what is actually on screen.
 | [docs/16-quick-setup.md](16-quick-setup.md) | the same procedure, for a human doing it by hand |
 | [docs/12-business-ai-step-1.md](12-business-ai-step-1.md) | the Business AI guardrail blocks for step 4 |
 | [docs/14-what-we-need-from-the-customer.md](14-what-we-need-from-the-customer.md) | the access §1 assumes |
+
+---
+
+## 4. Second brief — the product images on this machine
+
+For a later session, when the images are on the desktop and the cloud session cannot see
+them. Paste everything between the lines.
+
+---
+
+The shop's product images are in `~/Desktop/lavabo images`. Many of them have the
+specification printed into the picture — kích thước, màu, and often a price. Turn that into
+a draft catalogue for a human to confirm.
+
+**Never treat a number printed on an image as the shop's price.** It is what somebody
+charged on the day that image was made, possibly a different shop entirely. Everything you
+produce is a draft.
+
+### Step 1 — look before spending anything
+
+Open three or four of the images and tell me what they actually are: photos of a product,
+marketing graphics with text, screenshots of a price list, or a mix. Quote the text you can
+see on one of them. If they are not the shop's own images — a supplier's catalogue, a
+marketplace listing — stop and say so, because then the prices are not the shop's to quote.
+
+### Step 2 — read a handful first
+
+From the repo (clone it if it is not on this machine —
+`https://github.com/duongwinter-79/lavabo-extract-agent`, branch
+`claude/fervent-bell-cpq3ru`), with a Gemini or Anthropic key in `.env`:
+
+```bash
+lavabo kb from-images --from ~/Desktop/lavabo\ images --limit 5 --out draft-5.xlsx
+```
+
+Show me `draft-5.xlsx` before running the rest. Five images cost almost nothing and tell us
+whether the reading is worth trusting; a hundred images of a prompt that misreads prices is
+a hundred wrong numbers to check by hand.
+
+### Step 3 — the rest, then report
+
+```bash
+lavabo kb from-images --from ~/Desktop/lavabo\ images --out catalog-draft.xlsx
+```
+
+Tell me: how many images, how many read as products, how many had a legible price, and
+which ones failed. Attach the draft.
+
+### What NOT to do
+
+- Do not write into `catalog.xlsx`. The draft is a separate file on purpose.
+- Do not fill `ma_sp` yourself. A photograph does not carry a product code; the shop
+  supplies it, or `lavabo kb contact-sheet` asks them for it in one message.
+- Do not upload anything to Meta. The agent stays off until a human has confirmed the
+  prices against what the shop charges today.
+
+---

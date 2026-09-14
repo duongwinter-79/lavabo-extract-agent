@@ -16,6 +16,14 @@ customer has a screenshot. Everything below is built around that one sentence.
 
 ---
 
+> **Update, 14/09/2026 — the Bảng giá turned out to be empty.** Opening it found a single
+> product image and no prices at all, so there is no stale price list in the agent's
+> knowledge and the audit worry below is smaller than it looked: nothing there can quote a
+> wrong number, because nothing there quotes a number. The 14-item product list still needs
+> checking. Building the catalogue is now a build, not a correction — and the shop's own
+> marketing images carry kích thước, màu and sometimes a price, which `lavabo kb
+> from-images` reads into a draft for a human to confirm.
+
 > **Update, 13/09/2026 — a catalogue already exists.** The live account's Meta Business
 > Agent knowledge holds *Sản phẩm của SENKA HOME — 14 mặt hàng* (created 18/5/26) and a
 > *Bảng giá* reading **15 tuần** old. So step 2 may be a correction job, not a build — but
