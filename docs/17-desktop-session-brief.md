@@ -1,9 +1,13 @@
-# Brief for the Claude session on the shop's machine
+# Briefs for the Claude session on our own machine
 
-The session that can configure Meta Business Suite is the one running **on the machine
-whose Chrome is logged in**. A cloud session cannot: it has no browser profile, no
-cookies, and `business.facebook.com` is blocked by its egress proxy (verified — `curl`
-returns 403 at the proxy).
+The session that can configure Meta Business Suite is the one running **on our own
+machine** — the one with Chrome logged into the shop's Business account and a local clone
+of this repo. A cloud session cannot: it has no browser profile, no cookies, and
+`business.facebook.com` is blocked by its egress proxy (verified — `curl` returns 403 at
+the proxy).
+
+To be clear about whose machine this is: **ours, not the shop's.** We hold delegated access
+to SENKA HOME's Page; the shop is on the other end of a phone.
 
 So this file is the handover. Paste §2 into that session. §1 is for the human sitting
 next to it.
@@ -17,7 +21,8 @@ next to it.
    with **Toàn quyền kiểm soát**. Appearing under
    [/settings/people](https://business.facebook.com/settings/people) alone is not enough
    and is the usual reason settings are unreachable.
-2. **Be at the keyboard.** This is a live business account that real customers message.
+2. **Be at the keyboard.** This is someone else's live business account, and real
+   customers are messaging it.
    The brief tells the session to stop and ask before anything becomes customer-facing;
    that safeguard only works if somebody is there to answer.
 3. **Have the shop reachable** (phone or Zalo) for the handful of facts that cannot be
@@ -205,38 +210,45 @@ get replaced with what is actually on screen.
 
 ---
 
-## 4. Second brief — reading the product images on this machine
+## 4. Second brief — reading the product images
 
-Provenance is settled: **the shop sent these images to customers from the Page inbox**, so
+Provenance is settled: **the shop sent these images to customers from its Page inbox**, so
 the prices are the shop's own. That does not make them current — a price quoted weeks ago,
 or quoted specially to one customer, reads exactly like a list price once it is a number in
 a column. Everything this produces is a draft a human confirms.
 
-The machine is Windows. Paste everything between the lines, replacing `<user>`.
+Runs on **our** machine, where the repo already is. Paste everything between the lines,
+fixing the two paths.
 
 ---
 
-Bạn đang chạy trên máy của shop SENKA HOME (thiết bị vệ sinh: tủ lavabo, gương,
-sen tắm, chậu rửa).
+Máy này là máy của tôi (bên triển khai), đã có sẵn repo lavabo-extract-agent.
+Khách hàng là shop SENKA HOME — thiết bị vệ sinh: tủ lavabo, gương, sen tắm,
+chậu rửa. Tôi có quyền truy cập Meta Business của shop, nhưng shop không ngồi
+đây; muốn hỏi gì về sản phẩm thì phải nhắn cho họ.
 
-NHIỆM VỤ: đọc thông tin sản phẩm từ các ảnh trong thư mục
-  C:\Users\<user>\Desktop\lavabo images
+NHIỆM VỤ: đọc thông tin sản phẩm từ các ảnh trong
+  <ĐƯỜNG DẪN THƯ MỤC ẢNH>
 thành một bảng nháp để người kiểm tra lại.
 
-Nguồn ảnh: chính shop đã gửi những ảnh này cho khách qua Messenger của Page.
-Nên giá trong ảnh là giá shop từng báo — nhưng có thể đã cũ, hoặc là giá riêng
-cho một khách. Mọi thứ bạn tạo ra là BẢN NHÁP, không phải bảng giá.
+Nguồn ảnh: chính shop đã gửi những ảnh này cho khách qua Messenger của Page,
+tôi lấy ra từ Hộp thư. Nên giá trong ảnh là giá shop từng báo — nhưng có thể đã
+cũ, hoặc là giá riêng cho một khách. Mọi thứ bạn tạo ra là BẢN NHÁP, không phải
+bảng giá.
 
-== BƯỚC 0: cài đặt (bỏ qua nếu đã có repo) ==
+== BƯỚC 0: chuẩn bị repo (đã có sẵn trên máy) ==
 
-  git clone https://github.com/duongwinter-79/lavabo-extract-agent.git
-  cd lavabo-extract-agent
+  cd <ĐƯỜNG DẪN REPO lavabo-extract-agent>
+  git fetch origin
   git checkout claude/fervent-bell-cpq3ru
-  powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
-  .venv\Scripts\activate
+  git pull
 
-Cần một API key trong .env — GEMINI_API_KEY (miễn phí, lấy ở
-https://aistudio.google.com/apikey). Kiểm tra bằng:  lavabo check
+Nếu chưa có .venv thì chạy scripts\setup.ps1 (Windows) hoặc bash scripts/setup.sh.
+Rồi kích hoạt: .venv\Scripts\activate  (hoặc source .venv/bin/activate)
+
+Cần GEMINI_API_KEY trong .env (miễn phí: https://aistudio.google.com/apikey).
+Kiểm tra:  lavabo check
+Dòng "FAIL messenger" là bình thường, không liên quan việc này.
 
 == BƯỚC 1: NHÌN trước khi chạy gì ==
 
@@ -250,13 +262,13 @@ Trả lời xong hãy dừng lại, đừng chạy tiếp. Câu trả lời này
 == BƯỚC 2: đọc thử 5 ảnh ==
 
 Ảnh sản phẩm có chữ:
-  lavabo kb from-images --from "C:\Users\<user>\Desktop\lavabo images" --limit 5 --out draft-5.xlsx
+  lavabo kb from-images --from "<ĐƯỜNG DẪN THƯ MỤC ẢNH>" --limit 5 --out draft-5.xlsx
 
 Ảnh chụp màn hình đoạn chat:
-  lavabo kb from-images --from "C:\Users\<user>\Desktop\lavabo images" --mode chat --limit 5 --out draft-5.xlsx
+  lavabo kb from-images --from "<ĐƯỜNG DẪN THƯ MỤC ẢNH>" --mode chat --limit 5 --out draft-5.xlsx
 
-Mở draft-5.xlsx và báo lại cho tôi từng dòng đọc được gì. 5 ảnh gần như không
-tốn tiền, và cho biết prompt có đọc đúng không trước khi chạy cả trăm ảnh.
+Mở draft-5.xlsx và báo lại từng dòng đọc được gì. 5 ảnh gần như không tốn tiền,
+và cho biết prompt có đọc đúng không trước khi chạy cả trăm ảnh.
 
 == BƯỚC 3: chạy hết, rồi báo cáo ==
 
@@ -270,9 +282,9 @@ Bỏ --limit, --out catalog-draft.xlsx. Báo lại:
 
 - KHÔNG ghi vào catalog.xlsx. Bản nháp là file riêng, cố ý như vậy.
 - KHÔNG tự điền cột ma_sp. Ảnh không chứa mã sản phẩm; model được hỏi sẽ bịa ra.
-- KHÔNG tải gì lên Meta. Meta Business Agent đang TẮT và phải giữ nguyên như vậy
-  cho tới khi có người đối chiếu giá với shop.
-- KHÔNG sửa file nào trong repo.
+- KHÔNG tải gì lên Meta, KHÔNG bật Meta Business Agent. Nó đang TẮT và phải giữ
+  nguyên cho tới khi có người đối chiếu giá với shop.
+- KHÔNG commit hay push gì trong repo. Cần sửa code thì báo tôi.
 
 ---
 

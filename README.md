@@ -382,7 +382,7 @@ switching to `on`.
 | [docs/10-setup-guide.md](docs/10-setup-guide.md) | **start here on a new machine** — install, Gemini key, autostart, Tailscale, first run |
 | [docs/11-facebook-reply-agent.md](docs/11-facebook-reply-agent.md) | plan for an agent that **answers** Facebook messages — what the shop must hand over, how it is stored, how it replies |
 | [docs/16-quick-setup.md](docs/16-quick-setup.md) | **start here to go live today** — basic auto-replies from a ten-minute phone call, no intake pack |
-| [docs/17-desktop-session-brief.md](docs/17-desktop-session-brief.md) | the prompt to hand a Claude session running on the shop's own machine, where the browser is logged in |
+| [docs/17-desktop-session-brief.md](docs/17-desktop-session-brief.md) | prompts to hand the Claude session on our own machine — the one with the logged-in browser and the repo |
 | [docs/18-google-drive-source.md](docs/18-google-drive-source.md) | **the knowledge source** — one Drive folder the shop edits, replacing the catalogue kept inside Meta |
 | [docs/19-drive-format-probe.md](docs/19-drive-format-probe.md) | the half-hour test of which file formats the Drive connector reads, and whether it reads a price table correctly |
 | [docs/12-business-ai-step-1.md](docs/12-business-ai-step-1.md) | **first configuration step** — turning on Meta Business AI for the Page, in Vietnamese, without letting it quote a price |
