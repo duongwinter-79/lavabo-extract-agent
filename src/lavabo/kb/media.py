@@ -69,6 +69,75 @@ class MediaReport:
         return sum(len(v) for v in self.products.values())
 
 
+def organise_workbook(path: Path, images_dir: Path, *,
+                      known_skus: set[str] | None = None) -> MediaReport:
+    """Pull images out of a workbook somebody pasted them into.
+
+    Telling a shop "put photos in a folder, not in the spreadsheet" is correct and will
+    be ignored by about half of them, because pasting a picture next to the product is
+    the obvious thing to do. openpyxl keeps the anchor, so the row a picture sits on
+    identifies the product, and the intuitive act stops being a dead end.
+
+    What this cannot see: images inserted *into a cell* by Google Sheets, or an =IMAGE()
+    formula. Those are not drawings and never reach the file as one. **[confirm]** against
+    a real Sheets export; when in doubt the folder route always works.
+    """
+    from openpyxl import load_workbook
+
+    report = MediaReport()
+    images_dir.mkdir(parents=True, exist_ok=True)
+    wb = load_workbook(path)
+
+    for ws in wb.worksheets:
+        header = [str(c).strip().lower() if c is not None else ""
+                  for c in next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())]
+        if "ma_sp" not in header:
+            continue
+        column = header.index("ma_sp")
+
+        by_row: dict[int, str] = {}
+        for number, values in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            if column < len(values) and values[column]:
+                by_row[number] = str(values[column]).strip()
+
+        for image in getattr(ws, "_images", []):
+            row = getattr(image.anchor, "_from", None)
+            sku = by_row.get(row.row + 1) if row is not None else None
+            if not sku:
+                report.unmapped.append(f"{ws.title}: ảnh không nằm trên dòng sản phẩm nào")
+                continue
+            saved = report.products.setdefault(sku, [])
+            name = _target_name(sku, "", len(saved), saved, use_hints=False)
+            if _write_bytes(image._data(), images_dir / name):
+                saved.append(name)
+            else:
+                report.skipped.append(f"{sku}: một ảnh không đọc được")
+
+    if known_skus is not None:
+        report.unknown_sku = sorted(s for s in report.products if s.lower() not in known_skus)
+    return report
+
+
+def _write_bytes(blob: bytes, target: Path) -> bool:
+    """Downscale from memory, so an embedded photo gets the same treatment as a file."""
+    import io
+
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        target.write_bytes(blob)
+        return True
+    try:
+        with Image.open(io.BytesIO(blob)) as img:
+            img = ImageOps.exif_transpose(img).convert("RGB")
+            img.thumbnail((MAX_EDGE, MAX_EDGE))
+            img.save(target, "JPEG", quality=JPEG_QUALITY, optimize=True)
+        return True
+    except Exception as exc:
+        log.warning("bỏ qua một ảnh nhúng: %s", exc)
+        return False
+
+
 def organise(source: Path, images_dir: Path, *, known_skus: set[str] | None = None,
              frames: int = FRAMES_PER_VIDEO) -> MediaReport:
     report = MediaReport()

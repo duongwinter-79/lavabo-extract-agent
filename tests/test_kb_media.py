@@ -20,7 +20,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from PIL import Image                                             # noqa: E402
 
-from lavabo.kb.media import MAX_EDGE, organise, write_mapping     # noqa: E402
+from lavabo.kb.media import (MAX_EDGE, organise, organise_workbook,  # noqa: E402
+                             write_mapping)
 from lavabo.video import ffmpeg_path                              # noqa: E402
 
 
@@ -159,3 +160,75 @@ class TheMapping(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PhotosPastedIntoTheWorkbook(unittest.TestCase):
+    """The shop will paste pictures next to the products, because that is the obvious
+    thing to do. openpyxl keeps the anchor, so the row identifies the product and the
+    intuitive act stops being a dead end."""
+
+    def setUp(self):
+        from openpyxl import Workbook
+        from openpyxl.drawing.image import Image as XLImage
+
+        self.dir = Path(tempfile.mkdtemp())
+        self.images = self.dir / "images"
+        for n in range(1, 4):
+            photo(self.dir / f"p{n}.jpg", size=(900, 700))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Dữ liệu"
+        ws.append(["ma_sp", "ten_sp"])
+        for code in ("BC52-80", "GUONG-60", "SEN-CAY"):
+            ws.append([code, f"Sản phẩm {code}"])
+        for n, row in enumerate([2, 3, 4], 1):
+            image = XLImage(str(self.dir / f"p{n}.jpg"))
+            image.width, image.height = 80, 60
+            ws.add_image(image, f"C{row}")
+        self.book = self.dir / "pasted.xlsx"
+        wb.save(self.book)
+
+    def test_each_image_lands_under_the_product_on_its_row(self):
+        report = organise_workbook(self.book, self.images)
+        self.assertEqual(report.photo_count, 3)
+        self.assertEqual({p.name for p in self.images.iterdir()},
+                         {"BC52-80__front.jpg", "GUONG-60__front.jpg", "SEN-CAY__front.jpg"})
+
+    def test_extracted_images_are_downscaled_like_any_other(self):
+        organise_workbook(self.book, self.images)
+        with Image.open(self.images / "BC52-80__front.jpg") as img:
+            self.assertLessEqual(max(img.size), MAX_EDGE)
+
+    def test_two_photos_on_one_row_both_survive(self):
+        from openpyxl import load_workbook
+        from openpyxl.drawing.image import Image as XLImage
+
+        wb = load_workbook(self.book)
+        ws = wb["Dữ liệu"]
+        extra = XLImage(str(self.dir / "p1.jpg"))
+        extra.width, extra.height = 80, 60
+        ws.add_image(extra, "D2")
+        wb.save(self.book)
+
+        report = organise_workbook(self.book, self.images)
+        self.assertEqual(len(report.products["BC52-80"]), 2)
+
+    def test_an_image_floating_off_the_products_is_reported_not_guessed(self):
+        from openpyxl import load_workbook
+        from openpyxl.drawing.image import Image as XLImage
+
+        wb = load_workbook(self.book)
+        ws = wb["Dữ liệu"]
+        stray = XLImage(str(self.dir / "p1.jpg"))
+        stray.width, stray.height = 80, 60
+        ws.add_image(stray, "C40")
+        wb.save(self.book)
+
+        report = organise_workbook(self.book, self.images)
+        self.assertEqual(len(report.unmapped), 1)
+        self.assertEqual(report.photo_count, 3)
+
+    def test_a_code_not_in_the_catalogue_is_still_flagged(self):
+        report = organise_workbook(self.book, self.images, known_skus={"bc52-80"})
+        self.assertEqual(report.unknown_sku, ["GUONG-60", "SEN-CAY"])

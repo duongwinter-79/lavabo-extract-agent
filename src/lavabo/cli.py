@@ -13,7 +13,8 @@
     lavabo kb init                     write the blank intake pack for the shop
     lavabo kb check                    validate the filled-in pack before uploading
     lavabo kb init --one-file x.xlsx   the whole pack as ONE workbook, for Google Sheets
-    lavabo kb media --from <dump>      phone photos/videos -> named images/ + mapping
+    lavabo kb media --from <dump|xlsx> phone photos/videos, or photos pasted into a
+                                      workbook -> named images/ + mapping
     lavabo kb publish --to drive/      filled pack -> the folder Meta's Drive connector reads
     lavabo kb feed                     catalog.xlsx -> Meta Commerce product feed
 """
@@ -802,11 +803,13 @@ def cmd_kb(args, cfg: Config) -> int:
 def _kb_media(args, cfg: Config, directory: Path) -> int:
     """Turn a phone dump into the images/ folder the pack expects."""
     from .kb.check import read_catalog
-    from .kb.media import organise, write_mapping
+    from .kb.media import organise, organise_workbook, write_mapping
 
     source = Path(args.source)
-    if not source.is_dir():
-        print(f"Không tìm thấy thư mục {source}", file=sys.stderr)
+    workbook = source.is_file() and source.suffix.lower() == ".xlsx"
+    if not source.is_dir() and not workbook:
+        print(f"Không tìm thấy {source} (cần một thư mục ảnh, hoặc file .xlsx có ảnh dán sẵn)",
+              file=sys.stderr)
         return 1
 
     known = None
@@ -815,7 +818,8 @@ def _kb_media(args, cfg: Config, directory: Path) -> int:
         known = {str(r.get("ma_sp", "")).strip().lower() for r in read_catalog(directory)}
 
     images = directory / "images"
-    report = organise(source, images, known_skus=known, frames=args.frames)
+    report = (organise_workbook(source, images, known_skus=known) if workbook
+              else organise(source, images, known_skus=known, frames=args.frames))
 
     print(f"  {report.photo_count} ảnh cho {len(report.products)} sản phẩm -> {images}")
     if report.videos:
@@ -1036,7 +1040,8 @@ def main(argv: list[str] | None = None) -> int:
     add_llm_args(q)
     q = kb.add_parser("media", help="phone photos and demo videos into the pack's images/")
     q.add_argument("--from", dest="source", required=True,
-                   help="folder of phone media: one subfolder per mã SP")
+                   help="a folder of phone media (one subfolder per mã SP), or an .xlsx "
+                        "with photos pasted next to the products")
     q.add_argument("--dir", default="intake")
     q.add_argument("--frames", type=int, default=3,
                    help="stills to pull from each demo video (default 3)")

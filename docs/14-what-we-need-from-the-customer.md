@@ -190,7 +190,8 @@ lavabo kb check --file pack.xlsx        # the Google Sheets copy, downloaded as 
 Media arrives separately, straight off a phone — a folder per mã SP, any filenames:
 
 ```bash
-lavabo kb media --from ~/Downloads/ANH-SAN-PHAM --dir intake
+lavabo kb media --from ~/Downloads/ANH-SAN-PHAM --dir intake   # a folder
+lavabo kb media --from ~/Downloads/pack.xlsx --dir intake          # photos pasted into the workbook
 ```
 
 It renames, rotates, downscales, pulls stills from demo videos, writes `images.xlsx`, and

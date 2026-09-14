@@ -38,6 +38,19 @@ tự nhận ra loại ảnh. Không đặt cũng không sao.
 khung hình rõ nhất trong video làm ảnh sản phẩm — với nhiều mẫu, video lắp đặt
 là thứ duy nhất chụp được sản phẩm trong phòng tắm thật.
 
+## Dán ảnh thẳng vào file Excel được không?
+
+Được, nhưng **thư mục vẫn tốt hơn**: ảnh dán vào Excel làm file nặng, và
+khi mở bằng Google Sheets thì ảnh hay bị rơi mất.
+
+Nếu anh/chị vẫn muốn dán: dán ảnh vào **đúng dòng của sản phẩm đó** trong
+tab "Danh mục sản phẩm" — bên em lấy ảnh ra theo dòng, nên dán lệch dòng
+là gán nhầm sản phẩm. Một dòng dán nhiều ảnh cũng được.
+
+Lưu ý: ảnh chèn bằng chức năng "chèn ảnh vào ô" của Google Sheets hoặc
+bằng công thức =IMAGE(...) thì bên em KHÔNG lấy ra được. Dán ảnh bình
+thường, hoặc dùng thư mục.
+
 ## Hai lỗi hay gặp
 
 **Ảnh iPhone định dạng HEIC** bên em không đọc được. Sửa một lần cho tất cả:
