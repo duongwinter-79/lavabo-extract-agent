@@ -153,14 +153,7 @@ def _write_workbook(path: Path, sheet: SheetSpec) -> None:
         cell.comment = _comment(fld)
         ws.column_dimensions[get_column_letter(idx)].width = _width(fld)
 
-    if sheet.seed_rows:
-        # Seeded content is the answer, not an example of one, so it is not greyed out.
-        for row in sheet.seed_rows:
-            ws.append(list(row))
-    else:
-        ws.append(_example_row(sheet))
-        for idx in range(1, len(sheet.fields) + 1):
-            ws.cell(row=2, column=idx).font = EXAMPLE_FONT
+    seed_or_example(ws, sheet)
 
     _apply_formats(ws, sheet)
     _apply_validation(ws, sheet)
@@ -175,6 +168,24 @@ def _write_workbook(path: Path, sheet: SheetSpec) -> None:
     wb.save(tmp)
     os.replace(tmp, path)
     log.info("wrote %s", path)
+
+
+def seed_or_example(ws, sheet: SheetSpec) -> None:
+    """Fill row 2 onward: seeded content, or one greyed-out example.
+
+    Shared with the one-file workbook. It had its own copy, and when handoff.xlsx gained
+    twelve seeded rows that copy kept writing a single example row instead -- the tab
+    arrived empty in the version we were about to hand a customer.
+    """
+    if sheet.seed_rows:
+        # Seeded content is the answer, not an example of one, so it is not greyed out.
+        for row in sheet.seed_rows:
+            ws.append(list(row))
+        return
+
+    ws.append(_example_row(sheet))
+    for idx in range(1, len(sheet.fields) + 1):
+        ws.cell(row=2, column=idx).font = EXAMPLE_FONT
 
 
 def _comment(fld):

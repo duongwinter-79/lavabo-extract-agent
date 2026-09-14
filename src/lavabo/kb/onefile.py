@@ -29,7 +29,7 @@ from .spec import (CATALOG, DOC_SPECS, FAQ, HANDOFF, IMAGES, PLACEHOLDER,
                    SheetSpec)
 from .templates import (EXAMPLE_FONT, HEADER_FILL, HEADER_FONT, REQUIRED_FILL,
                         TITLE_FONT, _apply_formats, _apply_validation, _comment,
-                        _example_row, _width)
+                        _width, seed_or_example)
 
 log = logging.getLogger(__name__)
 
@@ -134,9 +134,7 @@ def _data_tab(ws, sheet: SheetSpec) -> None:
         cell.comment = _comment(field)
         ws.column_dimensions[get_column_letter(idx)].width = _width(field)
 
-    ws.append(_example_row(sheet))
-    for idx in range(1, len(sheet.fields) + 1):
-        ws.cell(row=2, column=idx).font = EXAMPLE_FONT
+    seed_or_example(ws, sheet)
 
     _apply_formats(ws, sheet)
     _apply_validation(ws, sheet)

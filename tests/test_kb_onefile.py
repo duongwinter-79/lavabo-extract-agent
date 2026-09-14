@@ -43,6 +43,19 @@ class TheWorkbook(unittest.TestCase):
                 header = [c.value for c in book[title][1]]
                 self.assertEqual(header, sheet.names)
 
+    def test_the_handoff_tab_carries_its_seeded_rows(self):
+        """The one-file build had its own copy of the row-seeding logic, so this tab
+        shipped with a single example row where twelve rules should be."""
+        ws = load_workbook(self.path)["Không được tự trả lời"]
+        topics = [r[0] for r in ws.iter_rows(min_row=2, values_only=True) if r[0]]
+        self.assertEqual(len(topics), len(spec.LOCKED_TOPICS))
+        self.assertIn("Khiếu nại, hàng lỗi, hàng vỡ", topics)
+
+    def test_seeded_tabs_carry_no_example_row(self):
+        ws = load_workbook(self.path)["Không được tự trả lời"]
+        cells = [str(c) for row in ws.iter_rows(values_only=True) for c in row if c]
+        self.assertFalse(any(spec.EXAMPLE_MARKER in c for c in cells))
+
     def test_it_refuses_to_overwrite_without_force(self):
         with self.assertRaises(FileExistsError):
             write_one_file(self.path)
