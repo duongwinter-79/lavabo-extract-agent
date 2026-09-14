@@ -205,73 +205,83 @@ get replaced with what is actually on screen.
 
 ---
 
-## 4. Second brief — the product images on this machine
+## 4. Second brief — reading the product images on this machine
 
-For a later session, when the images are on the desktop and the cloud session cannot see
-them. Paste everything between the lines.
+Provenance is settled: **the shop sent these images to customers from the Page inbox**, so
+the prices are the shop's own. That does not make them current — a price quoted weeks ago,
+or quoted specially to one customer, reads exactly like a list price once it is a number in
+a column. Everything this produces is a draft a human confirms.
+
+The machine is Windows. Paste everything between the lines, replacing `<user>`.
+
+---
+
+Bạn đang chạy trên máy của shop SENKA HOME (thiết bị vệ sinh: tủ lavabo, gương,
+sen tắm, chậu rửa).
+
+NHIỆM VỤ: đọc thông tin sản phẩm từ các ảnh trong thư mục
+  C:\Users\<user>\Desktop\lavabo images
+thành một bảng nháp để người kiểm tra lại.
+
+Nguồn ảnh: chính shop đã gửi những ảnh này cho khách qua Messenger của Page.
+Nên giá trong ảnh là giá shop từng báo — nhưng có thể đã cũ, hoặc là giá riêng
+cho một khách. Mọi thứ bạn tạo ra là BẢN NHÁP, không phải bảng giá.
+
+== BƯỚC 0: cài đặt (bỏ qua nếu đã có repo) ==
+
+  git clone https://github.com/duongwinter-79/lavabo-extract-agent.git
+  cd lavabo-extract-agent
+  git checkout claude/fervent-bell-cpq3ru
+  powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
+  .venv\Scripts\activate
+
+Cần một API key trong .env — GEMINI_API_KEY (miễn phí, lấy ở
+https://aistudio.google.com/apikey). Kiểm tra bằng:  lavabo check
+
+== BƯỚC 1: NHÌN trước khi chạy gì ==
+
+Mở 3-4 ảnh bất kỳ trong thư mục đó và mô tả cho tôi:
+ - Là ảnh sản phẩm có chữ in lên ảnh (kích thước, màu, giá)?
+ - Hay là ảnh chụp màn hình đoạn chat giữa shop và khách?
+ - Chép lại nguyên văn phần chữ bạn đọc được trên MỘT ảnh.
+
+Trả lời xong hãy dừng lại, đừng chạy tiếp. Câu trả lời này quyết định --mode.
+
+== BƯỚC 2: đọc thử 5 ảnh ==
+
+Ảnh sản phẩm có chữ:
+  lavabo kb from-images --from "C:\Users\<user>\Desktop\lavabo images" --limit 5 --out draft-5.xlsx
+
+Ảnh chụp màn hình đoạn chat:
+  lavabo kb from-images --from "C:\Users\<user>\Desktop\lavabo images" --mode chat --limit 5 --out draft-5.xlsx
+
+Mở draft-5.xlsx và báo lại cho tôi từng dòng đọc được gì. 5 ảnh gần như không
+tốn tiền, và cho biết prompt có đọc đúng không trước khi chạy cả trăm ảnh.
+
+== BƯỚC 3: chạy hết, rồi báo cáo ==
+
+Bỏ --limit, --out catalog-draft.xlsx. Báo lại:
+ - bao nhiêu ảnh, bao nhiêu đọc được sản phẩm, bao nhiêu đọc được giá
+ - riêng --mode chat: bao nhiêu giá là do SHOP báo (cột nguoi_bao_gia)
+ - ảnh nào đọc lỗi
+ - gửi kèm file catalog-draft.xlsx
+
+== KHÔNG ĐƯỢC LÀM ==
+
+- KHÔNG ghi vào catalog.xlsx. Bản nháp là file riêng, cố ý như vậy.
+- KHÔNG tự điền cột ma_sp. Ảnh không chứa mã sản phẩm; model được hỏi sẽ bịa ra.
+- KHÔNG tải gì lên Meta. Meta Business Agent đang TẮT và phải giữ nguyên như vậy
+  cho tới khi có người đối chiếu giá với shop.
+- KHÔNG sửa file nào trong repo.
 
 ---
 
-The shop's product images are in `~/Desktop/lavabo images`. Many of them have the
-specification printed into the picture — kích thước, màu, and often a price. Turn that into
-a draft catalogue for a human to confirm.
+**Step 1 is the one not to skip.** Product graphics and conversation screenshots need
+different flags, and conversation screenshots are the better source: the shop's own
+sentence beats OCR of a graphic, and `--mode chat` records who said each number.
 
-**Never treat a number printed on an image as the shop's price.** It is what somebody
-charged on the day that image was made, possibly a different shop entirely. Everything you
-produce is a draft.
+### What comes back here
 
-### Step 0 — establish where each image came from
-
-These were picked out of the Page's own inbox
-(<https://business.facebook.com/latest/inbox>), so for each one tell me **who sent it**:
-
-- **The shop sent it** → the price in it is the shop's own, quoted recently to a real
-  customer. The best source we have.
-- **The customer sent it** → it is somebody else's price ("bên kia bán thế này"). Useful
-  for size and colour, never for price.
-
-If they are screenshots of the conversation rather than bare product images, use
-`--mode chat`: the shop's own sentence is more reliable than OCR of a graphic, and the tool
-records who said it.
-
-### Step 1 — look before spending anything
-
-Open three or four of the images and tell me what they actually are: photos of a product,
-marketing graphics with text, screenshots of a price list, or a mix. Quote the text you can
-see on one of them. If they are not the shop's own images — a supplier's catalogue, a
-marketplace listing — stop and say so, because then the prices are not the shop's to quote.
-
-### Step 2 — read a handful first
-
-From the repo (clone it if it is not on this machine —
-`https://github.com/duongwinter-79/lavabo-extract-agent`, branch
-`claude/fervent-bell-cpq3ru`), with a Gemini or Anthropic key in `.env`:
-
-```bash
-lavabo kb from-images --from ~/Desktop/lavabo\ images --limit 5 --out draft-5.xlsx
-#   screenshots of the inbox instead of product graphics:
-#   lavabo kb from-images --from ... --mode chat --limit 5 --out draft-5.xlsx
-```
-
-Show me `draft-5.xlsx` before running the rest. Five images cost almost nothing and tell us
-whether the reading is worth trusting; a hundred images of a prompt that misreads prices is
-a hundred wrong numbers to check by hand.
-
-### Step 3 — the rest, then report
-
-```bash
-lavabo kb from-images --from ~/Desktop/lavabo\ images --out catalog-draft.xlsx
-```
-
-Tell me: how many images, how many read as products, how many had a legible price, and
-which ones failed. Attach the draft.
-
-### What NOT to do
-
-- Do not write into `catalog.xlsx`. The draft is a separate file on purpose.
-- Do not fill `ma_sp` yourself. A photograph does not carry a product code; the shop
-  supplies it, or `lavabo kb contact-sheet` asks them for it in one message.
-- Do not upload anything to Meta. The agent stays off until a human has confirmed the
-  prices against what the shop charges today.
-
----
+The draft, and the counts. Then a human confirms prices against what the shop charges
+today, fills `ma_sp`, and only then does anything become `catalog.xlsx` —
+[docs/13](13-business-ai-step-2.md) §4.
