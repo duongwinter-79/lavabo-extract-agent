@@ -262,6 +262,20 @@ lavabo resegment    # re-capture stored pastes after fixing capture logic
 lavabo load --layout senkahomes --out data/out/report.xlsx --month 8 --year 2026
 lavabo append --into "QUẢN LÝ ĐƠN SENKAHOMES.xlsx" --month 8 --year 2026 --dry-run
 lavabo verify
+
+lavabo kb init                 # blank intake pack to send the shop
+lavabo kb init --one-file p.xlsx   # same pack as ONE workbook, for Google Sheets
+                               # ready-made copies of both live in templates/
+lavabo kb check --dir intake   # refuse a price list before it reaches Meta
+lavabo kb publish --to drive/   # filled pack -> the folder Meta's Drive connector reads
+lavabo kb from-images --from <product images>
+                               # read size/colour/price OFF the pictures
+lavabo kb contact-sheet --from <unnamed photos>
+                               # number them so the shop names all at once
+lavabo kb media --from <phone dump> --dir intake
+                               # phone photos/videos -> named images/
+lavabo kb feed  --dir intake --link https://facebook.com/<page> --brand "<shop>"
+                               # a passing catalogue -> Meta Commerce feed CSV
 ```
 
 Capture can also be run on its own, with more control:
@@ -366,6 +380,15 @@ switching to `on`.
 | [docs/08-tailscale.md](docs/08-tailscale.md) | reaching the browser version off the shop wifi — Tailscale, or a public URL via ngrok / Cloudflare Tunnel |
 | [docs/09-cloud-architecture.md](docs/09-cloud-architecture.md) | plan for moving to Cloud Run — what breaks, what it costs, and the cheaper alternative |
 | [docs/10-setup-guide.md](docs/10-setup-guide.md) | **start here on a new machine** — install, Gemini key, autostart, Tailscale, first run |
+| [docs/11-facebook-reply-agent.md](docs/11-facebook-reply-agent.md) | plan for an agent that **answers** Facebook messages — what the shop must hand over, how it is stored, how it replies |
+| [docs/16-quick-setup.md](docs/16-quick-setup.md) | **start here to go live today** — basic auto-replies from a ten-minute phone call, no intake pack |
+| [docs/17-desktop-session-brief.md](docs/17-desktop-session-brief.md) | prompts to hand the Claude session on our own machine — the one with the logged-in browser and the repo |
+| [docs/18-google-drive-source.md](docs/18-google-drive-source.md) | **the knowledge source** — one Drive folder the shop edits, replacing the catalogue kept inside Meta |
+| [docs/19-drive-format-probe.md](docs/19-drive-format-probe.md) | the half-hour test of which file formats the Drive connector reads, and whether it reads a price table correctly |
+| [docs/12-business-ai-step-1.md](docs/12-business-ai-step-1.md) | **first configuration step** — turning on Meta Business AI for the Page, in Vietnamese, without letting it quote a price |
+| [docs/13-business-ai-step-2.md](docs/13-business-ai-step-2.md) | step 2 — the catalogue and prices: the column spec, the validator, and the one wrong number that rolls it back |
+| [docs/14-what-we-need-from-the-customer.md](docs/14-what-we-need-from-the-customer.md) | **audited status** of what is built vs never connected, and the exact list to ask the shop for |
+| [docs/15-end-to-end-flow.md](docs/15-end-to-end-flow.md) | **the whole path on one page** — 28 numbered steps, who owns each, and the four gates |
 
 ### Shape of it
 
