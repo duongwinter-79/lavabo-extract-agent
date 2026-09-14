@@ -73,10 +73,15 @@ Three rules, and the first one is the whole game:
 **Ownership:** the folder belongs to the **shop's** Google account, not ours. They keep it
 when we are gone. Share it with whoever connects it in Meta.
 
-**Format:** Google Docs / Google Sheets native is the safest bet; PDF is the usual fallback.
-**[confirm]** what the connector actually accepts before the shop retypes anything — if it
-takes `.xlsx` directly, the intake pack goes in as-is and nobody converts anything. This is
-the first thing to test in §4.
+**Format: build for Google Sheets (tables) and Google Docs (prose)** — not because it is
+certainly what the connector accepts, but because it is the right answer even if `.xlsx`
+also works: the shop edits it more easily, there is nothing to send back, and File →
+Download → `.xlsx` hands `lavabo kb check` the exact file it already parses. Anything
+broader the connector accepts saves a conversion step, nothing more.
+
+Acceptance is not the only question — a spreadsheet that indexes fine can still be *read*
+as a wall of text, and the agent then answers with the row above. [docs/19-drive-format-probe.md](19-drive-format-probe.md) is the
+half-hour probe that settles both, and it is step 1 of §4.
 
 ---
 
@@ -181,8 +186,9 @@ Thư mục là của shop, anh/chị giữ toàn quyền. Điền được file 
 
 ## 7. Open, and worth settling on screen
 
-1. **Which formats does the connector accept** — .xlsx and .docx directly, or Google-native
-   only, or PDF? Decides whether the intake pack goes in unchanged.
+1. **Which formats does the connector accept, and does it read a table correctly** —
+   [docs/19-drive-format-probe.md](19-drive-format-probe.md) is the probe. Decides whether the intake pack goes in unchanged, and
+   whether prices may live in the Drive folder at all.
 2. **Re-sync cadence** — automatic, and how fast? Or manual refresh?
 3. **Does removing *Sản phẩm của SENKA HOME* break anything else** that references it (a
    shop tab, an ad)? Check before deleting; disabling may be safer than removing.
@@ -195,6 +201,7 @@ Thư mục là của shop, anh/chị giữ toàn quyền. Điền được file 
 
 | Doc | |
 |---|---|
+| [docs/19-drive-format-probe.md](19-drive-format-probe.md) | **do this first** — which formats work, and whether the agent reads a price table correctly |
 | [docs/13-business-ai-step-2.md](13-business-ai-step-2.md) | the catalogue column spec `05-bang-gia` should follow |
 | [docs/16-quick-setup.md](16-quick-setup.md) | the automations and the test script |
 | [docs/12-business-ai-step-1.md](12-business-ai-step-1.md) | the guardrail text for Hướng dẫn |
