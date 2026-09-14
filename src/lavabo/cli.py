@@ -883,15 +883,20 @@ def _kb_from_images(args, cfg: Config) -> int:
 
     schema = cfg.load_schema()
     extractor = build_extractor(cfg.extract, schema)
-    report = read_folder(source, extractor, limit=args.limit)
+    report = read_folder(source, extractor, limit=args.limit, mode=args.mode)
     if not report.readings:
         print(f"Không có ảnh nào trong {source}", file=sys.stderr)
         return 1
 
     target = write_draft(report, Path(args.out))
     print(f"  {target}")
-    print(f"  {len(report.readings)} ảnh · {len(report.products)} là ảnh sản phẩm · "
-          f"{len(report.with_price)} có giá đọc được")
+    if args.mode == "chat":
+        print(f"  {len(report.readings)} ảnh · {len(report.products)} có nói về giá · "
+              f"{len(report.with_price)} đọc được số · "
+              f"{len(report.quoted_by_shop)} do SHOP báo giá")
+    else:
+        print(f"  {len(report.readings)} ảnh · {len(report.products)} là ảnh sản phẩm · "
+              f"{len(report.with_price)} có giá đọc được")
     if report.failed:
         print(f"  {len(report.failed)} ảnh không đọc được")
     print(f"  tokens: {report.input_tokens} vào / {report.output_tokens} ra")
@@ -1137,6 +1142,9 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--from", dest="source", required=True, help="folder of product images")
     q.add_argument("--out", default="catalog-draft.xlsx", help="draft .xlsx to write")
     q.add_argument("--limit", type=int, help="stop after N images — use it first")
+    q.add_argument("--mode", choices=["product", "chat"], default="product",
+                   help="product: a marketing image. chat: a screenshot of the Page inbox, "
+                        "where who said the price decides whether it is the shop's")
     add_llm_args(q)
 
     q = kb.add_parser("publish",

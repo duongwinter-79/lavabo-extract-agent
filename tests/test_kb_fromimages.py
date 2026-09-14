@@ -20,7 +20,8 @@ sys.path.insert(0, str(ROOT / "src"))
 from openpyxl import load_workbook                                # noqa: E402
 from PIL import Image                                             # noqa: E402
 
-from lavabo.kb.fromimages import (DRAFT_COLUMNS, SCHEMA, read_folder,  # noqa: E402
+from lavabo.kb.fromimages import (CHAT_COLUMNS, CHAT_SCHEMA,  # noqa: E402
+                                  DRAFT_COLUMNS, SCHEMA, read_folder,
                                   write_draft)
 
 
@@ -149,3 +150,59 @@ class TheDraft(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _blank_chat():
+    return {key: None for key in CHAT_SCHEMA["properties"]} | {"co_noi_ve_gia": False}
+
+
+class ScreenshotsOfThePageInbox(unittest.TestCase):
+    """A price in the shop's own message to a real customer is the best source available.
+    A price in the CUSTOMER's message is somebody else's, and quoting it back would be a
+    small disaster — so who spoke is a column, never an assumption."""
+
+    def setUp(self):
+        self.source = Path(tempfile.mkdtemp()) / "chat"
+        self.shop = photo(self.source / "shop.jpg", (10, 10, 10))
+        self.khach = photo(self.source / "khach.jpg", (20, 20, 20))
+        self.target = Path(tempfile.mkdtemp()) / "chat-draft.xlsx"
+
+    def read(self, answers):
+        return read_folder(self.source, StubExtractor(answers), mode="chat")
+
+    def test_only_the_shops_own_quotes_are_counted_as_the_shops(self):
+        report = self.read({
+            self.shop: _blank_chat() | {"co_noi_ve_gia": True, "nguoi_bao_gia": "shop",
+                                        "gia": 2850000, "san_pham": "tủ 80"},
+            self.khach: _blank_chat() | {"co_noi_ve_gia": True, "nguoi_bao_gia": "khach",
+                                         "gia": 2500000, "san_pham": "bên kia bán"},
+        })
+        self.assertEqual(len(report.with_price), 2)
+        self.assertEqual(len(report.quoted_by_shop), 1)
+        self.assertEqual(report.quoted_by_shop[0].path.name, "shop.jpg")
+
+    def test_an_unclear_speaker_is_not_credited_to_the_shop(self):
+        report = self.read({self.shop: _blank_chat() | {
+            "co_noi_ve_gia": True, "nguoi_bao_gia": "khong_ro", "gia": 2850000}})
+        self.assertEqual(report.quoted_by_shop, [])
+
+    def test_the_draft_warns_about_both_ways_a_chat_price_misleads(self):
+        report = self.read({})
+        write_draft(report, self.target)
+        header = str(load_workbook(self.target)["Dữ liệu"]["A1"].value)
+        self.assertIn("Giá khách nói", header)
+        self.assertIn("giá riêng cho khách", header)
+
+    def test_a_negotiated_price_is_marked_rather_than_filed_as_list_price(self):
+        report = self.read({self.shop: _blank_chat() | {
+            "co_noi_ve_gia": True, "nguoi_bao_gia": "shop", "gia": 2500000,
+            "la_gia_khuyen_mai": True, "cau_noi_nguyen_van": "riêng anh em để 2tr5"}})
+        write_draft(report, self.target)
+        rows = list(load_workbook(self.target)["Dữ liệu"].iter_rows(values_only=True))
+        header = list(rows[1])
+        self.assertEqual(rows[2][header.index("la_gia_khuyen_mai")], "có")
+        self.assertIn("riêng anh em", rows[2][header.index("cau_noi_nguyen_van")])
+
+    def test_the_chat_draft_keeps_the_shops_exact_words(self):
+        self.assertIn("cau_noi_nguyen_van", CHAT_COLUMNS)
+        self.assertIn("nguoi_bao_gia", CHAT_COLUMNS)

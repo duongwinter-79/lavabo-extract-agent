@@ -220,6 +220,20 @@ a draft catalogue for a human to confirm.
 charged on the day that image was made, possibly a different shop entirely. Everything you
 produce is a draft.
 
+### Step 0 — establish where each image came from
+
+These were picked out of the Page's own inbox
+(<https://business.facebook.com/latest/inbox>), so for each one tell me **who sent it**:
+
+- **The shop sent it** → the price in it is the shop's own, quoted recently to a real
+  customer. The best source we have.
+- **The customer sent it** → it is somebody else's price ("bên kia bán thế này"). Useful
+  for size and colour, never for price.
+
+If they are screenshots of the conversation rather than bare product images, use
+`--mode chat`: the shop's own sentence is more reliable than OCR of a graphic, and the tool
+records who said it.
+
 ### Step 1 — look before spending anything
 
 Open three or four of the images and tell me what they actually are: photos of a product,
@@ -235,6 +249,8 @@ From the repo (clone it if it is not on this machine —
 
 ```bash
 lavabo kb from-images --from ~/Desktop/lavabo\ images --limit 5 --out draft-5.xlsx
+#   screenshots of the inbox instead of product graphics:
+#   lavabo kb from-images --from ... --mode chat --limit 5 --out draft-5.xlsx
 ```
 
 Show me `draft-5.xlsx` before running the rest. Five images cost almost nothing and tell us
