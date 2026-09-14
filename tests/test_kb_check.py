@@ -376,3 +376,61 @@ class TheMarkdownForms(unittest.TestCase):
         problems = self.problems("policies.md")
         self.assertEqual(len(problems), 1)
         self.assertIn("thiếu file", str(problems[0]))
+
+
+class TheHandoffSheet(unittest.TestCase):
+    """What the agent must not answer.
+
+    Shipped filled in rather than blank, because a shop asked to imagine every way a bot
+    can embarrass them writes three rows and stops. The ones that protect them are ours to
+    supply; the ones specific to their trade are theirs to add.
+    """
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp()) / "intake"
+        write_intake(self.dir)
+
+    def rows(self):
+        ws = load_workbook(self.dir / "handoff.xlsx")["Dữ liệu"]
+        return [r for r in ws.iter_rows(min_row=2, values_only=True) if r[0]]
+
+    def write(self, topics):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Dữ liệu"
+        ws.append(spec.HANDOFF.names)
+        for topic in topics:
+            ws.append([topic, "", "chuyển ngay cho nhân viên", "", "có", ""])
+        wb.save(self.dir / "handoff.xlsx")
+
+    def problems(self):
+        return [p for p in check_intake(self.dir) if p.file == "handoff.xlsx"]
+
+    def test_it_arrives_already_filled_in(self):
+        self.assertEqual(len(self.rows()), len(spec.LOCKED_TOPICS))
+        self.assertEqual(self.problems(), [])
+
+    def test_no_example_row_to_delete(self):
+        """Seeded content is the answer, not an example — deleting it loses a rule."""
+        self.assertFalse(any(spec.EXAMPLE_MARKER in str(r[0]) for r in self.rows()))
+
+    def test_the_shop_may_add_their_own(self):
+        self.write(list(spec.LOCKED_TOPICS) + ["Khách hỏi lắp đặt điện nước"])
+        self.assertEqual(self.problems(), [])
+
+    def test_a_deleted_mandatory_topic_is_flagged_but_does_not_block(self):
+        """Their call to make, not ours to enforce — but never silently."""
+        self.write([t for t in spec.LOCKED_TOPICS if "Khiếu nại" not in t])
+        found = self.problems()
+        self.assertEqual(len(found), 1)
+        self.assertFalse(found[0].fatal)
+        self.assertIn("Khiếu nại", str(found[0]))
+
+    def test_an_unknown_action_is_rejected(self):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Dữ liệu"
+        ws.append(spec.HANDOFF.names)
+        ws.append(["Khách hỏi gì đó", "", "AI tự quyết", "", "có", ""])
+        wb.save(self.dir / "handoff.xlsx")
+        self.assertTrue(any("không hợp lệ" in str(p) for p in self.problems()))

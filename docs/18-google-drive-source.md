@@ -23,8 +23,10 @@ agent ends up reciting internal rules at a customer.
 | **Hướng dẫn** (instructions) | the agent's **[Hướng dẫn](https://business.facebook.com/latest/business_ai/knowledge)** tab — never Drive | How to behave: xưng hô, độ dài câu trả lời, "không bao giờ báo giá ngoài bảng giá", handoff topics, the dont-say list |
 
 So of the intake pack: `store`, `policies`, `shipping`, `faq`, the price list and the
-product list go to Drive. **`voice.md` and `dont_say.md` do not** — they are instructions,
-and a customer should never see a sentence from them.
+product list go to Drive. **`voice.md`, `dont_say.md` and `handoff.xlsx` do not** — they are
+instructions, and a customer should never see a sentence from them. `lavabo kb publish`
+enforces that split rather than leaving it to discipline: it writes only the customer-facing
+files and names what it left out and why.
 
 ```mermaid
 flowchart LR
@@ -121,6 +123,12 @@ The agent is currently **AI đang tắt**. Keep it that way until step 6.
    handoff topics from §3.6.
 6. **Chat thử**, then the toggle. The script is [docs/16](16-quick-setup.md) §5; the row
    that blocks launch is "tủ 80 bao nhiêu tiền?" returning a number when it should not.
+
+**Building the folder:** `lavabo kb publish --dir intake --to drive/` turns a filled,
+passing intake pack into exactly this structure — knowledge files with an update date,
+photos separate, the form folder separate, and a rules note in the parent rather than in
+the connected folder (where the agent would read it as a fact). Upload `01-KIEN-THUC-AI`
+and connect **that folder only**.
 
 **Our side, at any point:** download the folder and run `lavabo kb check --dir <folder>`.
 It reads the same files and names the rows that are wrong — the Drive move does not cost us

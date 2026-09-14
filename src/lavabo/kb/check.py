@@ -241,6 +241,13 @@ def _check_integer(fld: Field, value, number: int, where: str) -> list[Problem]:
 def _sheet_rules(sheet: SheetSpec, rows: list[dict], where: str) -> list[Problem]:
     if sheet is CATALOG:
         return _catalog_rules(rows, where)
+    if sheet.locked:
+        present = {_text(r.get(sheet.unique)).lower() for r in rows}
+        missing = [t for t in sheet.locked if t.lower() not in present]
+        return [Problem(where,
+                        f"thiếu {len(missing)} tình huống bắt buộc phải chuyển cho người "
+                        f"thật: {', '.join(missing)}. Nếu shop cố ý bỏ thì xác nhận lại "
+                        "trước khi bật AI.", fatal=False)] if missing else []
     if sheet is PROMOTIONS:
         return [Problem(where,
                         f"khuyến mãi {_text(r.get('ten_km'))!r} đã hết hạn — nên xoá khỏi file",

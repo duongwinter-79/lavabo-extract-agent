@@ -14,6 +14,7 @@
     lavabo kb check                    validate the filled-in pack before uploading
     lavabo kb init --one-file x.xlsx   the whole pack as ONE workbook, for Google Sheets
     lavabo kb media --from <dump>      phone photos/videos -> named images/ + mapping
+    lavabo kb publish --to drive/      filled pack -> the folder Meta's Drive connector reads
     lavabo kb feed                     catalog.xlsx -> Meta Commerce product feed
 """
 
@@ -784,6 +785,9 @@ def cmd_kb(args, cfg: Config) -> int:
     if args.kb_command == "feed":
         return _kb_feed(args, cfg, directory, fatal)
 
+    if args.kb_command == "publish":
+        return _kb_publish(args, cfg, directory, fatal)
+
     print(report(problems))
     if fatal:
         print(f"\nCHƯA ĐẠT — {len(fatal)} lỗi phải sửa.")
@@ -839,6 +843,44 @@ def _kb_media(args, cfg: Config, directory: Path) -> int:
         write_mapping(report, directory / "images.xlsx")
         print(f"\n  đã ghi {directory / 'images.xlsx'}")
     print(f"\n  Kiểm tra lại: lavabo kb check --dir {directory}")
+    return 0
+
+
+def _kb_publish(args, cfg: Config, directory: Path, fatal: list) -> int:
+    """Publish only what a customer may be told, and only from a pack that passes."""
+    from .kb.publish import KNOWLEDGE_DIR, blocking, instruction_gaps, publish
+    from .kb.check import report as render
+
+    stoppers = blocking(fatal)
+    if stoppers:
+        print(render(stoppers))
+        print(f"\nKhông xuất bản — sửa {len(stoppers)} lỗi trên trước đã.", file=sys.stderr)
+        return 1
+
+    out = Path(args.to)
+    result = publish(directory, out)
+
+    print(f"  {out}")
+    for name in result.written:
+        print(f"    {KNOWLEDGE_DIR}/{name}")
+    if result.images:
+        print(f"    02-ANH-SAN-PHAM/ — {result.images} ảnh")
+    if result.skipped_examples:
+        print(f"  bỏ {result.skipped_examples} dòng ví dụ mẫu")
+    if result.excluded:
+        print("\n  KHÔNG xuất bản (đúng như thiết kế):")
+        for line in result.excluded:
+            print(f"    - {line}")
+    gaps = instruction_gaps(fatal)
+    if gaps:
+        # Publishing is safe with these unanswered; switching the agent on is not.
+        print("\n  CHƯA BẬT ĐƯỢC AI — phần Hướng dẫn còn thiếu:")
+        for problem in gaps:
+            print(f"    - {problem}")
+        print("    Kiến thức vẫn xuất bản được; đừng bật AI trước khi điền xong.")
+
+    print(f"\n  Tải {out / KNOWLEDGE_DIR} lên Drive và NỐI ĐÚNG thư mục đó.")
+    print("  Hai thư mục còn lại không được nối.")
     return 0
 
 
@@ -999,6 +1041,12 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--frames", type=int, default=3,
                    help="stills to pull from each demo video (default 3)")
     q.add_argument("--no-mapping", action="store_true", help="do not rewrite images.xlsx")
+    add_llm_args(q)
+
+    q = kb.add_parser("publish",
+                      help="a passing pack -> the folder Meta's Drive connector reads")
+    q.add_argument("--dir", default="intake")
+    q.add_argument("--to", default="drive", help="output folder (default: drive/)")
     add_llm_args(q)
 
     q = kb.add_parser("feed", help="turn a passing catalog.xlsx into a Meta Commerce feed")

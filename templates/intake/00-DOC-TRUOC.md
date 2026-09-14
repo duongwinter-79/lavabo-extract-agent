@@ -13,10 +13,13 @@ trả lời đúng. AI chỉ biết những gì trong thư mục này, không bi
    VẪN ĐANG dùng. **Đây là file quan trọng nhất.**
 5. `voice.md` — cách shop xưng hô, và 3 hội thoại mẫu. Nhờ đúng người
    đang trả lời tin nhắn hằng ngày viết, đừng nhờ người khác viết hộ.
+6. `handoff.xlsx` — những gì AI KHÔNG được tự trả lời. File này bên em
+   đã điền sẵn phần quan trọng, anh/chị chỉ cần đọc lại và thêm tình
+   huống riêng của shop.
 
 **Làm sau (nhưng chưa có thì AI không được phép báo giá):**
-6. `catalog.xlsx` — bảng giá. Bắt đầu bằng 50 mẫu bán chạy nhất là đủ.
-7. Ảnh sản phẩm — bỏ vào thư mục `images/`.
+7. `catalog.xlsx` — bảng giá. Bắt đầu bằng 50 mẫu bán chạy nhất là đủ.
+8. Ảnh sản phẩm — bỏ vào thư mục `images/`.
 
 **Có thì tốt, không có cũng được:**
 `synonyms.xlsx`, `promotions.xlsx`, `images.xlsx`, `dont_say.md`

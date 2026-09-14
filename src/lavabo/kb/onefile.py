@@ -24,8 +24,9 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 
-from .spec import (CATALOG, DOC_SPECS, FAQ, IMAGES, PLACEHOLDER, PROMOTIONS, SHEETS,
-                   SHIPPING, STATIC_DOCS, SYNONYMS, DocSpec, SheetSpec)
+from .spec import (CATALOG, DOC_SPECS, FAQ, HANDOFF, IMAGES, PLACEHOLDER,
+                   PROMOTIONS, SHEETS, SHIPPING, STATIC_DOCS, SYNONYMS, DocSpec,
+                   SheetSpec)
 from .templates import (EXAMPLE_FONT, HEADER_FILL, HEADER_FONT, REQUIRED_FILL,
                         TITLE_FONT, _apply_formats, _apply_validation, _comment,
                         _example_row, _width)
@@ -37,6 +38,7 @@ TABS: dict[str, SheetSpec] = {
     "Danh mục sản phẩm": CATALOG,
     "Phí vận chuyển": SHIPPING,
     "Câu hỏi thường gặp": FAQ,
+    "Không được tự trả lời": HANDOFF,
     "Từ khách hay dùng": SYNONYMS,
     "Khuyến mãi": PROMOTIONS,
     "Ảnh sản phẩm": IMAGES,

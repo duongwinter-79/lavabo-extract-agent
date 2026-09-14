@@ -15,6 +15,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from datetime import date, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,11 +28,22 @@ from lavabo.kb.templates import write_intake                      # noqa: E402
 COMMITTED = ROOT / "templates" / "intake"
 
 
+DATE_CELL = "<a date>"
+
+
+def normalise(value):
+    """Dates in the blank pack are generated relative to today — cap_nhat_ngay is today,
+    a promo ends in 45 days — so comparing them literally would call the committed pack
+    stale every night. The shape is what must not drift, not the calendar."""
+    return DATE_CELL if isinstance(value, (datetime, date)) else value
+
+
 def sheets(path: Path) -> dict[str, list]:
     """Every cell of every tab — what the shop can see, ignoring the creation stamp
-    openpyxl writes into each file."""
+    openpyxl writes into each file, and ignoring today's date."""
     book = load_workbook(path)
-    return {ws.title: [list(row) for row in ws.iter_rows(values_only=True)]
+    return {ws.title: [[normalise(c) for c in row]
+                       for row in ws.iter_rows(values_only=True)]
             for ws in book.worksheets}
 
 
@@ -43,9 +55,7 @@ def fingerprint(directory: Path) -> dict[str, object]:
             continue
         name = str(path.relative_to(directory))
         if path.suffix == ".xlsx":
-            book = load_workbook(path)
-            out[name] = {sheet.title: [list(row) for row in sheet.iter_rows(values_only=True)]
-                         for sheet in book.worksheets}
+            out[name] = sheets(path)
         else:
             out[name] = path.read_text(encoding="utf-8")
     return out

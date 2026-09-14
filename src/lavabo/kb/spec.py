@@ -42,6 +42,10 @@ class SheetSpec:
     examples: tuple[tuple, ...] = ()
     unique: str | None = None        # column that must not repeat
     required_file: bool = True
+    # Rows shipped already filled in, because they are the answer rather than an example
+    # of one. The shop adds to them; removing one is a decision, not a tidy-up.
+    seed_rows: tuple[tuple, ...] = ()
+    locked: tuple[str, ...] = ()     # seeded values that must still be present
 
     @property
     def names(self) -> list[str]:
@@ -196,7 +200,56 @@ IMAGES = SheetSpec(
     ),
 )
 
-SHEETS: tuple[SheetSpec, ...] = (CATALOG, SHIPPING, FAQ, SYNONYMS, PROMOTIONS, IMAGES)
+AI_LAM_GI = ("chuyển ngay cho nhân viên", "trả lời chung rồi chuyển", "không trả lời")
+
+# The topics that protect the shop. Shipped filled in and checked for, because the cost of
+# a bot improvising on a complaint or a discount is borne by the shop, not by us.
+LOCKED_TOPICS = (
+    "Hỏi giá mẫu không có trong bảng giá",
+    "Mặc cả, xin giảm giá, xin giá sỉ",
+    "Tính tổng tiền nhiều món, giá combo",
+    "Đơn đã đặt: kiểm tra, sửa, hủy, giục giao",
+    "Khiếu nại, hàng lỗi, hàng vỡ",
+    "Yêu cầu bảo hành cụ thể",
+    "Khách gửi ảnh hàng bị lỗi",
+    "Mua sỉ, làm đại lý",
+    "Xuất hóa đơn VAT, hợp đồng, công nợ",
+    "Khách xin số tài khoản để chuyển tiền",
+    "Khách nói muốn gặp người thật",
+    "Khách tỏ ra khó chịu, bực bội",
+)
+
+HANDOFF = SheetSpec(
+    filename="handoff.xlsx",
+    title="AI KHÔNG được trả lời — chuyển cho người thật",
+    intro=(
+        "Những tình huống AI phải chuyển cho nhân viên thay vì tự trả lời. "
+        "Các dòng có sẵn là bắt buộc — shop đọc lại và thêm tình huống của mình "
+        "ở phía dưới. Muốn bỏ một dòng có sẵn thì báo bên em, đừng xoá thẳng."
+    ),
+    unique="tinh_huong",
+    fields=(
+        Field("tinh_huong", "Tình huống", required=True,
+              example="Khách hỏi mẫu shop không bán"),
+        Field("vi_du_cau_hoi", "Ví dụ câu khách hỏi",
+              example="Bên mình có bồn tắm massage không?"),
+        Field("ai_lam_gi", "AI làm gì", kind="enum", enum=AI_LAM_GI, required=True,
+              example="chuyển ngay cho nhân viên"),
+        Field("chuyen_cho_ai", "Chuyển cho ai", example="chị Hương",
+              note="Để trống thì dùng người mặc định trong voice.md."),
+        Field("bat_buoc", "Bắt buộc", kind="enum", enum=("có", "không"),
+              note="'có' là dòng bên em khuyến nghị không nên bỏ."),
+        Field("ghi_chu", "Ghi chú"),
+    ),
+    seed_rows=tuple(
+        (topic, "", "chuyển ngay cho nhân viên", "", "có", "")
+        for topic in LOCKED_TOPICS
+    ),
+    locked=LOCKED_TOPICS,
+)
+
+SHEETS: tuple[SheetSpec, ...] = (CATALOG, SHIPPING, FAQ, HANDOFF, SYNONYMS, PROMOTIONS,
+                                 IMAGES)
 
 # ---------------------------------------------------------------- the text files
 
@@ -355,10 +408,13 @@ trả lời đúng. AI chỉ biết những gì trong thư mục này, không bi
    VẪN ĐANG dùng. **Đây là file quan trọng nhất.**
 5. `voice.md` — cách shop xưng hô, và 3 hội thoại mẫu. Nhờ đúng người
    đang trả lời tin nhắn hằng ngày viết, đừng nhờ người khác viết hộ.
+6. `handoff.xlsx` — những gì AI KHÔNG được tự trả lời. File này bên em
+   đã điền sẵn phần quan trọng, anh/chị chỉ cần đọc lại và thêm tình
+   huống riêng của shop.
 
 **Làm sau (nhưng chưa có thì AI không được phép báo giá):**
-6. `catalog.xlsx` — bảng giá. Bắt đầu bằng 50 mẫu bán chạy nhất là đủ.
-7. Ảnh sản phẩm — bỏ vào thư mục `images/`.
+7. `catalog.xlsx` — bảng giá. Bắt đầu bằng 50 mẫu bán chạy nhất là đủ.
+8. Ảnh sản phẩm — bỏ vào thư mục `images/`.
 
 **Có thì tốt, không có cũng được:**
 `synonyms.xlsx`, `promotions.xlsx`, `images.xlsx`, `dont_say.md`

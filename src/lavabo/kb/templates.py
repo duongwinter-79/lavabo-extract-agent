@@ -153,9 +153,14 @@ def _write_workbook(path: Path, sheet: SheetSpec) -> None:
         cell.comment = _comment(fld)
         ws.column_dimensions[get_column_letter(idx)].width = _width(fld)
 
-    ws.append(_example_row(sheet))
-    for idx in range(1, len(sheet.fields) + 1):
-        ws.cell(row=2, column=idx).font = EXAMPLE_FONT
+    if sheet.seed_rows:
+        # Seeded content is the answer, not an example of one, so it is not greyed out.
+        for row in sheet.seed_rows:
+            ws.append(list(row))
+    else:
+        ws.append(_example_row(sheet))
+        for idx in range(1, len(sheet.fields) + 1):
+            ws.cell(row=2, column=idx).font = EXAMPLE_FONT
 
     _apply_formats(ws, sheet)
     _apply_validation(ws, sheet)
