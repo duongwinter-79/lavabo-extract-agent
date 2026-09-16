@@ -172,7 +172,7 @@ def read_folder(source: Path, extractor, *, limit: int | None = None,
             report.readings.append(ImageReading(path=path, values={}, error=str(exc)))
             continue
 
-        report.readings.append(ImageReading(path=path, values=completion.values))
+        report.readings.append(ImageReading(path=path, values=completion.data))
         report.input_tokens += completion.input_tokens
         report.output_tokens += completion.output_tokens
 

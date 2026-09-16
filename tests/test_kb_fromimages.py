@@ -23,13 +23,11 @@ from PIL import Image                                             # noqa: E402
 from lavabo.kb.fromimages import (CHAT_COLUMNS, CHAT_SCHEMA,  # noqa: E402
                                   DRAFT_COLUMNS, SCHEMA, read_folder,
                                   write_draft)
-
-
-class Completion:
-    def __init__(self, values, input_tokens=10, output_tokens=5):
-        self.values = values
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
+# The provider's REAL answer type, not a local look-alike. A stub that merely resembles
+# it can drift from it silently: this file used to define its own `Completion` exposing
+# `.values`, while the real one is a NamedTuple exposing `.data`, so every test passed
+# while `read_folder` raised AttributeError against an actual provider.
+from lavabo.segment import Completion                             # noqa: E402
 
 
 class StubExtractor:
@@ -46,7 +44,7 @@ class StubExtractor:
         blob = images[0]
         if blob in self.fail_on:
             raise RuntimeError("model exploded")
-        return Completion(self.answers.get(blob, _blank()))
+        return Completion(self.answers.get(blob, _blank()), 10, 5)
 
 
 def _blank():
