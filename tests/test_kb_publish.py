@@ -180,6 +180,81 @@ class ThePhotoLink(Publishing):
         self.assertEqual([r[:-1] for r in linked[1:]], [tuple(r) for r in plain[1:]])
 
 
+class TheProseFormat(Publishing):
+    """`.md` is not a format Meta's Drive picker offers, so the prose has to leave as
+    something it does: its filter lists Tài liệu, Hình ảnh and Bảng tính."""
+
+    def docx_text(self, name: str) -> str:
+        """Every run's text, whitespace collapsed.
+
+        Word splits a line across runs -- bolding the label alone makes two of them -- so
+        joining them reintroduces spaces that are not in the rendered document. Collapsing
+        is what makes a comparison about content rather than about run boundaries.
+        """
+        import re
+        import zipfile
+        xml = zipfile.ZipFile(self.out / KNOWLEDGE_DIR / name).read(
+            "word/document.xml").decode("utf-8")
+        return re.sub(r"\s+", " ", " ".join(
+            re.findall(r"<w:t[^>]*>([^<]*)</w:t>", xml)))
+
+    def test_markdown_is_still_the_default(self):
+        """A folder that is not going to be connected should not need a Word document."""
+        self.run_publish()
+        self.assertIn("01-thong-tin-cua-hang.md", self.knowledge())
+        self.assertNotIn("01-thong-tin-cua-hang.docx", self.knowledge())
+
+    def test_docx_replaces_the_markdown_rather_than_joining_it(self):
+        """Both formats in one folder is two files where one is unreadable to the picker,
+        and a reader with no way to tell which is current."""
+        self.answer("store.md", "Tên shop", "SENKA HOME")
+        self.run_publish(prose_format="docx")
+        self.assertIn("01-thong-tin-cua-hang.docx", self.knowledge())
+        self.assertNotIn("01-thong-tin-cua-hang.md", self.knowledge())
+
+    def test_the_answers_survive_the_trip_into_word(self):
+        self.answer("store.md", "Tên shop", "SENKA HOME")
+        self.answer("store.md", "Hotline", "0769080568")
+        self.run_publish(prose_format="docx")
+        text = self.docx_text("01-thong-tin-cua-hang.docx")
+        self.assertIn("SENKA HOME", text)
+        self.assertIn("0769080568", text)
+        self.assertIn("Cập nhật ngày: 2026-09-14", text)
+
+    def test_the_example_hint_is_stripped_in_word_too(self):
+        """The filter runs before the format is chosen, so neither output can carry it."""
+        self.answer("store.md", "Hotline", "0987 111 222")
+        self.run_publish(prose_format="docx")
+        text = self.docx_text("01-thong-tin-cua-hang.docx")
+        self.assertIn("0987 111 222", text)
+        self.assertNotIn("0912 345 678", text)
+        self.assertNotIn(spec.PLACEHOLDER, text)
+
+    def test_a_folded_answer_becomes_separate_lines(self):
+        """`write_pack` folds a multi-line answer onto one form line with " / ". Splitting
+        it back gives the shop's own line breaks -- and "anh/chị" must survive that."""
+        self.answer("policies.md", "Thời gian bảo hành", "Tủ 20 năm / Gương 5 năm")
+        self.answer("policies.md", "Cách yêu cầu bảo hành", "gọi cho anh/chị phụ trách")
+        self.run_publish(prose_format="docx")
+        import zipfile
+        xml = zipfile.ZipFile(self.out / KNOWLEDGE_DIR / "02-chinh-sach.docx").read(
+            "word/document.xml").decode("utf-8")
+        self.assertIn("ListBullet2", xml)                      # the second line indented
+        self.assertIn("anh/chị phụ trách", self.docx_text("02-chinh-sach.docx"))
+
+    def test_both_formats_carry_the_same_words(self):
+        self.answer("store.md", "Tên shop", "SENKA HOME")
+        self.run_publish()
+        markdown = (self.out / KNOWLEDGE_DIR / "01-thong-tin-cua-hang.md").read_text("utf-8")
+        self.run_publish(prose_format="docx")
+        word = self.docx_text("01-thong-tin-cua-hang.docx")
+        import re
+        for line in markdown.splitlines():
+            stripped = re.sub(r"\s+", " ", line.lstrip("# -").strip())
+            if stripped:
+                self.assertIn(stripped, word, stripped)
+
+
 class WhatBlocksIt(unittest.TestCase):
     def test_a_broken_price_blocks_publishing(self):
         problems = [Problem("catalog.xlsx", "giá sai", row=2)]

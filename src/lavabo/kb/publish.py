@@ -101,7 +101,7 @@ class PublishReport:
 
 
 def publish(intake: Path, out: Path, *, today: date | None = None,
-            image_base: str = "") -> PublishReport:
+            image_base: str = "", prose_format: str = "md") -> PublishReport:
     stamp = (today or date.today()).isoformat()
     knowledge = out / KNOWLEDGE_DIR
     knowledge.mkdir(parents=True, exist_ok=True)
@@ -112,11 +112,11 @@ def publish(intake: Path, out: Path, *, today: date | None = None,
     report = PublishReport(root=out)
 
     if (intake / "store.md").exists():
-        _prose(intake / "store.md", knowledge / "01-thong-tin-cua-hang.md",
-               "Thông tin cửa hàng", stamp, report)
+        _prose(intake / "store.md", knowledge / "01-thong-tin-cua-hang",
+               "Thông tin cửa hàng", stamp, report, fmt=prose_format)
     if (intake / "policies.md").exists():
-        _prose(intake / "policies.md", knowledge / "02-chinh-sach.md",
-               "Chính sách", stamp, report)
+        _prose(intake / "policies.md", knowledge / "02-chinh-sach",
+               "Chính sách", stamp, report, fmt=prose_format)
 
     _table(intake / SHIPPING.filename, knowledge / "03-phi-van-chuyen.xlsx",
            SHIPPING.names, stamp, report)
@@ -137,14 +137,22 @@ def publish(intake: Path, out: Path, *, today: date | None = None,
 
 # ------------------------------------------------------------------------------ prose
 
-def _prose(source: Path, target: Path, title: str, stamp: str,
-           report: PublishReport) -> None:
-    """Strip the form furniture, keep the answers.
+PROSE_FORMATS = ("md", "docx")
 
-    A filled `- **Hotline:** 0912 345 678   ← ví dụ: ...` becomes `- Hotline: 0912 345 678`.
+# Several answers carry more than one fact, folded onto one line by the form. That
+# separator is ours -- `write_pack` joins a multi-line answer with it -- so splitting it
+# back out restores the shop's own line breaks. "anh/chị" survives: the joiner has spaces
+# around it, that does not.
+FOLDED = " / "
+
+
+def _read_prose(source: Path, title: str, stamp: str) -> list[tuple[str, str]]:
+    """The form, reduced to what a customer may be told, as (kind, text) blocks.
+
+    A filled `- **Hotline:** 0912 345 678   ← ví dụ: ...` becomes `Hotline: 0912 345 678`.
     The example hint has to go: left in, it is a second phone number in the knowledge.
     """
-    out = [f"# {title}", "", f"Cập nhật ngày: {stamp}", ""]
+    blocks: list[tuple[str, str]] = [("h1", title), ("meta", f"Cập nhật ngày: {stamp}")]
 
     for line in source.read_text(encoding="utf-8").splitlines():
         text = line.rstrip()
@@ -155,16 +163,73 @@ def _prose(source: Path, target: Path, title: str, stamp: str,
         if text.strip().startswith("*") and text.strip().endswith("*"):
             continue                                   # our italic notes
         if text.startswith("## "):
-            out += ["", f"## {text[3:].strip()}", ""]
+            blocks.append(("h2", text[3:].strip()))
             continue
 
         text = re.sub(r"\s*←.*$", "", text)            # "← ví dụ: ..."
-        text = text.replace("*(không bắt buộc)*", "")
-        text = text.replace("**", "")
-        if text.strip():
-            out.append(text.rstrip())
+        text = text.replace("*(không bắt buộc)*", "").replace("**", "").rstrip()
+        if not text.strip():
+            continue
+        if text.startswith("- "):
+            parts = [p.strip() for p in text[2:].split(FOLDED) if p.strip()]
+            blocks.append(("bullet", parts[0]))
+            blocks += [("sub", p) for p in parts[1:]]
+        else:
+            blocks.append(("para", text))
+    return blocks
 
+
+def _write_md(blocks: list[tuple[str, str]], target: Path) -> None:
+    out: list[str] = []
+    for kind, text in blocks:
+        if kind == "h1":
+            out += [f"# {text}", ""]
+        elif kind == "h2":
+            out += ["", f"## {text}", ""]
+        elif kind == "bullet":
+            out.append(f"- {text}")
+        elif kind == "sub":
+            out.append(f"  - {text}")
+        else:
+            out += [text, ""]
     target.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+
+
+def _write_docx(blocks: list[tuple[str, str]], target: Path) -> None:
+    """The same content as a Word document, because `.md` is not a format Meta's Drive
+    picker offers. Its filter lists Tài liệu, Hình ảnh and Bảng tính; a .docx is the first,
+    and Drive opens it as a Google Doc, which is what the shop can then edit in place."""
+    from docx import Document as WordDocument
+
+    doc = WordDocument()
+    for kind, text in blocks:
+        if kind == "h1":
+            doc.add_heading(text, level=1)
+        elif kind == "h2":
+            doc.add_heading(text, level=2)
+        elif kind == "meta":
+            doc.add_paragraph().add_run(text).italic = True
+        elif kind in ("bullet", "sub"):
+            para = doc.add_paragraph(
+                style="List Bullet" if kind == "bullet" else "List Bullet 2")
+            # The label before the first colon is the fact's name; bolding it makes the
+            # document scannable by a person without changing a word of it.
+            at = text.find(":") if kind == "bullet" else -1
+            if at > 0:
+                para.add_run(text[:at + 1] + " ").bold = True
+                para.add_run(text[at + 1:].strip())
+            else:
+                para.add_run(text)
+        else:
+            doc.add_paragraph(text)
+    doc.save(target)
+
+
+def _prose(source: Path, stem: Path, title: str, stamp: str, report: PublishReport, *,
+           fmt: str = "md") -> None:
+    blocks = _read_prose(source, title, stamp)
+    target = stem.with_suffix(f".{fmt}")
+    (_write_docx if fmt == "docx" else _write_md)(blocks, target)
     report.written.append(target.name)
     log.info("wrote %s", target)
 

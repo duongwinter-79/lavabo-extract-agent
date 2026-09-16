@@ -979,7 +979,8 @@ def _kb_publish(args, cfg: Config, directory: Path, fatal: list) -> int:
         return 1
 
     out = Path(args.to)
-    result = publish(directory, out, image_base=args.image_base)
+    result = publish(directory, out, image_base=args.image_base,
+                     prose_format=args.prose_format)
 
     print(f"  {out}")
     for name in result.written:
@@ -1057,6 +1058,10 @@ def cmd_run(args, cfg: Config) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
+
+    # The one name the parser needs from a kb module. Imported here rather than at module
+    # scope so `lavabo --help` still does not pay for openpyxl.
+    from .kb.publish import PROSE_FORMATS
 
     ap = argparse.ArgumentParser(prog="lavabo", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1192,6 +1197,10 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--image-base", default="",
                    help="public URL the photos are hosted under — adds a link_anh column "
                         "to the price list so the agent can point a customer at the photo")
+    q.add_argument("--prose-format", default="md", choices=PROSE_FORMATS,
+                   help="format for the two prose files. Meta's Drive picker offers "
+                        "Tài liệu / Hình ảnh / Bảng tính and does not accept .md, so "
+                        "use docx for a folder that will be connected")
     q.add_argument("--to", default="drive", help="output folder (default: drive/)")
     add_llm_args(q)
 
