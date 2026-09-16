@@ -8,6 +8,18 @@ half-hour probe that settles it.
 > both blocked from this environment, so §2 is reasoning about likelihoods, not a
 > quotation from documentation. §3 is how to replace it with fact.
 
+> **Result, 16/09/2026 — `.md` is NOT accepted.** With Business Portfolio permissions
+> finally in place, the Drive picker does not offer Markdown files at all. That settles the
+> format question for the two prose files `publish` writes: `01-thong-tin-cua-hang.md` and
+> `02-chinh-sach.md` cannot be connected as they are. The four `.xlsx` files were not
+> reported as a problem.
+>
+> What it does NOT settle is which format to use instead. The picker's own file-type
+> dropdown lists what it accepts — read that before converting anything, rather than
+> guessing and converting twice. Outcome A in the table below (Google Docs native) remains
+> the one to build for regardless: the shop edits it, it round-trips, and converting costs
+> nothing. Paste the prose into a Google Doc of the same name and the question goes away.
+
 ---
 
 ## 1. Two questions, not one
@@ -33,6 +45,7 @@ Ranked by how likely each is to be accepted, with what it costs us:
 | # | Outcome | Likelihood | What it costs |
 |---|---|---|---|
 | A | **Google Docs / Sheets native** | High — it is a Drive connector | Nothing. See below |
+| — | **Markdown `.md`** | **Không — đã xác nhận 16/09/2026** | `publish` writes two `.md` files; they must be converted |
 | B | **+ PDF** | High | Fine to read, **bad to maintain** — the shop cannot edit a PDF, so the weekly update breaks unless we regenerate it every time |
 | C | **+ Office files (.xlsx, .docx) stored in Drive** | Medium | Best case: the intake pack goes in untouched |
 | D | **+ .csv / .txt** | Medium | Usable for the price table; poor for prose |

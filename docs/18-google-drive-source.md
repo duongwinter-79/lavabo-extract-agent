@@ -107,7 +107,7 @@ The intake pack already defines these; Drive just changes the container.
 
 | File | From | Note |
 |---|---|---|
-| `01-thong-tin-cua-hang` | `store.md` | Tên shop, địa chỉ, giờ, hotline, khu vực giao |
+| `01-thong-tin-cua-hang` | `store.md` | Tên shop, địa chỉ, giờ, hotline, khu vực giao. **`publish` viết ra `.md`, mà connector KHÔNG nhận `.md`** (xác nhận 16/09/2026) — dán nội dung vào một Google Doc cùng tên. Xem [docs/19](19-drive-format-probe.md) |
 | `02-chinh-sach` | `policies.md` | Cọc, bảo hành (kể cả **không** bảo hành gì), đổi trả, lắp đặt |
 | `03-phi-van-chuyen` | `shipping.xlsx` | A table, one row per tỉnh — not a paragraph |
 | `04-cau-hoi-thuong-gap` | `faq.xlsx` | Real questions, real answers. **No prices here** |
