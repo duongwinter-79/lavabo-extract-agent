@@ -19,8 +19,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from openpyxl import load_workbook                                # noqa: E402
 
 from lavabo.kb import spec                                        # noqa: E402
-from lavabo.kb.check import check_one_file                        # noqa: E402
-from lavabo.kb.onefile import ANSWER_COLUMN, DOC_TABS, TABS, write_one_file  # noqa: E402
+from lavabo.kb.check import check_intake, check_one_file          # noqa: E402
+from lavabo.kb.onefile import (ANSWER_COLUMN, DOC_TABS, TABS,  # noqa: E402
+                               write_one_file, write_pack)
 
 from test_kb_check import GOOD                                    # noqa: E402
 
@@ -131,6 +132,68 @@ class FillingItIn(unittest.TestCase):
         self.save()
         fatal = [str(p) for p in check_one_file(self.path) if p.fatal]
         self.assertTrue(any("Tên shop" in f for f in fatal), fatal)
+
+
+class SpreadingItBackOut(unittest.TestCase):
+    """`write_pack`: the workbook back into the folder everything downstream reads.
+
+    `check` takes either shape, but publish and feed only take the folder, so a shop that
+    filled the workbook could reach a passing check and go no further. These tests are
+    about the bridge carrying the answers across without changing the verdict.
+    """
+
+    def setUp(self):
+        self.path = Path(tempfile.mkdtemp()) / "pack.xlsx"
+        write_one_file(self.path)
+        book = load_workbook(self.path)
+        for title, doc in DOC_TABS.items():
+            ws = book[title]
+            for row in ws.iter_rows(min_row=2):
+                label = row[0].value
+                if label and not str(label).startswith(("—", doc.why[:20])):
+                    ws.cell(row=row[0].row, column=ANSWER_COLUMN, value="xong")
+        catalog = book["Danh mục sản phẩm"]
+        catalog.delete_rows(2, catalog.max_row)
+        catalog.append([GOOD.get(c) for c in spec.CATALOG.names])
+        book.save(self.path)
+
+    def pack(self, images=None):
+        return write_pack(self.path, Path(tempfile.mkdtemp()) / "pack", images=images)
+
+    def test_the_folder_it_writes_passes_the_check_the_workbook_passed(self):
+        """One source, one verdict -- the whole reason this function exists."""
+        self.assertEqual([str(p) for p in check_intake(self.pack()) if p.fatal], [])
+
+    def test_every_file_the_folder_pack_expects_is_written(self):
+        pack = self.pack()
+        for sheet in TABS.values():
+            self.assertTrue((pack / sheet.filename).is_file(), sheet.filename)
+        for doc in DOC_TABS.values():
+            self.assertTrue((pack / doc.filename).is_file(), doc.filename)
+
+    def test_an_answer_survives_the_trip_into_the_markdown(self):
+        self.assertIn("xong", (self.pack() / "store.md").read_text(encoding="utf-8"))
+
+    def test_an_unanswered_field_keeps_its_placeholder_for_check_to_find(self):
+        """Filling a blank with something plausible would hide the gap, not close it."""
+        book = load_workbook(self.path)
+        ws = book["Cửa hàng"]
+        for row in ws.iter_rows(min_row=2):
+            if str(row[0].value or "").strip() == "Hotline":
+                ws.cell(row=row[0].row, column=ANSWER_COLUMN, value=None)
+        book.save(self.path)
+        text = (self.pack() / "store.md").read_text(encoding="utf-8")
+        self.assertIn(spec.PLACEHOLDER, text)
+
+    def test_photos_are_copied_only_when_a_folder_is_given(self):
+        """The workbook carries no images, so without --images there are none to publish."""
+        self.assertEqual(list((self.pack() / "images").iterdir()), [])
+
+        photos = Path(tempfile.mkdtemp())
+        (photos / "tu-80.jpg").write_bytes(b"x")
+        (photos / "ghi-chu.txt").write_bytes(b"x")          # not a photograph
+        copied = [p.name for p in (self.pack(images=photos) / "images").iterdir()]
+        self.assertEqual(copied, ["tu-80.jpg"])
 
 
 class ItIsMissing(unittest.TestCase):

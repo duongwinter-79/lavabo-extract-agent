@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import shutil
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
@@ -50,6 +52,9 @@ DOC_TABS: dict[str, DocSpec] = {
 }
 DOC_HEADERS = ["Mục", "Trả lời", "Ví dụ", "Bắt buộc"]
 ANSWER_COLUMN = 2
+
+# What counts as a product photo when spreading the workbook back into a folder.
+PACK_PHOTOS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def write_one_file(out: Path, *, force: bool = False) -> Path:
@@ -171,3 +176,94 @@ def _answers(ws) -> dict[str, str]:
         value = "" if answer is None else str(answer).strip()
         out[text.lower()] = "" if value == PLACEHOLDER else value
     return out
+
+
+# --------------------------------------------------------------- back out to a folder
+
+# A form line: `- **Hotline:** [chưa điền]   ← ví dụ: 0912 345 678`
+_FIELD_LINE = re.compile(r"^(\s*-\s*\*\*(?P<label>[^:*]+):\*\*\s*)" + re.escape(PLACEHOLDER))
+
+
+def _fill_doc(form: str, answers: dict[str, str]) -> str:
+    """Put the shop's answers back into the markdown form, keeping its shape.
+
+    Two placeholder shapes, and they want opposite treatment. A bullet must stay one line,
+    so a multi-line answer is joined. A bare placeholder under a `## ` heading (the sample
+    conversations) is a block, and there the line breaks ARE the content -- a chat
+    transcript flattened onto one line stops reading as a chat.
+
+    The surrounding form is left alone rather than rewritten: `publish` strips the
+    furniture later, and the headings it keeps are what give the published file its shape.
+    """
+    lines: list[str] = []
+    heading = ""
+    for line in form.splitlines():
+        if line.startswith("## "):
+            heading = line[3:].strip()
+
+        match = _FIELD_LINE.match(line)
+        if match:
+            answer = answers.get(match.group("label").strip().lower(), "")
+            if answer:
+                lines.append(match.group(1) + answer.replace("\n", " / "))
+                continue
+        elif line.strip() == PLACEHOLDER and heading:
+            answer = answers.get(heading.lower(), "")
+            if answer:
+                lines.append(answer)
+                continue
+
+        lines.append(line)
+    return "\n".join(lines) + "\n"
+
+
+def write_pack(workbook: Path, target: Path, *, images: Path | None = None) -> Path:
+    """Spread the one workbook back out into the folder pack.
+
+    `kb check` reads either shape, but everything downstream of it -- publish, feed --
+    reads the folder. A shop that filled the workbook could get as far as a passing check
+    and no further. This is the bridge, and it invents nothing: every value is copied
+    across as the shop typed it.
+
+    The workbook holds no photographs, so `images` says where they live. Without it the
+    pack simply has no images/ -- which publishes fine and copies nothing.
+    """
+    from .templates import render_doc
+
+    if target.exists():
+        shutil.rmtree(target)            # a stale file here would publish stale facts
+    target.mkdir(parents=True)
+
+    wb = load_workbook(workbook, data_only=True)
+
+    for title, spec in TABS.items():
+        if title not in wb.sheetnames:
+            continue
+        source = wb[title]
+        out = Workbook()
+        sheet = out.active
+        sheet.title = "Dữ liệu"
+        sheet.append(list(spec.names))
+        for values in source.iter_rows(min_row=2, values_only=True):
+            if all(v in (None, "") for v in values):
+                continue
+            sheet.append(list(values[:len(spec.names)]))
+        out.save(target / spec.filename)
+
+    for title, doc in DOC_TABS.items():
+        if title in wb.sheetnames:
+            filled = _fill_doc(render_doc(doc), _answers(wb[title]))
+            (target / doc.filename).write_text(filled, encoding="utf-8")
+
+    for name, body in STATIC_DOCS.items():
+        (target / name).write_text(body, encoding="utf-8")
+
+    photos = target / "images"
+    photos.mkdir(exist_ok=True)
+    if images and images.is_dir():
+        for photo in sorted(images.iterdir()):
+            if photo.is_file() and photo.suffix.lower() in PACK_PHOTOS:
+                shutil.copy2(photo, photos / photo.name)
+
+    log.info("wrote pack %s", target)
+    return target

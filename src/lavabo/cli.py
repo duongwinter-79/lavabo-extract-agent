@@ -772,6 +772,10 @@ def cmd_kb(args, cfg: Config) -> int:
               f"Điền xong thì chạy: lavabo kb check --dir {directory}")
         return 0
 
+    # Before the generic --file branch below, which is `check`'s and returns early.
+    if args.kb_command == "publish" and getattr(args, "file", None):
+        return _kb_publish_one_file(args, cfg)
+
     if getattr(args, "file", None):
         problems = check_one_file(Path(args.file))
         print(report(problems))
@@ -929,6 +933,38 @@ def _kb_contact_sheet(args, cfg: Config) -> int:
     print(f"  Điền mã vào cột ma_sp trong {sheet.mapping.name}, rồi chạy:")
     print(f"    lavabo kb media --from {source} --map {sheet.mapping} --dir intake")
     return 0
+
+
+def _kb_publish_one_file(args, cfg: Config) -> int:
+    """Publish straight from the one-file workbook.
+
+    `publish` reads a folder of six files; a shop working from a phone filled one
+    workbook. Making them assemble that folder by hand is the exact step the workbook
+    exists to avoid, so the workbook is spread into a throwaway pack and published from
+    there. The published folder is the deliverable; the pack is scaffolding and does not
+    outlive the command.
+    """
+    import tempfile
+
+    from .kb.check import check_intake
+    from .kb.onefile import write_pack
+
+    workbook = Path(args.file)
+    if not workbook.is_file():
+        print(f"Không tìm thấy {workbook}", file=sys.stderr)
+        return 1
+
+    images = Path(args.images) if getattr(args, "images", None) else None
+    if images and not images.is_dir():
+        print(f"Không tìm thấy thư mục ảnh {images}", file=sys.stderr)
+        return 1
+
+    with tempfile.TemporaryDirectory(prefix="lavabo-pack-") as tmp:
+        pack = write_pack(workbook, Path(tmp) / "pack", images=images)
+        fatal = [p for p in check_intake(pack) if p.fatal]
+        if not images:
+            log.info("không có --images: xuất bản kiến thức, không kèm ảnh")
+        return _kb_publish(args, cfg, pack, fatal)
 
 
 def _kb_publish(args, cfg: Config, directory: Path, fatal: list) -> int:
@@ -1150,6 +1186,9 @@ def main(argv: list[str] | None = None) -> int:
     q = kb.add_parser("publish",
                       help="a passing pack -> the folder Meta's Drive connector reads")
     q.add_argument("--dir", default="intake")
+    q.add_argument("--file", help="publish a one-file workbook instead of a folder")
+    q.add_argument("--images", help="product photos to publish (use with --file, "
+                                    "which carries none of its own)")
     q.add_argument("--to", default="drive", help="output folder (default: drive/)")
     add_llm_args(q)
 
