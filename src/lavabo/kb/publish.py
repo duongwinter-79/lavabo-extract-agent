@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import re
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -43,6 +44,9 @@ FORM_DIR = "bieu-mau"
 PRICE_COLUMNS = ["ma_sp", "ten_sp", "loai", "kich_thuoc", "chat_lieu", "mau", "don_vi",
                  "gia_niem_yet", "gia_km", "km_den_ngay", "tinh_trang", "thoi_gian_giao",
                  "bao_hanh", "gia_gom", "ghi_chu_tu_van"]
+
+# Only ever written when --image-base says the photos are reachable; see `photo_urls`.
+PHOTO_COLUMN = "link_anh"
 
 EXCLUDED = {
     "voice.md": "hướng dẫn cách trả lời — dán vào tab Hướng dẫn, không phải kiến thức",
@@ -96,7 +100,8 @@ class PublishReport:
     images: int = 0
 
 
-def publish(intake: Path, out: Path, *, today: date | None = None) -> PublishReport:
+def publish(intake: Path, out: Path, *, today: date | None = None,
+            image_base: str = "") -> PublishReport:
     stamp = (today or date.today()).isoformat()
     knowledge = out / KNOWLEDGE_DIR
     knowledge.mkdir(parents=True, exist_ok=True)
@@ -118,7 +123,9 @@ def publish(intake: Path, out: Path, *, today: date | None = None) -> PublishRep
     _table(intake / FAQ.filename, knowledge / "04-cau-hoi-thuong-gap.xlsx",
            FAQ.names, stamp, report)
     _table(intake / CATALOG.filename, knowledge / "05-bang-gia.xlsx",
-           PRICE_COLUMNS, stamp, report)
+           PRICE_COLUMNS, stamp, report,
+           derived=(PHOTO_COLUMN, lambda rec: photo_urls(image_base, rec.get("anh")))
+           if image_base else None)
     _table(intake / PROMOTIONS.filename, knowledge / "06-khuyen-mai.xlsx",
            PROMOTIONS.names, stamp, report, optional=True)
 
@@ -164,8 +171,24 @@ def _prose(source: Path, target: Path, title: str, stamp: str,
 
 # ----------------------------------------------------------------------------- tables
 
+def photo_urls(base: str, names) -> str:
+    """The photos' public addresses, from the filenames the catalogue already carries.
+
+    A bare filename is excluded from knowledge on purpose -- `images.xlsx` is dropped
+    because the agent would state "IMG_4821.jpg" as though it meant something. A URL is the
+    same datum made actionable: a customer can open it. So it earns a place in the
+    knowledge only once `--image-base` asserts the photos are actually reachable, and never
+    by default.
+    """
+    parts = [n.strip() for n in str(names or "").split(";") if n.strip()]
+    return "; ".join(f"{base.rstrip('/')}/{name.lstrip('/')}" for name in parts)
+
+
 def _table(source: Path, target: Path, columns: list[str], stamp: str,
-           report: PublishReport, *, optional: bool = False) -> None:
+           report: PublishReport, *, optional: bool = False,
+           derived: tuple[str, Callable[[dict], object]] | None = None) -> None:
+    """`derived` appends one column computed from the source row, for a value the shop
+    never types -- the photo's public URL, which does not exist until somebody hosts it."""
     if not source.exists():
         if not optional:
             log.warning("thiếu %s", source.name)
@@ -181,17 +204,20 @@ def _table(source: Path, target: Path, columns: list[str], stamp: str,
     out = wb.active
     out.title = "Dữ liệu"
     out.append([f"Cập nhật ngày: {stamp}"])
-    out.append([c for c in columns if c in index])
+    out.append([c for c in columns if c in index] + ([derived[0]] if derived else []))
 
     rows = 0
     for values in sheet.iter_rows(min_row=2, values_only=True):
         if all(v is None or str(v).strip() == "" for v in values):
             continue
-        row = [values[index[c]] if index[c] < len(values) else None
-               for c in columns if c in index]
+        record = {name: values[at] if at < len(values) else None
+                  for name, at in index.items()}
+        row = [record[c] for c in columns if c in index]
         if any(EXAMPLE_MARKER in str(v) for v in row if v is not None):
             report.skipped_examples += 1
             continue
+        if derived:
+            row.append(derived[1](record))
         out.append(row)
         rows += 1
 

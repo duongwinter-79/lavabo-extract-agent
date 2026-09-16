@@ -979,7 +979,7 @@ def _kb_publish(args, cfg: Config, directory: Path, fatal: list) -> int:
         return 1
 
     out = Path(args.to)
-    result = publish(directory, out)
+    result = publish(directory, out, image_base=args.image_base)
 
     print(f"  {out}")
     for name in result.written:
@@ -1189,6 +1189,9 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--file", help="publish a one-file workbook instead of a folder")
     q.add_argument("--images", help="product photos to publish (use with --file, "
                                     "which carries none of its own)")
+    q.add_argument("--image-base", default="",
+                   help="public URL the photos are hosted under — adds a link_anh column "
+                        "to the price list so the agent can point a customer at the photo")
     q.add_argument("--to", default="drive", help="output folder (default: drive/)")
     add_llm_args(q)
 

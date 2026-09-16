@@ -21,8 +21,8 @@ from openpyxl import Workbook, load_workbook                      # noqa: E402
 
 from lavabo.kb import spec                                        # noqa: E402
 from lavabo.kb.check import Problem, check_intake                 # noqa: E402
-from lavabo.kb.publish import (KNOWLEDGE_DIR, blocking, instruction_gaps,  # noqa: E402
-                               publish)
+from lavabo.kb.publish import (KNOWLEDGE_DIR, PHOTO_COLUMN,  # noqa: E402
+                               blocking, instruction_gaps, publish)
 from lavabo.kb.templates import write_intake                      # noqa: E402
 
 from test_kb_check import GOOD                                    # noqa: E402
@@ -53,8 +53,8 @@ class Publishing(unittest.TestCase):
             lines.append(line)
         path.write_text("\n".join(lines), encoding="utf-8")
 
-    def run_publish(self):
-        return publish(self.intake, self.out, today=date(2026, 9, 14))
+    def run_publish(self, **kwargs):
+        return publish(self.intake, self.out, today=date(2026, 9, 14), **kwargs)
 
     def knowledge(self) -> set[str]:
         return {p.name for p in (self.out / KNOWLEDGE_DIR).iterdir()}
@@ -134,6 +134,50 @@ class WhatGetsStripped(Publishing):
         self.assertNotIn("cap_nhat_ngay", header)
         self.assertIn("gia_niem_yet", header)
         self.assertIn("ghi_chu_tu_van", header)
+
+
+class ThePhotoLink(Publishing):
+    """`--image-base` is the only thing that puts a photo address in the knowledge.
+
+    A filename is dropped on purpose -- the agent would state "IMG_4821.jpg" as though it
+    meant something. A URL is that datum made actionable, so it appears only when somebody
+    asserts the photos are actually reachable.
+    """
+
+    def test_no_photo_column_without_a_base(self):
+        self.run_publish()
+        self.assertNotIn(PHOTO_COLUMN, self.price_rows()[1])
+
+    def test_the_base_joins_onto_the_filename_the_catalogue_carries(self):
+        self.run_publish(image_base="https://host/anh")
+        header, row = self.price_rows()[1], self.price_rows()[2]
+        self.assertEqual(header[-1], PHOTO_COLUMN)
+        self.assertEqual(row[-1], f"https://host/anh/{GOOD['anh']}")
+
+    def test_a_trailing_slash_does_not_double_up(self):
+        """The shop pastes whatever Drive gave them; both forms have to land the same."""
+        self.run_publish(image_base="https://host/anh/")
+        self.assertEqual(self.price_rows()[2][-1], f"https://host/anh/{GOOD['anh']}")
+
+    def test_several_photos_on_one_row_each_get_an_address(self):
+        self.write_catalog([{**GOOD, "anh": "a.jpg; b.jpg"}])
+        self.run_publish(image_base="https://host/anh")
+        self.assertEqual(self.price_rows()[2][-1],
+                         "https://host/anh/a.jpg; https://host/anh/b.jpg")
+
+    def test_a_row_with_no_photo_gets_an_empty_cell_not_a_broken_link(self):
+        """A bare base URL would send the customer to a directory, or to nothing."""
+        self.write_catalog([{**GOOD, "anh": None}])
+        self.run_publish(image_base="https://host/anh")
+        cell = self.price_rows()[2][-1]
+        self.assertFalse(cell, cell)          # an empty cell reads back as None
+
+    def test_the_rest_of_the_price_list_is_untouched(self):
+        self.run_publish()
+        plain = self.price_rows()
+        self.run_publish(image_base="https://host/anh")
+        linked = self.price_rows()
+        self.assertEqual([r[:-1] for r in linked[1:]], [tuple(r) for r in plain[1:]])
 
 
 class WhatBlocksIt(unittest.TestCase):
