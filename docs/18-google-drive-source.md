@@ -61,6 +61,20 @@ SENKA HOME — AI/
 └── 02-ANH-SAN-PHAM/        ← NOT connected. Photos, per the phone guide.
 ```
 
+**Why the photos stay out, and how they can still reach a customer.** Connecting the
+folder would achieve nothing: there is no text in a `.jpg` for the connector to index, and
+no mechanism for the agent to attach a file to a reply. Showing a product properly is a
+Facebook Catalog job — [docs/13](13-business-ai-step-2.md) §6.
+
+Where Commerce Manager is out of reach, there is a weaker route that uses only Drive: host
+the photos publicly and put their **addresses** in the price table, since a URL is text and
+text is what the connector carries. `lavabo kb publish --image-base <URL>` adds a
+`link_anh` column built from the `anh` filename each catalogue row already holds. Without
+the flag the published file is unchanged, column for column — the flag is the assertion
+that the photos are actually reachable, and a row with no photo gets an empty cell rather
+than a link to the base directory. Whether the agent surfaces such a link at all is
+[docs/19](19-drive-format-probe.md) Probe D.
+
 Three rules, and the first one is the whole game:
 
 1. **Only finished, checked files go in `01-KIEN-THUC-AI`.** A Drive folder is a dumping
@@ -97,7 +111,7 @@ The intake pack already defines these; Drive just changes the container.
 | `02-chinh-sach` | `policies.md` | Cọc, bảo hành (kể cả **không** bảo hành gì), đổi trả, lắp đặt |
 | `03-phi-van-chuyen` | `shipping.xlsx` | A table, one row per tỉnh — not a paragraph |
 | `04-cau-hoi-thuong-gap` | `faq.xlsx` | Real questions, real answers. **No prices here** |
-| `05-bang-gia` | `catalog.xlsx` | The only place a number lives. Also feeds **Thêm bảng giá** |
+| `05-bang-gia` | `catalog.xlsx` | The only place a number lives. Also feeds **Thêm bảng giá**. Carries `link_anh` only when published with `--image-base` — see §2 |
 
 The "no prices in the FAQ" rule survives the move to Drive intact, and matters more here:
 the agent reads every file in the folder, so a price in two files is a contradiction it
@@ -202,6 +216,10 @@ Thư mục là của shop, anh/chị giữ toàn quyền. Điền được file 
    shop tab, an ad)? Check before deleting; disabling may be safer than removing.
 4. **Does Thêm bảng giá want the same file** as the Drive price list, or is it a separate
    upload? If separate, that is a second copy — and §1's rule says pick one.
+5. **Does a photo URL in the price table survive indexing**, and does Messenger render it
+   as a preview? [docs/19](19-drive-format-probe.md) Probe D settles it. Until it does,
+   publish without `--image-base`: an unanswered question is better than a column of links
+   that come back mangled.
 
 ---
 

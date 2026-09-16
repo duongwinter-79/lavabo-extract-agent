@@ -116,6 +116,34 @@ wrong price to a customer. Do not use it, however convenient it is.
 Upload the same five rows through **Thêm bảng giá** and run Probe B's questions again.
 Compare. If it wins, prices move there and the Drive folder keeps the prose.
 
+### Probe D — can a customer see the cabinet
+
+Only worth running while Commerce Manager is out of reach. A catalogue shows a product
+card; this asks whether the Drive route can manage anything at all.
+
+The photos folder is not connected and indexing it would achieve nothing — there is no
+text in a `.jpg`, and no mechanism to attach a file to a reply. But **a URL is text**, and
+text is what the connector carries. So the question is whether a link sitting in the price
+table comes back out.
+
+1. Share **one** photo from `02-ANH-SAN-PHAM` as "anyone with the link", and take the
+   direct-image URL — the form that returns the image bytes, not the Drive viewer page.
+2. Republish with the base: `lavabo kb publish --file <workbook> --image-base <URL thư mục>`.
+   That adds a `link_anh` column to `05-bang-gia` and nothing else; without the flag the
+   file is identical, column for column.
+3. Ask in Chat thử: **"Mẫu [mã] trông thế nào?"** and **"Gửi em xem ảnh mẫu [mã] với"**.
+
+| Passes if | Meaning |
+|---|---|
+| The reply contains the URL | The link survives indexing. Enough to be useful |
+| Messenger renders it as a preview | Best case — a photo reaches the customer without Commerce |
+| The URL comes back mangled or truncated | The column is worse than nothing; drop `--image-base` |
+| No link at all | The connector drops URLs, or ranks that column away. Wait for Commerce |
+
+One row first, for the same reason Probe A goes one format at a time. And the row must be
+a **real product with its real photo** — a placeholder URL left in the knowledge is a
+broken link waiting to be sent to a customer.
+
 ---
 
 ## 4. What each result changes
@@ -132,6 +160,11 @@ Compare. If it wins, prices move there and the Drive folder keeps the prose.
 | Right row, declines unknown codes | Prices can live in the Drive table |
 | Right row, but guesses on unknown codes | Prices stay out until the Hướng dẫn guardrail (docs/12 §3.5) is in place, then re-test |
 | Wrong rows | **Prices do not go in this format at all.** Try Probe C, and if that fails too, the agent launches on policy answers only — which is [docs/16](16-quick-setup.md)'s design anyway |
+
+| Probe D says | Then |
+|---|---|
+| The link comes back, preview or not | Publish with `--image-base` and host the photos properly. A link is not a product card, but it beats describing a cabinet in words |
+| Link mangled, or never surfaces | Publish without the flag. Photos wait for a Facebook Catalog — [docs/13](13-business-ai-step-2.md) §6 |
 
 ---
 
