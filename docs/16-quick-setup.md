@@ -224,15 +224,26 @@ It is there — confirmed 13/09/2026, and currently switched off. **Read §4.1 b
 
 ### 4.1 What is already in there — check before flipping the toggle
 
-The account's **Thông tin của bạn** already holds knowledge nobody on our side wrote:
+The account's **Thông tin của bạn** holds knowledge that is partly not ours and partly
+very much ours:
 
-- **Sản phẩm của SENKA HOME — 14 mặt hàng**, created 18/5/26.
-- **Bảng giá — 15 tuần** old. **[confirm]** what that figure measures.
+- **Sản phẩm của SENKA HOME — 16 mặt hàng** (16/09/2026), entry created 18/5/26.
+- **Bảng giá — 16 tuần**. **[confirm]** what that figure measures.
 
-The moment the toggle goes to *AI đang bật*, the agent answers from those. A fifteen-week-old
-price list is past the staleness limit `lavabo kb check` refuses a catalogue at, and the
-whole argument of [docs/13](13-business-ai-step-2.md) is that a wrong price quoted by the
-Page is worse than no reply. So, in order:
+Two things about that first line, both easy to get wrong:
+
+**The count grew because we grew it.** It read 14 on 13/09. Items were added directly into
+this section as a stopgap while Drive was blocked on Business Portfolio permissions, so the
+entry now mixes original shop items with our own. Deleting it wholesale discards both —
+note which ones are ours before removing anything.
+
+**The creation date is not the content date.** `18/5/26` is when the entry was created. It
+is not evidence that the rows inside are four months old, and "created in May, therefore
+past the 60-day limit" does not follow. Open it and read the rows.
+
+The moment the toggle goes to *AI đang bật*, the agent answers from these, and the whole
+argument of [docs/13](13-business-ai-step-2.md) is that a wrong price quoted by the Page is
+worse than no reply. So, in order:
 
 1. Open the Bảng giá entry and compare a few prices against what the shop charges today.
 2. Open the 14-item product list and check the same.

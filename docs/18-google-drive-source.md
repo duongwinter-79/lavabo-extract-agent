@@ -36,7 +36,7 @@ flowchart LR
     DRIVE --> US["🔵 Tải về<br/>lavabo kb check"]
     US -->|"LỖI"| SHOP
     HD["🔵 Hướng dẫn<br/>cách trả lời, không được nói gì"] --> META
-    OLD["Sản phẩm của SENKA HOME<br/>14 mặt hàng, cũ"] -.->|"gỡ sau khi Drive chạy"| META
+    OLD["Sản phẩm của SENKA HOME<br/>16 mặt hàng, hỗn hợp"] -.->|"gỡ sau khi Drive chạy"| META
 
     style DRIVE fill:#fff3cd,stroke:#856404,color:#111
     style HD fill:#e7f1ff,stroke:#004085,color:#111
@@ -127,9 +127,13 @@ The agent is currently **AI đang tắt**. Keep it that way until step 6.
    connect it, and use **Chat thử** to ask "shop ở đâu?". This answers the format question
    in ten minutes and before anybody retypes a price list.
 2. **Add the rest**, price list last.
-3. **Audit what is already loaded.** The existing *Sản phẩm của SENKA HOME* (14 mặt hàng)
-   and the *Bảng giá* at 15 tuần are knowledge the moment the agent runs. Compare them
-   against the new files.
+3. **Audit what is already loaded.** The existing *Sản phẩm của SENKA HOME* (16 mặt hàng
+   as of 16/09/2026) and the *Bảng giá* at 16 tuần are knowledge the moment the agent runs.
+   Compare them against the new files. **Part of that entry is ours** — items were added
+   into it directly as a stopgap while Drive was blocked on permissions, so it mixes the
+   shop's originals with our recent additions. Note which are which before step 4, or
+   removing the entry throws away work nobody has a copy of. And read the rows rather than
+   trusting the `Ngày tạo`: that date belongs to the entry, not to what is inside it.
 4. **Remove the old entries** once Drive carries the same facts, correctly. Not before —
    and not "leave them, they're probably fine". Two catalogues is the problem this whole
    document exists to avoid.
@@ -197,7 +201,7 @@ BA ĐIỀU QUAN TRỌNG
 - Mỗi nội dung một file. Không để "bang-gia-v2", "bang-gia-moi-nhat" —
   sửa thẳng vào file cũ.
 - Đầu mỗi file ghi một dòng "Cập nhật ngày ..." và sửa dòng đó mỗi lần
-  kiểm tra lại. Hiện bảng giá đang dùng đã cũ khoảng 15 tuần, đây đúng là
+  kiểm tra lại. Hiện bảng giá đang dùng đã cũ khoảng 16 tuần, đây đúng là
   thứ cần tránh.
 
 Thư mục là của shop, anh/chị giữ toàn quyền. Điền được file nào gửi file

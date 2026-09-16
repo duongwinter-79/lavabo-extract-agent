@@ -24,6 +24,19 @@ customer has a screenshot. Everything below is built around that one sentence.
 > marketing images carry kích thước, màu and sometimes a price, which `lavabo kb
 > from-images` reads into a draft for a human to confirm.
 
+> **Update, 16/09/2026 — the entry is now 16 items, and part of it is ours.** The screen
+> reads *16 mặt hàng*, not 14: while Drive access was blocked on Business Portfolio
+> permissions, items were added straight into **Thông tin về sản phẩm** as a stopgap. So
+> the entry is now MIXED — original shop items plus our own recent additions — and the
+> plan below of deleting it wholesale would throw away both. Before removing it, write
+> down which items were added by us; a stopgap you built yourself is the one you forget to
+> clean up. *Bảng giá* now reads **16 tuần**.
+>
+> Also correct an inference in the entry below: `Ngày tạo: 18/5/26` is when the ENTRY was
+> created and says nothing about how old its contents are. "Created in May, therefore past
+> the 60-day limit" does not follow — the contents have been edited since. The staleness
+> question has to be answered by reading the rows, not the date.
+
 > **Update, 13/09/2026 — a catalogue already exists.** The live account's Meta Business
 > Agent knowledge holds *Sản phẩm của SENKA HOME — 14 mặt hàng* (created 18/5/26) and a
 > *Bảng giá* reading **15 tuần** old. So step 2 may be a correction job, not a build — but
