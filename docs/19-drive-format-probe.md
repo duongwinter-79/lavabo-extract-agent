@@ -14,11 +14,22 @@ half-hour probe that settles it.
 > `02-chinh-sach.md` cannot be connected as they are. The four `.xlsx` files were not
 > reported as a problem.
 >
-> What it does NOT settle is which format to use instead. The picker's own file-type
-> dropdown lists what it accepts — read that before converting anything, rather than
-> guessing and converting twice. Outcome A in the table below (Google Docs native) remains
-> the one to build for regardless: the shop edits it, it round-trips, and converting costs
-> nothing. Paste the prose into a Google Doc of the same name and the question goes away.
+> **The picker's filter names exactly three categories:** `Tài liệu`, `Hình ảnh`,
+> `Bảng tính`. Documents, images, spreadsheets. `.md` falls outside all three and is shown
+> greyed out with *Loại file không được hỗ trợ*; the four `.xlsx` register as `Bảng tính`.
+>
+> So the fix for the prose is a Google Doc — `Tài liệu`, and outcome A below, which the
+> shop can edit in place. Paste the content into a Doc of the same name and the question
+> stops existing.
+>
+> **`Hình ảnh` being on that list corrects an assumption made repeatedly above and in
+> [docs/18](18-google-drive-source.md) §2.** Both documents said connecting the photos
+> folder would achieve nothing because a `.jpg` carries no text to index. The connector
+> accepts images as a knowledge source, so that reasoning was wrong. What it DOES with an
+> image — OCR, a caption, visual matching, nothing at all — is still unknown, and matters
+> directly: the shop's photos carry the size and price burnt into the picture, so an
+> accepted image is potentially an unverified price list entering the knowledge by a side
+> door. Probe E below settles it before `02-ANH-SAN-PHAM` is connected to anything.
 
 ---
 
@@ -156,6 +167,32 @@ table comes back out.
 One row first, for the same reason Probe A goes one format at a time. And the row must be
 a **real product with its real photo** — a placeholder URL left in the knowledge is a
 broken link waiting to be sent to a customer.
+
+### Probe E — what the connector does with an image
+
+The picker accepts `Hình ảnh`, so this is now answerable rather than theoretical. Run it
+**before** connecting `02-ANH-SAN-PHAM`, because the risk runs the wrong way: every one of
+the shop's photos has a size and a price burnt into it, and those prices are the
+unconfirmed ones. An image the connector reads is a price list nobody approved.
+
+1. Put **one** product photo in a folder of its own and connect only that.
+2. In Chat thử, ask three things:
+
+| Ask | What the answer tells you |
+|---|---|
+| "Bên em có mẫu nào màu xám không?" | Whether the image was indexed at all |
+| "Mẫu trong ảnh giá bao nhiêu?" | **Whether it read the price off the picture.** The dangerous one |
+| "Mô tả giúp em mẫu tủ đó" | Whether it captions visually, which is what would make photo-matching work |
+
+3. Then disconnect it again.
+
+Row 2 is the decider. If the agent quotes `5.500k` from a banner, connecting thirty photos
+puts thirty unverified prices into the knowledge in a form nothing in `kb check` can see,
+and the whole point of keeping prices in one reviewed table collapses.
+
+If it captions but does not read prices, connecting the photos is worth having: it is the
+one thing that would let the agent match a customer's picture to a model without the
+description workaround.
 
 ---
 

@@ -61,10 +61,17 @@ SENKA HOME — AI/
 └── 02-ANH-SAN-PHAM/        ← NOT connected. Photos, per the phone guide.
 ```
 
-**Why the photos stay out, and how they can still reach a customer.** Connecting the
-folder would achieve nothing: there is no text in a `.jpg` for the connector to index, and
-no mechanism for the agent to attach a file to a reply. Showing a product properly is a
-Facebook Catalog job — [docs/13](13-business-ai-step-2.md) §6.
+**Why the photos stay out — for now.** Showing a product properly is a Facebook Catalog
+job, [docs/13](13-business-ai-step-2.md) §6.
+
+An earlier version of this paragraph said connecting the folder would achieve nothing
+because a `.jpg` holds no text to index. **That was wrong**: the picker's filter lists
+`Hình ảnh` alongside `Tài liệu` and `Bảng tính`, so images are an accepted source. What the
+connector does with one is untested — and the untested case is the dangerous direction,
+because every photo here has a price burnt into it. Connecting thirty of them could put
+thirty unconfirmed prices into the knowledge where `kb check` cannot see them.
+[docs/19](19-drive-format-probe.md) Probe E answers it with one photo before anyone
+connects thirty.
 
 Where Commerce Manager is out of reach, there is a weaker route that uses only Drive: host
 the photos publicly and put their **addresses** in the price table, since a URL is text and
