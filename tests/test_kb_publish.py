@@ -136,6 +136,49 @@ class WhatGetsStripped(Publishing):
         self.assertIn("ghi_chu_tu_van", header)
 
 
+class NotesToOurselves(Publishing):
+    """Provenance belongs in the workbook and nowhere near a customer.
+
+    Somebody confirming a price needs to know it was read off a photograph. A customer
+    told "chưa có xác nhận bảng giá chính thức" has just been informed that every price in
+    the same file is unreliable.
+    """
+
+    def test_the_provenance_note_does_not_reach_the_knowledge(self):
+        self.write_catalog([{**GOOD, "ghi_chu_tu_van":
+                             "Tủ trắng, gương tròn. Giá lấy từ ảnh shop gửi khách "
+                             "(ảnh ghi: 80cm 5.000k 1m 5.900k). "
+                             "Chưa có xác nhận bảng giá chính thức."}])
+        self.run_publish()
+        note = self.price_rows()[2][-1]
+        self.assertEqual(note, "Tủ trắng, gương tròn.")
+
+    def test_a_price_inside_the_note_does_not_strand_half_of_it(self):
+        """"80cm 5.000k" has full stops in it, so stripping to the next one leaves
+        "000k 1m 5.900k)." behind -- worse than not stripping at all."""
+        self.write_catalog([{**GOOD, "ghi_chu_tu_van":
+                             "Mô tả. Giá lấy từ ảnh (ảnh ghi: 80cm 5.000k 1m 5.900k)."}])
+        self.run_publish()
+        note = str(self.price_rows()[2][-1])
+        self.assertEqual(note, "Mô tả.")
+        for fragment in ("000k", "5.900k", "ảnh ghi"):
+            self.assertNotIn(fragment, note)
+
+    def test_a_cell_that_is_only_a_note_comes_out_empty(self):
+        self.write_catalog([{**GOOD, "ghi_chu_tu_van":
+                             "Chưa có xác nhận bảng giá chính thức."}])
+        self.run_publish()
+        self.assertFalse(self.price_rows()[2][-1])
+
+    def test_the_shops_own_words_are_untouched(self):
+        """The filter removes what WE wrote. Everything else is the shop's and stays."""
+        self.write_catalog([{**GOOD, "ghi_chu_tu_van":
+                             "Khách hay hỏi có kèm chậu không — có kèm ạ."}])
+        self.run_publish()
+        self.assertEqual(self.price_rows()[2][-1],
+                         "Khách hay hỏi có kèm chậu không — có kèm ạ.")
+
+
 class ThePhotoLink(Publishing):
     """`--image-base` is the only thing that puts a photo address in the knowledge.
 

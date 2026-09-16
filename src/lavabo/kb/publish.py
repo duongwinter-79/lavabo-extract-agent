@@ -48,6 +48,30 @@ PRICE_COLUMNS = ["ma_sp", "ten_sp", "loai", "kich_thuoc", "chat_lieu", "mau", "d
 # Only ever written when --image-base says the photos are reachable; see `photo_urls`.
 PHOTO_COLUMN = "link_anh"
 
+# Sentences WE write into the shop's cells for a human reviewer's benefit. They belong in
+# the workbook -- somebody confirming a price needs to know where it came from -- and they
+# must not survive into the knowledge, where the agent would read them as things to say.
+# "Chưa có xác nhận bảng giá chính thức", repeated to a customer, contradicts every price
+# in the same file.
+# Matched to the end of the cell, not to the next full stop: the note quotes a price, and
+# "80cm 5.000k" has full stops inside it. Stopping at the first one leaves "000k 1m 5.900k)."
+# stranded in the knowledge, which is worse than not stripping at all.
+INTERNAL_NOTES = [
+    re.compile(r"\s*Giá lấy từ ảnh.*$", re.S),
+    re.compile(r"\s*Chưa có xác nhận bảng giá.*$", re.S),
+    re.compile(r"\s*Tên và mã do máy sinh.*$", re.S),
+]
+
+
+def strip_internal(value):
+    """A cell as the customer may see it, with our own notes to ourselves removed."""
+    if not isinstance(value, str):
+        return value
+    for pattern in INTERNAL_NOTES:
+        value = pattern.sub(" ", value)
+    return re.sub(r"\s{2,}", " ", value).strip()
+
+
 EXCLUDED = {
     "voice.md": "hướng dẫn cách trả lời — dán vào tab Hướng dẫn, không phải kiến thức",
     "dont_say.md": "hướng dẫn — dán vào tab Hướng dẫn",
@@ -168,6 +192,7 @@ def _read_prose(source: Path, title: str, stamp: str) -> list[tuple[str, str]]:
 
         text = re.sub(r"\s*←.*$", "", text)            # "← ví dụ: ..."
         text = text.replace("*(không bắt buộc)*", "").replace("**", "").rstrip()
+        text = strip_internal(text)
         if not text.strip():
             continue
         if text.startswith("- "):
@@ -277,7 +302,7 @@ def _table(source: Path, target: Path, columns: list[str], stamp: str,
             continue
         record = {name: values[at] if at < len(values) else None
                   for name, at in index.items()}
-        row = [record[c] for c in columns if c in index]
+        row = [strip_internal(record[c]) for c in columns if c in index]
         if any(EXAMPLE_MARKER in str(v) for v in row if v is not None):
             report.skipped_examples += 1
             continue
