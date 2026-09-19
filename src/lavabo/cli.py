@@ -10,6 +10,17 @@
     lavabo config                      show effective settings + drift from the example
     lavabo models                      list models this key can use
     lavabo verify
+    lavabo kb init                     write the blank intake pack for the shop
+    lavabo kb check                    validate the filled-in pack before uploading
+    lavabo kb init --one-file x.xlsx   the whole pack as ONE workbook, for Google Sheets
+    lavabo kb media --from <dump|xlsx> phone photos/videos, or photos pasted into a
+                                      workbook -> named images/ + mapping
+    lavabo kb publish --to drive/      filled pack -> the folder Meta's Drive connector reads
+    lavabo kb contact-sheet --from <folder>   number unnamed photos so the shop can
+                                      name them all in one message
+    lavabo kb from-images --from <folder>     read size/colour/price OFF the pictures
+                                      into a draft a human confirms
+    lavabo kb feed                     catalog.xlsx -> Meta Commerce product feed
 """
 
 from __future__ import annotations
@@ -711,6 +722,331 @@ def cmd_verify(args, cfg: Config) -> int:
     return 0
 
 
+def cmd_kb(args, cfg: Config) -> int:
+    """The knowledge pack: hand out the blank forms, then refuse the bad ones.
+
+    Deliberately independent of the staging db and of any API key -- this runs on a
+    laptop belonging to whoever is chasing the shop for their price list.
+    """
+    from .kb.check import check_intake, check_one_file, report
+    from .kb.onefile import write_one_file
+    from .kb.templates import write_intake, write_zip
+
+    if args.kb_command == "contact-sheet":
+        return _kb_contact_sheet(args, cfg)
+
+    if args.kb_command == "from-images":
+        return _kb_from_images(args, cfg)
+
+    directory = Path(args.dir)
+
+    if args.kb_command == "media":
+        return _kb_media(args, cfg, directory)
+
+    if args.kb_command == "init" and args.one_file:
+        out = Path(args.one_file)
+        try:
+            write_one_file(out, force=args.force)
+        except FileExistsError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        print(f"  tạo  {out}")
+        print("\n  Tải file này lên Google Drive rồi mở bằng Google Sheets, "
+              "chia sẻ link cho shop.")
+        print(f"  Điền xong, tải về .xlsx rồi chạy: lavabo kb check --file {out}")
+        return 0
+
+    if args.kb_command == "init":
+        written, skipped = write_intake(directory, force=args.force)
+        for path in written:
+            print(f"  tạo  {path}")
+        for path in skipped:
+            print(f"  giữ  {path} (đã có sẵn)")
+        if args.zip:
+            archive = write_zip(directory, Path(args.zip) if isinstance(args.zip, str)
+                                else directory.with_suffix(".zip"))
+            print(f"  gói {archive}")
+        if skipped and not args.force:
+            print("\n  Những file đã có được giữ nguyên. --force để ghi đè.")
+        print(f"\n  Gửi thư mục {directory} cho shop. "
+              f"Điền xong thì chạy: lavabo kb check --dir {directory}")
+        return 0
+
+    # Before the generic --file branch below, which is `check`'s and returns early.
+    if args.kb_command == "publish" and getattr(args, "file", None):
+        return _kb_publish_one_file(args, cfg)
+
+    if getattr(args, "file", None):
+        problems = check_one_file(Path(args.file))
+        print(report(problems))
+        fatal = [p for p in problems if p.fatal]
+        if fatal:
+            print(f"\nCHƯA ĐẠT — {len(fatal)} lỗi phải sửa.")
+            return 1
+        if args.strict and problems:
+            print(f"\nCHƯA ĐẠT (--strict) — {len(problems)} cảnh báo.")
+            return 1
+        print("\nĐẠT — pack sẵn sàng để tải lên.")
+        return 0
+
+    if not directory.is_dir():
+        print(f"Không tìm thấy thư mục {directory}. "
+              f"Tạo bằng: lavabo kb init --dir {directory}", file=sys.stderr)
+        return 1
+
+    problems = check_intake(directory)
+    fatal = [p for p in problems if p.fatal]
+
+    if args.kb_command == "feed":
+        return _kb_feed(args, cfg, directory, fatal)
+
+    if args.kb_command == "publish":
+        return _kb_publish(args, cfg, directory, fatal)
+
+    print(report(problems))
+    if fatal:
+        print(f"\nCHƯA ĐẠT — {len(fatal)} lỗi phải sửa.")
+        return 1
+    if args.strict and problems:
+        print(f"\nCHƯA ĐẠT (--strict) — {len(problems)} cảnh báo.")
+        return 1
+    print("\nĐẠT — pack sẵn sàng để tải lên.")
+    return 0
+
+
+def _kb_media(args, cfg: Config, directory: Path) -> int:
+    """Turn a phone dump into the images/ folder the pack expects."""
+    from .kb.check import read_catalog
+    from .kb.media import organise, organise_workbook, write_mapping
+
+    source = Path(args.source)
+    workbook = source.is_file() and source.suffix.lower() == ".xlsx"
+    if not source.is_dir() and not workbook:
+        print(f"Không tìm thấy {source} (cần một thư mục ảnh, hoặc file .xlsx có ảnh dán sẵn)",
+              file=sys.stderr)
+        return 1
+
+    mapping = None
+    if args.map:
+        from .kb.contact import read_mapping
+        try:
+            mapping = read_mapping(Path(args.map))
+        except (ValueError, KeyError) as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        print(f"  dùng bảng đặt tên: {len(mapping)} ảnh đã có mã")
+
+    known = None
+    catalog = directory / "catalog.xlsx"
+    if catalog.exists():
+        known = {str(r.get("ma_sp", "")).strip().lower() for r in read_catalog(directory)}
+
+    images = directory / "images"
+    report = (organise_workbook(source, images, known_skus=known) if workbook
+              else organise(source, images, known_skus=known, frames=args.frames,
+                            mapping=mapping))
+
+    print(f"  {report.photo_count} ảnh cho {len(report.products)} sản phẩm -> {images}")
+    if report.videos:
+        print(f"  {len(report.videos)} video, đã lấy khung hình rõ nhất làm ảnh")
+    for sku, names in sorted(report.products.items()):
+        if not names:
+            print(f"  THIẾU ẢNH: {sku} — thư mục rỗng hoặc không đọc được file nào")
+
+    if report.heic:
+        print(f"\n  {len(report.heic)} ảnh định dạng HEIC chưa đọc được:")
+        for name in report.heic[:5]:
+            print(f"    - {name}")
+        print("    iPhone: Cài đặt > Camera > Định dạng > chọn 'Tương thích nhất',")
+        print("    rồi chụp lại, hoặc gửi qua Zalo/Messenger (tự đổi sang JPG).")
+    if report.unmapped:
+        print(f"\n  {len(report.unmapped)} file không biết thuộc sản phẩm nào — "
+              "để trong thư mục mang tên mã SP:")
+        for name in report.unmapped[:5]:
+            print(f"    - {name}")
+    if report.unknown_sku:
+        print(f"\n  CẢNH BÁO: {len(report.unknown_sku)} mã không có trong catalog.xlsx: "
+              + ", ".join(report.unknown_sku[:5]))
+
+    if not args.no_mapping and report.products:
+        write_mapping(report, directory / "images.xlsx")
+        print(f"\n  đã ghi {directory / 'images.xlsx'}")
+    print(f"\n  Kiểm tra lại: lavabo kb check --dir {directory}")
+    return 0
+
+
+def _kb_from_images(args, cfg: Config) -> int:
+    """Read what the pictures say, into a draft nobody may mistake for a price list."""
+    from .extract.base import build_extractor
+    from .kb.fromimages import read_folder, write_draft
+
+    source = Path(args.source)
+    if not source.is_dir():
+        print(f"Không tìm thấy thư mục {source}", file=sys.stderr)
+        return 1
+
+    schema = cfg.load_schema()
+    extractor = build_extractor(cfg.extract, schema)
+    report = read_folder(source, extractor, limit=args.limit, mode=args.mode)
+    if not report.readings:
+        print(f"Không có ảnh nào trong {source}", file=sys.stderr)
+        return 1
+
+    target = write_draft(report, Path(args.out))
+    print(f"  {target}")
+    if args.mode == "chat":
+        print(f"  {len(report.readings)} ảnh · {len(report.products)} có nói về giá · "
+              f"{len(report.with_price)} đọc được số · "
+              f"{len(report.quoted_by_shop)} do SHOP báo giá")
+    else:
+        print(f"  {len(report.readings)} ảnh · {len(report.products)} là ảnh sản phẩm · "
+              f"{len(report.with_price)} có giá đọc được")
+    if report.failed:
+        print(f"  {len(report.failed)} ảnh không đọc được")
+    print(f"  tokens: {report.input_tokens} vào / {report.output_tokens} ra")
+    print("\n  ĐÂY LÀ BẢN NHÁP. Giá trên ảnh có thể cũ, hoặc là giá của nơi khác.")
+    print("  Đối chiếu với shop, điền cột ma_sp và da_kiem_tra, rồi mới chuyển sang "
+          "catalog.xlsx.")
+    return 0
+
+
+def _kb_contact_sheet(args, cfg: Config) -> int:
+    """Turn a pile of nameless photos into one question the shop can answer."""
+    from .kb.contact import build
+
+    source = Path(args.source)
+    if not source.is_dir():
+        print(f"Không tìm thấy thư mục {source}", file=sys.stderr)
+        return 1
+
+    try:
+        sheet = build(source, Path(args.out))
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+    print(f"  {sheet.count} ảnh, {len(sheet.pages)} trang")
+    for page in sheet.pages:
+        print(f"    {page}")
+    print(f"    {sheet.mapping}")
+    print("\n  Gửi các trang ảnh cho shop, hỏi: ảnh số mấy là mẫu nào.")
+    print(f"  Điền mã vào cột ma_sp trong {sheet.mapping.name}, rồi chạy:")
+    print(f"    lavabo kb media --from {source} --map {sheet.mapping} --dir intake")
+    return 0
+
+
+def _kb_publish_one_file(args, cfg: Config) -> int:
+    """Publish straight from the one-file workbook.
+
+    `publish` reads a folder of six files; a shop working from a phone filled one
+    workbook. Making them assemble that folder by hand is the exact step the workbook
+    exists to avoid, so the workbook is spread into a throwaway pack and published from
+    there. The published folder is the deliverable; the pack is scaffolding and does not
+    outlive the command.
+    """
+    import tempfile
+
+    from .kb.check import check_intake
+    from .kb.onefile import write_pack
+
+    workbook = Path(args.file)
+    if not workbook.is_file():
+        print(f"Không tìm thấy {workbook}", file=sys.stderr)
+        return 1
+
+    images = Path(args.images) if getattr(args, "images", None) else None
+    if images and not images.is_dir():
+        print(f"Không tìm thấy thư mục ảnh {images}", file=sys.stderr)
+        return 1
+
+    with tempfile.TemporaryDirectory(prefix="lavabo-pack-") as tmp:
+        pack = write_pack(workbook, Path(tmp) / "pack", images=images)
+        fatal = [p for p in check_intake(pack) if p.fatal]
+        if not images:
+            log.info("không có --images: xuất bản kiến thức, không kèm ảnh")
+        return _kb_publish(args, cfg, pack, fatal)
+
+
+def _kb_publish(args, cfg: Config, directory: Path, fatal: list) -> int:
+    """Publish only what a customer may be told, and only from a pack that passes."""
+    from .kb.publish import KNOWLEDGE_DIR, blocking, instruction_gaps, publish
+    from .kb.check import report as render
+
+    stoppers = blocking(fatal)
+    if stoppers:
+        print(render(stoppers))
+        print(f"\nKhông xuất bản — sửa {len(stoppers)} lỗi trên trước đã.", file=sys.stderr)
+        return 1
+
+    out = Path(args.to)
+    result = publish(directory, out, image_base=args.image_base,
+                     prose_format=args.prose_format)
+
+    print(f"  {out}")
+    for name in result.written:
+        print(f"    {KNOWLEDGE_DIR}/{name}")
+    if result.images:
+        print(f"    02-ANH-SAN-PHAM/ — {result.images} ảnh")
+    if result.skipped_examples:
+        print(f"  bỏ {result.skipped_examples} dòng ví dụ mẫu")
+    if result.excluded:
+        print("\n  KHÔNG xuất bản (đúng như thiết kế):")
+        for line in result.excluded:
+            print(f"    - {line}")
+    gaps = instruction_gaps(fatal)
+    if gaps:
+        # Publishing is safe with these unanswered; switching the agent on is not.
+        print("\n  CHƯA BẬT ĐƯỢC AI — phần Hướng dẫn còn thiếu:")
+        for problem in gaps:
+            print(f"    - {problem}")
+        print("    Kiến thức vẫn xuất bản được; đừng bật AI trước khi điền xong.")
+
+    print(f"\n  Tải {out / KNOWLEDGE_DIR} lên Drive và NỐI ĐÚNG thư mục đó.")
+    print("  Hai thư mục còn lại không được nối.")
+    return 0
+
+
+def _kb_feed(args, cfg: Config, directory: Path, fatal: list) -> int:
+    """A feed is where a spreadsheet becomes something the Page says out loud, so a
+    catalogue that fails `kb check` never reaches one."""
+    from .kb.check import read_catalog, report
+    from .kb.feed import build_feed
+
+    if fatal:
+        print(report(fatal))
+        print(f"\nKhông tạo feed — sửa {len(fatal)} lỗi trên trước đã "
+              f"(lavabo kb check --dir {directory}).", file=sys.stderr)
+        return 1
+
+    if not args.link and not args.link_template:
+        print("Feed của Meta bắt buộc có cột link. Truyền --link <URL trang Facebook>, "
+              "hoặc --link-template 'https://.../{ma_sp}' nếu shop có web riêng. "
+              "Xem docs/13 §6.2.", file=sys.stderr)
+        return 1
+
+    out = Path(args.out) if args.out else cfg.output_dir / "meta-catalog-feed.csv"
+    result = build_feed(
+        read_catalog(directory), out,
+        link=args.link, link_template=args.link_template,
+        image_base=args.image_base, brand=args.brand,
+        timezone_name=cfg.zalo.timezone,
+    )
+
+    print(f"  {result.path}")
+    print(f"  {result.rows} sản phẩm, {result.on_sale} đang khuyến mãi")
+    if not args.brand:
+        print("  CẢNH BÁO: chưa có --brand. Cột mpn đã điền bằng mã sản phẩm, "
+              "nhưng nên truyền tên shop.")
+    if result.without_image:
+        # Not a failure: the CSV is still worth reading, and hosting images is a
+        # deployment decision the shop has not made yet. But Meta will drop these rows.
+        print(f"  CẢNH BÁO: {result.without_image}/{result.rows} dòng chưa có ảnh công khai. "
+              "Meta sẽ từ chối đúng những dòng đó.")
+        print("  Cách xử lý: --image-base <URL thư mục ảnh đã host>, hoặc thêm sản phẩm "
+              "thủ công trong Commerce Manager (docs/13 §6.3).")
+    return 0
+
+
 def cmd_run(args, cfg: Config) -> int:
     for step in (cmd_ingest, cmd_extract, cmd_load):
         if code := step(args, cfg):
@@ -722,6 +1058,10 @@ def cmd_run(args, cfg: Config) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     _load_dotenv()
+
+    # The one name the parser needs from a kb module. Imported here rather than at module
+    # scope so `lavabo --help` still does not pay for openpyxl.
+    from .kb.publish import PROSE_FORMATS
 
     ap = argparse.ArgumentParser(prog="lavabo", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -805,6 +1145,79 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--null-threshold", type=float, default=0.5)
     add_llm_args(p)
 
+    p = sub.add_parser("kb", help="the shop's knowledge pack: blank forms, then validation")
+    kb = p.add_subparsers(dest="kb_command", required=True)
+    q = kb.add_parser("init", help="write the blank intake workbooks and text templates")
+    q.add_argument("--dir", default="intake")
+    q.add_argument("--force", action="store_true", help="overwrite files that already exist")
+    q.add_argument("--zip", nargs="?", const=True, default=False,
+                   help="also write a .zip of the pack, for forwarding it in one piece")
+    q.add_argument("--one-file", metavar="PATH",
+                   help="write the whole pack as ONE workbook instead, for Google Sheets")
+    add_llm_args(q)
+    q = kb.add_parser("check", help="validate a filled-in pack before it is uploaded")
+    q.add_argument("--dir", default="intake")
+    q.add_argument("--file", help="check a one-file workbook instead of a folder")
+    q.add_argument("--strict", action="store_true", help="treat warnings as failures too")
+    add_llm_args(q)
+    q = kb.add_parser("media", help="phone photos and demo videos into the pack's images/")
+    q.add_argument("--from", dest="source", required=True,
+                   help="a folder of phone media (one subfolder per mã SP), or an .xlsx "
+                        "with photos pasted next to the products")
+    q.add_argument("--dir", default="intake")
+    q.add_argument("--frames", type=int, default=3,
+                   help="stills to pull from each demo video (default 3)")
+    q.add_argument("--no-mapping", action="store_true", help="do not rewrite images.xlsx")
+    q.add_argument("--map", help="a filled anh-can-dat-ten.xlsx from `kb contact-sheet`, "
+                                 "for photos that arrived with no product name")
+    add_llm_args(q)
+
+    q = kb.add_parser("contact-sheet",
+                      help="number unnamed photos so the shop can name them in one message")
+    q.add_argument("--from", dest="source", required=True, help="folder of unnamed photos")
+    q.add_argument("--out", default="contact-sheet", help="where to write the pages")
+    add_llm_args(q)
+
+    q = kb.add_parser("from-images",
+                      help="read size/colour/price off product pictures into a draft")
+    q.add_argument("--from", dest="source", required=True, help="folder of product images")
+    q.add_argument("--out", default="catalog-draft.xlsx", help="draft .xlsx to write")
+    q.add_argument("--limit", type=int, help="stop after N images — use it first")
+    q.add_argument("--mode", choices=["product", "chat"], default="product",
+                   help="product: a marketing image. chat: a screenshot of the Page inbox, "
+                        "where who said the price decides whether it is the shop's")
+    add_llm_args(q)
+
+    q = kb.add_parser("publish",
+                      help="a passing pack -> the folder Meta's Drive connector reads")
+    q.add_argument("--dir", default="intake")
+    q.add_argument("--file", help="publish a one-file workbook instead of a folder")
+    q.add_argument("--images", help="product photos to publish (use with --file, "
+                                    "which carries none of its own)")
+    q.add_argument("--image-base", default="",
+                   help="public URL the photos are hosted under — adds a link_anh column "
+                        "to the price list so the agent can point a customer at the photo")
+    q.add_argument("--prose-format", default="md", choices=PROSE_FORMATS,
+                   help="format for the two prose files. Meta's Drive picker offers "
+                        "Tài liệu / Hình ảnh / Bảng tính and does not accept .md, so "
+                        "use docx for a folder that will be connected")
+    q.add_argument("--to", default="drive", help="output folder (default: drive/)")
+    add_llm_args(q)
+
+    q = kb.add_parser("feed", help="turn a passing catalog.xlsx into a Meta Commerce feed")
+    q.add_argument("--dir", default="intake")
+    q.add_argument("--out", help="output .csv path (default: <output_dir>/meta-catalog-feed.csv)")
+    q.add_argument("--link", default="",
+                   help="URL for every product — the Page URL when there is no website")
+    q.add_argument("--link-template", default="",
+                   help="per-product URL with {ma_sp} substituted")
+    q.add_argument("--image-base", default="",
+                   help="public URL the image filenames hang off; without it rows ship "
+                        "with no image and Meta rejects them")
+    q.add_argument("--brand", default="", help="shop or manufacturer name")
+    add_llm_args(q)
+    add_llm_args(p)
+
     p = sub.add_parser("run", help="ingest + extract + load")
     p.add_argument("--source", choices=["meta", "zalo", "all"], default="all")
     p.add_argument("--out", help="output .xlsx path")
@@ -833,7 +1246,7 @@ def main(argv: list[str] | None = None) -> int:
                 "load": cmd_load, "verify": cmd_verify, "run": cmd_run,
                 "models": cmd_models, "config": cmd_config,
                 "inspect": cmd_inspect, "append": cmd_append,
-                "resegment": cmd_resegment}
+                "resegment": cmd_resegment, "kb": cmd_kb}
     try:
         return handlers[args.command](args, cfg)
     except KeyboardInterrupt:
